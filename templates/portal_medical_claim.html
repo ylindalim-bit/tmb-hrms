@@ -1,0 +1,68 @@
+{% extends "portal_base.html" %}
+{% block title %}Medical Claim - Staff Portal{% endblock %}
+{% block content %}
+<h1>Medical Claim</h1>
+
+<div class="card">
+  <h2 style="margin-top:0;">Balance (This Year)</h2>
+  <p>Annual Limit: RM {{ "%.2f"|format(emp.medical_claim_limit or 0) }}<br>
+     Claimed (Approved) this year: RM {{ "%.2f"|format(claimed_this_year) }}<br>
+     <strong>Balance: RM {{ "%.2f"|format(claim_balance) }}</strong></p>
+</div>
+
+{% if error %}
+<div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger);">{{ error }}</div>
+{% endif %}
+<div class="card">
+<form method="post" enctype="multipart/form-data">
+  <div class="form-grid">
+    <div><label>Date of Treatment</label><input type="date" name="claim_date" required></div>
+    <div><label>Claim Amount (RM)</label><input type="number" step="0.01" min="0.01" name="amount" required></div>
+    <div><label>Clinic / Hospital Name</label><input type="text" name="clinic_name"></div>
+  </div>
+  <div style="margin-top:12px;">
+    <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">
+      Receipt / Invoice <span style="color:var(--danger);">*</span>
+      <span style="font-weight:400;">(PDF, Word, or image)</span>
+    </label>
+    <input type="file" name="supporting_doc" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" required>
+  </div>
+  <div style="margin-top:12px;">
+    <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">Description (optional)</label>
+    <input type="text" name="description" style="width:100%;" placeholder="e.g. flu, follow-up consultation">
+  </div>
+  <div class="form-actions">
+    <button class="btn" type="submit">Submit Claim</button>
+  </div>
+</form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">My Medical Claims</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th class="text">Date</th><th class="text">Clinic</th><th>Amount (RM)</th><th class="text">Status</th><th class="text">Notes</th><th class="text">Receipt</th></tr></thead>
+    <tbody>
+      {% for c in claims %}
+      <tr>
+        <td class="text">{{ c.claim_date }}</td>
+        <td class="text">{{ c.clinic_name or "" }}</td>
+        <td>{{ "%.2f"|format(c.amount) }}</td>
+        <td class="text">
+          <span class="pill {% if c.status == 'Approved' %}finalized{% elif c.status == 'Pending' %}draft{% else %}rejected{% endif %}">{{ c.status }}</span>
+        </td>
+        <td class="text">{{ c.review_notes or "" }}</td>
+        <td class="text">
+          {% if c.supporting_doc_stored %}
+          <a href="{{ url_for('portal_medical_claim_document', claim_id=c.id) }}" target="_blank" rel="noopener">View</a>
+          {% else %}<span style="color:var(--muted);">-</span>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text" style="color:var(--muted);">No medical claims yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

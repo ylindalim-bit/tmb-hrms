@@ -209,6 +209,7 @@ def inject_pending_counts():
                 (session["hr_username"],),
             ).fetchone()["c"]
             pending_trip_count = 0  # Business Trips is outside an approver's restricted access
+            pending_medical_claim_count = 0  # Medical Claims is outside an approver's restricted access
         else:
             pending_leave_count = db.execute(
                 "SELECT COUNT(*) AS c FROM leave_requests WHERE status='Pending'"
@@ -216,9 +217,13 @@ def inject_pending_counts():
             pending_trip_count = db.execute(
                 "SELECT COUNT(*) AS c FROM business_trips WHERE status='Pending'"
             ).fetchone()["c"]
+            pending_medical_claim_count = db.execute(
+                "SELECT COUNT(*) AS c FROM medical_claims WHERE status='Pending'"
+            ).fetchone()["c"]
     except sqlite3.OperationalError:
         return {}
-    return {"pending_leave_count": pending_leave_count, "pending_trip_count": pending_trip_count}
+    return {"pending_leave_count": pending_leave_count, "pending_trip_count": pending_trip_count,
+            "pending_medical_claim_count": pending_medical_claim_count}
 
 
 def get_db():
@@ -468,7 +473,7 @@ TEXT_FIELDS = ["full_name", "ic_passport_no", "date_of_birth", "marital_status",
                "confirmation_date", "resignation_date"]
 NUM_FIELDS = ["basic_salary", "working_days_week", "working_hours_day",
               "additional_epf_employee", "annual_leave_entitlement", "mc_entitlement",
-              "hospitalisation_leave_entitlement"]
+              "hospitalisation_leave_entitlement", "medical_claim_limit"]
 NULLABLE_NUM_FIELDS = ["confirmed_new_salary"]
 ALLOWANCE_FIELDS = [
     ("transport_allowance", "transport_allowance_flag", "transport_allowance_effective_date"),
@@ -2064,6 +2069,81 @@ def portal_leave_document(request_id):
     )
 
 
+@app.route("/portal/medical-claim", methods=["GET", "POST"])
+@portal_login_required
+def portal_medical_claim():
+    db = get_db()
+    emp = current_portal_employee(db)
+    error = None
+    if request.method == "POST":
+        claim_date = request.form.get("claim_date", "")
+        amount_raw = request.form.get("amount", "")
+        clinic_name = request.form.get("clinic_name", "").strip() or None
+        description = request.form.get("description", "").strip() or None
+        file = request.files.get("supporting_doc")
+        has_file = file is not None and file.filename != ""
+        try:
+            amount = float(amount_raw)
+        except ValueError:
+            amount = None
+        if not claim_date or amount is None or amount <= 0:
+            error = "Date of treatment and a valid claim amount are required."
+        elif not has_file:
+            error = "Please attach the receipt/invoice for this claim."
+        else:
+            original_name = secure_filename(file.filename)
+            ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+            if ext not in ALLOWED_DOC_EXTENSIONS:
+                error = "Receipt must be a PDF, Word file, or an image (JPG/PNG)."
+        if error is None:
+            emp_dir = os.path.join(UPLOAD_DIR, emp["emp_id"])
+            os.makedirs(emp_dir, exist_ok=True)
+            stored_name = f"{uuid.uuid4().hex}_{original_name}"
+            file.save(os.path.join(emp_dir, stored_name))
+            db.execute(
+                """INSERT INTO medical_claims (emp_id, claim_date, amount, clinic_name, description, status,
+                       submitted_at, supporting_doc_original, supporting_doc_stored)
+                   VALUES (?,?,?,?,?,'Pending',?,?,?)""",
+                (emp["emp_id"], claim_date, amount, clinic_name, description,
+                 datetime.datetime.now().isoformat(timespec="seconds"),
+                 original_name, stored_name),
+            )
+            db.commit()
+            return redirect(url_for("portal_medical_claim"))
+
+    my_claims = db.execute(
+        """SELECT * FROM medical_claims WHERE emp_id=? ORDER BY submitted_at DESC""",
+        (emp["emp_id"],),
+    ).fetchall()
+
+    cur_year = datetime.date.today().year
+    claimed_this_year = db.execute(
+        """SELECT COALESCE(SUM(amount),0) AS total FROM medical_claims
+           WHERE emp_id=? AND status='Approved' AND claim_date LIKE ?""",
+        (emp["emp_id"], f"{cur_year:04d}-%"),
+    ).fetchone()["total"]
+    claim_balance = (emp["medical_claim_limit"] or 0) - claimed_this_year
+
+    return render_template("portal_medical_claim.html", emp=emp, claims=my_claims, error=error,
+                            claimed_this_year=claimed_this_year, claim_balance=claim_balance)
+
+
+@app.route("/portal/medical-claim/<int:claim_id>/document")
+@portal_login_required
+def portal_medical_claim_document(claim_id):
+    db = get_db()
+    emp = current_portal_employee(db)
+    mc = db.execute(
+        "SELECT * FROM medical_claims WHERE id=? AND emp_id=?", (claim_id, emp["emp_id"])
+    ).fetchone()
+    if mc is None or not mc["supporting_doc_stored"]:
+        abort(404)
+    return send_from_directory(
+        os.path.join(UPLOAD_DIR, emp["emp_id"]), mc["supporting_doc_stored"],
+        as_attachment=False, download_name=mc["supporting_doc_original"],
+    )
+
+
 @app.route("/portal/business-trip", methods=["GET", "POST"])
 @portal_login_required
 def portal_business_trip():
@@ -2385,6 +2465,57 @@ def review_business_trip(trip_id):
     )
     db.commit()
     return redirect(url_for("business_trips_admin"))
+
+
+# ---------------- HR: Medical Claims Admin ----------------
+
+@app.route("/medical-claims")
+def medical_claims_admin():
+    db = get_db()
+    pending = db.execute(
+        """SELECT mc.*, e.full_name FROM medical_claims mc
+           JOIN employees e ON e.emp_id = mc.emp_id
+           WHERE mc.status='Pending' ORDER BY mc.submitted_at"""
+    ).fetchall()
+    reviewed = db.execute(
+        """SELECT mc.*, e.full_name FROM medical_claims mc
+           JOIN employees e ON e.emp_id = mc.emp_id
+           WHERE mc.status!='Pending' ORDER BY mc.reviewed_at DESC LIMIT 50"""
+    ).fetchall()
+    return render_template("medical_claims_admin.html", pending=pending, reviewed=reviewed)
+
+
+@app.route("/medical-claims/<int:claim_id>/document")
+def medical_claim_document(claim_id):
+    db = get_db()
+    mc = db.execute("SELECT * FROM medical_claims WHERE id=?", (claim_id,)).fetchone()
+    if mc is None or not mc["supporting_doc_stored"]:
+        abort(404)
+    return send_from_directory(
+        os.path.join(UPLOAD_DIR, mc["emp_id"]), mc["supporting_doc_stored"],
+        as_attachment=False, download_name=mc["supporting_doc_original"],
+    )
+
+
+@app.route("/medical-claims/<int:claim_id>/review", methods=["POST"])
+def review_medical_claim(claim_id):
+    db = get_db()
+    decision = request.form.get("decision")
+    if decision not in ("Approved", "Rejected"):
+        return "Invalid decision", 400
+    notes = request.form.get("review_notes") or None
+    claim = db.execute("SELECT * FROM medical_claims WHERE id=?", (claim_id,)).fetchone()
+    if claim is None:
+        return "Medical claim not found", 404
+    hr_user = db.execute("SELECT full_name FROM hr_users WHERE username=?", (session["hr_username"],)).fetchone()
+    reviewer = hr_user["full_name"] if hr_user else session["hr_username"]
+    db.execute(
+        """UPDATE medical_claims SET status=?, reviewed_by=?, reviewed_at=?, review_notes=?
+           WHERE id=?""",
+        (decision, reviewer, datetime.datetime.now().isoformat(timespec="seconds"), notes, claim_id),
+    )
+    db.commit()
+    return redirect(url_for("medical_claims_admin"))
 
 
 if __name__ == "__main__":

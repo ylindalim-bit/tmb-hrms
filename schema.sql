@@ -40,6 +40,7 @@ CREATE TABLE employees (
     annual_leave_entitlement INTEGER,
     mc_entitlement           INTEGER,
     hospitalisation_leave_entitlement INTEGER,
+    medical_claim_limit      REAL DEFAULT 0,   -- RM/year cap for outpatient medical claim reimbursement
     passport_expiry         TEXT,
     work_permit_expiry      TEXT,
     termination_notice_period TEXT,   -- e.g. '1 Month', '2 Months' - notice period required if terminating this employee
@@ -338,6 +339,27 @@ CREATE TABLE business_trips (
     reviewed_by    TEXT,
     reviewed_at    TEXT,
     review_notes   TEXT
+);
+
+-- Outpatient medical expense reimbursement claims - tracking/approval only,
+-- does NOT flow into payroll automatically (paid out however HR currently
+-- handles reimbursements). Balance shown on the Staff Portal is
+-- employees.medical_claim_limit minus the sum of this year's Approved
+-- claims.
+CREATE TABLE medical_claims (
+    id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+    emp_id                 TEXT NOT NULL REFERENCES employees(emp_id),
+    claim_date             TEXT NOT NULL,  -- date of treatment
+    amount                 REAL NOT NULL,
+    clinic_name            TEXT,
+    description            TEXT,
+    supporting_doc_original TEXT,          -- receipt, as uploaded
+    supporting_doc_stored   TEXT,
+    status                 TEXT NOT NULL DEFAULT 'Pending',  -- Pending / Approved / Rejected
+    submitted_at           TEXT NOT NULL,
+    reviewed_by            TEXT,
+    reviewed_at            TEXT,
+    review_notes           TEXT
 );
 
 -- HR/admin accounts that can access the HR side of this app (Employees,

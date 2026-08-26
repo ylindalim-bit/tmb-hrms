@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Medical Claims - TMB Payroll{% endblock %}
+{% block content %}
+<h1>Medical Claims</h1>
+
+<div class="card">
+  <h2 style="margin-top:0;">Pending ({{ pending|length }})</h2>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th class="text">Employee</th><th class="text">Date</th><th class="text">Clinic</th><th>Amount (RM)</th><th class="text">Description</th><th class="text">Receipt</th><th class="text">Submitted</th><th>Action</th></tr>
+    </thead>
+    <tbody>
+      {% for c in pending %}
+      <tr>
+        <td class="text">{{ c.emp_id }} &mdash; {{ c.full_name }}</td>
+        <td class="text">{{ c.claim_date }}</td>
+        <td class="text">{{ c.clinic_name or "" }}</td>
+        <td>{{ "%.2f"|format(c.amount) }}</td>
+        <td class="text">{{ c.description or "" }}</td>
+        <td class="text">
+          {% if c.supporting_doc_stored %}
+          <a href="{{ url_for('medical_claim_document', claim_id=c.id) }}" target="_blank" rel="noopener">View</a>
+          {% else %}<span style="color:var(--danger);">Missing</span>{% endif %}
+        </td>
+        <td class="text">{{ c.submitted_at }}</td>
+        <td class="text" style="white-space:nowrap;">
+          <form method="post" action="{{ url_for('review_medical_claim', claim_id=c.id) }}">
+            <button class="btn" type="submit" name="decision" value="Approved" style="padding:4px 10px;">Approve</button>
+            <button class="btn secondary" type="submit" name="decision" value="Rejected" style="padding:4px 10px;">Reject</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="text" style="color:var(--muted);">No pending claims.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">Recently Reviewed</h2>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th class="text">Employee</th><th class="text">Date</th><th class="text">Clinic</th><th>Amount (RM)</th><th class="text">Status</th><th class="text">Receipt</th><th class="text">Reviewed By</th><th class="text">Reviewed</th></tr>
+    </thead>
+    <tbody>
+      {% for c in reviewed %}
+      <tr>
+        <td class="text">{{ c.emp_id }} &mdash; {{ c.full_name }}</td>
+        <td class="text">{{ c.claim_date }}</td>
+        <td class="text">{{ c.clinic_name or "" }}</td>
+        <td>{{ "%.2f"|format(c.amount) }}</td>
+        <td class="text">
+          <span class="pill {% if c.status == 'Approved' %}finalized{% else %}rejected{% endif %}">{{ c.status }}</span>
+        </td>
+        <td class="text">
+          {% if c.supporting_doc_stored %}
+          <a href="{{ url_for('medical_claim_document', claim_id=c.id) }}" target="_blank" rel="noopener">View</a>
+          {% else %}<span style="color:var(--muted);">-</span>{% endif %}
+        </td>
+        <td class="text">{{ c.reviewed_by or "" }}</td>
+        <td class="text">{{ c.reviewed_at }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="text" style="color:var(--muted);">None yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

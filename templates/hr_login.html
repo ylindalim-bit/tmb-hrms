@@ -24,6 +24,11 @@
   <img src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="TMB" class="login-logo">
   <h1>HR / Payroll Login</h1>
   <div class="sub">Staff looking for the Staff Portal? <a href="{{ url_for('portal_login') }}">Go here instead</a>.</div>
+  {% if no_hr_users %}
+  <div class="sub" style="background:#fef3c7; color:#92400e; padding:10px; border-radius:6px; margin-bottom:14px;">
+    No HR account exists yet on this system. <a href="{{ url_for('hr_setup') }}">Create the first one &rarr;</a>
+  </div>
+  {% endif %}
   {% if error %}<div class="error">{{ error }}</div>{% endif %}
   <form method="post">
     <input type="hidden" name="next" value="{{ next }}">

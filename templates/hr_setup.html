@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>First-Time Setup - TMB Payroll</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .login-box { width: 100%; max-width: 360px; }
+  .login-box .login-logo { display: block; height: 40px; width: auto; margin: 0 auto 18px; }
+  .login-box h1 { font-size: 18px; margin-bottom: 4px; text-align: center; }
+  .login-box .sub { text-align: center; color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .login-box label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+  .login-box input { width: 100%; margin-bottom: 16px; }
+  .login-box .error { color: var(--danger); font-size: 13px; margin-bottom: 12px; }
+  .login-box button { width: 100%; }
+</style>
+</head>
+<body>
+<div class="card login-box">
+  <img src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="TMB" class="login-logo">
+  <h1>First-Time Setup</h1>
+  <div class="sub">Create the first HR account for this system. This page only works once &mdash;
+    it locks itself as soon as an account exists.</div>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <form method="post">
+    <label>Your Full Name</label>
+    <input type="text" name="full_name" required autofocus>
+    <label>Username</label>
+    <input type="text" name="username" required>
+    <label>Password</label>
+    <input type="password" name="password" required>
+    <button class="btn" type="submit">Create Account &amp; Sign In</button>
+  </form>
+</div>
+</body>
+</html>

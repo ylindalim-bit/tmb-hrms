@@ -250,6 +250,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/api/",         # read-only payroll-export feed consumed by another local process
     "/hr/login",
     "/hr/logout",
+    "/hr/setup",     # first-run only - locks itself once any hr_users row exists
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -429,13 +430,50 @@ def hr_login():
             if not next_url.startswith("/") or next_url.startswith("/hr/login"):
                 next_url = url_for("index")
             return redirect(next_url)
-    return render_template("hr_login.html", error=error, next=request.args.get("next", ""))
+    no_hr_users = db.execute("SELECT 1 FROM hr_users LIMIT 1").fetchone() is None
+    return render_template("hr_login.html", error=error, next=request.args.get("next", ""),
+                            no_hr_users=no_hr_users)
 
 
 @app.route("/hr/logout")
 def hr_logout():
     session.clear()
     return redirect(url_for("hr_login"))
+
+
+@app.route("/hr/setup", methods=["GET", "POST"])
+def hr_setup():
+    """First-run only: creates the very first HR (role='admin') account on
+    a brand new deployment that has no hr_users yet (e.g. right after
+    deploying to Railway/Render, where the database bootstraps empty on
+    purpose - no employee/payroll data or credentials ever leave the local
+    machine via GitHub). Locks itself the moment any hr_users row exists,
+    so it can't be used to create extra unauthorized accounts later."""
+    db = get_db()
+    if db.execute("SELECT 1 FROM hr_users LIMIT 1").fetchone() is not None:
+        return redirect(url_for("hr_login"))
+
+    error = None
+    if request.method == "POST":
+        username = request.form.get("username", "").strip().lower()
+        password = request.form.get("password", "")
+        full_name = request.form.get("full_name", "").strip()
+        if not username or not password or not full_name:
+            error = "Username, password, and full name are all required."
+        elif len(password) < 4:
+            error = "Password must be at least 4 characters."
+        else:
+            db.execute(
+                "INSERT INTO hr_users (username, password_hash, full_name, created_at, role) VALUES (?,?,?,?,'admin')",
+                (username, generate_password_hash(password), full_name,
+                 datetime.datetime.now().isoformat(timespec="seconds")),
+            )
+            db.commit()
+            session.clear()
+            session["hr_username"] = username
+            session["hr_role"] = "admin"
+            return redirect(url_for("index"))
+    return render_template("hr_setup.html", error=error)
 
 
 @app.route("/hr/change-password", methods=["GET", "POST"])

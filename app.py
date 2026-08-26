@@ -120,8 +120,31 @@ from werkzeug.utils import secure_filename
 
 import payroll_calc
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "payroll.db")
-UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
+# DATA_DIR points at wherever the real data should live. Locally this is
+# just the app folder (unchanged behavior); in production (Render) it's set
+# via the DATA_DIR env var to the mounted Persistent Disk, so the database,
+# uploads, and secret key all survive restarts/redeploys instead of living
+# on the container's throwaway filesystem.
+DATA_DIR = os.environ.get("DATA_DIR", os.path.dirname(__file__))
+DB_PATH = os.path.join(DATA_DIR, "payroll.db")
+UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
+
+if not os.path.exists(DB_PATH):
+    # First run on a fresh environment (e.g. a brand new Render deploy) -
+    # build an empty database from schema.sql + seed_reference_data.sql
+    # (statutory rate tables only, no employee/payroll data) so the app has
+    # something to connect to instead of crashing.
+    os.makedirs(DATA_DIR, exist_ok=True)
+    _bootstrap_conn = sqlite3.connect(DB_PATH)
+    _here = os.path.dirname(__file__)
+    with open(os.path.join(_here, "schema.sql"), "r", encoding="utf-8") as _f:
+        _bootstrap_conn.executescript(_f.read())
+    _seed_path = os.path.join(_here, "seed_reference_data.sql")
+    if os.path.exists(_seed_path):
+        with open(_seed_path, "r", encoding="utf-8") as _f:
+            _bootstrap_conn.executescript(_f.read())
+    _bootstrap_conn.commit()
+    _bootstrap_conn.close()
 DOCUMENT_TYPES = ["Job Application Form", "Letter of Employment", "Confirmation Letter",
                    "Resignation Letter", "e-Stamping Certificate", "TP3 (Prior Employer Income)", "Other"]
 ALLOWED_DOC_EXTENSIONS = {"pdf", "doc", "docx", "jpg", "jpeg", "png"}
@@ -153,12 +176,12 @@ def payslip_release_date(db, year, month):
     return datetime.date(pay_year, pay_month, min(release_day, days_in_release_month))
 
 app = Flask(__name__)
-# Local-only app: a fixed key is fine here (no internet exposure). Persisted
-# to a local file rather than regenerated per process start - the server
-# restarts often (crashes, Windows Startup, active development), and a new
-# random key every time would silently log every logged-in employee out of
-# the Staff Portal on every restart, not just after a real security event.
-SECRET_KEY_PATH = os.path.join(os.path.dirname(__file__), ".secret_key")
+# Persisted to a file (under DATA_DIR - the Persistent Disk in production)
+# rather than regenerated per process start: the server restarts often
+# (crashes, Windows Startup, active development, a Render redeploy), and a
+# new random key every time would silently log every logged-in employee out
+# of the Staff Portal on every restart, not just after a real security event.
+SECRET_KEY_PATH = os.path.join(DATA_DIR, ".secret_key")
 if os.path.exists(SECRET_KEY_PATH):
     with open(SECRET_KEY_PATH, "r") as f:
         app.secret_key = f.read().strip()

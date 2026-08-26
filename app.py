@@ -251,6 +251,8 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/login",
     "/hr/logout",
     "/hr/setup",     # first-run only - locks itself once any hr_users row exists
+    "/hr/restore-database",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/restore-uploads",   # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -2554,6 +2556,48 @@ def review_medical_claim(claim_id):
     )
     db.commit()
     return redirect(url_for("medical_claims_admin"))
+
+
+# ---------------- One-time data migration (local -> production) ----------------
+# Lets the real payroll.db / uploads folder be copied from a local machine
+# onto a fresh production deployment (Railway/Render/etc.) where they
+# deliberately don't exist yet (never committed to GitHub). Gated by
+# RESTORE_TOKEN, an env var only the deployer sets/knows - both routes
+# fail closed (404) if it isn't configured, so they're inert everywhere
+# except a deployment that's deliberately been put into "accepting a
+# restore" mode. Remove RESTORE_TOKEN from the environment (or delete
+# these two routes) once the migration is done.
+
+@app.route("/hr/restore-database", methods=["POST"])
+def hr_restore_database():
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    file = request.files.get("file")
+    if file is None or file.filename == "":
+        return "No file uploaded", 400
+    if os.path.exists(DB_PATH):
+        os.replace(DB_PATH, DB_PATH + ".bak")
+    file.save(DB_PATH)
+    return f"OK - database restored to {DB_PATH} (previous copy saved as payroll.db.bak)", 200
+
+
+@app.route("/hr/restore-uploads", methods=["POST"])
+def hr_restore_uploads():
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    file = request.files.get("file")
+    if file is None or file.filename == "":
+        return "No file uploaded", 400
+    import zipfile
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    zip_path = os.path.join(DATA_DIR, "_uploads_restore.zip")
+    file.save(zip_path)
+    with zipfile.ZipFile(zip_path) as zf:
+        zf.extractall(UPLOAD_DIR)
+    os.remove(zip_path)
+    return f"OK - uploads restored to {UPLOAD_DIR}", 200
 
 
 if __name__ == "__main__":

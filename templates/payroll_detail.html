@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Calculation Detail {{ emp.emp_id }} {{ month_names[month] }} {{ year }}{% endblock %}
+{% block extra_style %}
+<style>
+  .calc-section { margin-bottom: 18px; }
+  .calc-section h3 { margin: 0 0 8px; font-size: 14px; }
+  .formula-row {
+    display: flex; justify-content: space-between; gap: 12px;
+    padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+  }
+  .formula-row:last-child { border-bottom: none; }
+  .formula-row .label { color: var(--muted); }
+  .formula-row .expr { font-family: "SFMono-Regular", Consolas, monospace; font-size: 12.5px; color: #444; }
+  .formula-row .val { font-weight: 600; white-space: nowrap; }
+  .formula-row.result { font-weight: 700; border-top: 2px solid var(--border); margin-top: 4px; padding-top: 8px; }
+  .gate-note { color: var(--danger); font-size: 12px; font-style: italic; }
+  .bracket-note { color: var(--muted); font-size: 11.5px; margin-top: -2px; }
+  @media print { .no-print { display: none; } }
+</style>
+{% endblock %}
+{% block content %}
+<div class="no-print" style="display:flex; justify-content:space-between; align-items:center;">
+  <h1 style="margin-bottom:0;">Calculation Detail &mdash; {{ emp.emp_id }} &mdash; {{ month_names[month] }} {{ year }}</h1>
+  <button class="btn" type="button" onclick="window.print()">Print / Save as PDF</button>
+</div>
+
+{% if is_finalized and not mismatch %}
+<div class="card" style="background:#dcfce7; border-color:#16a34a; color:#166534;">
+  This month is <strong>Finalized</strong>. The breakdown below matches the saved payroll history exactly
+  (Net Pay RM {{ "%.2f"|format(frozen_net_pay) }}).
+</div>
+{% elif is_finalized and mismatch %}
+<div class="card" style="background:#fee2e2; border-color:var(--danger); color:var(--danger);">
+  <strong>This month was finalized at Net Pay RM {{ "%.2f"|format(frozen_net_pay) }}</strong>, but employee/attendance
+  data has changed since then. The breakdown below reflects <strong>today's data</strong> (live Net Pay
+  RM {{ "%.2f"|format(r.net_pay) }}), not what was actually saved &mdash; re-finalize this month if the saved
+  amount should be updated to match.
+</div>
+{% else %}
+<div class="card" style="background:#fef3c7; border-color:#d97706; color:#92400e;">
+  This month is <strong>not yet finalized</strong> &mdash; this is a live preview and will change if attendance
+  or employee data changes before you finalize.
+</div>
+{% endif %}
+
+<div class="card calc-section">
+  <h3>Attendance Inputs</h3>
+  <div class="formula-row"><span class="label">Working Days in Month</span><span class="val">{{ r.working_days_in_month }}</span></div>
+  <div class="formula-row"><span class="label">Paid Leave Days (AL + MC + HL + Other)</span><span class="val">{{ r.paid_leave_days }}</span></div>
+  <div class="formula-row"><span class="label">Unpaid Days (UL + Absent)</span><span class="val">{{ r.unpaid_days }}</span></div>
+  <div class="formula-row"><span class="label">Meal Eligible Days</span><span class="val">{{ r.meal_eligible_days }}</span></div>
+  <div class="formula-row"><span class="label">OT Hours (1.5x / 2.0x / 3.0x)</span><span class="val">{{ r.ot_hours_1_5 }} / {{ r.ot_hours_2_0 }} / {{ r.ot_hours_3_0 }}</span></div>
+</div>
+
+<div class="card calc-section">
+  <h3>Basic Salary &amp; Proration</h3>
+  <div class="formula-row"><span class="label">Basic Salary (Employee Master)</span><span class="val">RM {{ "%.2f"|format(r.basic_salary_raw) }}</span></div>
+  <div class="formula-row"><span class="label">Days Employed / Prorate Factor</span><span class="expr">{{ r.days_employed }} days &rarr; factor {{ r.prorate_factor }}</span></div>
+  <div class="formula-row"><span class="expr">Prorated Basic = Basic &times; Factor = {{ "%.2f"|format(r.basic_salary_raw) }} &times; {{ r.prorate_factor }}</span><span class="val">RM {{ "%.2f"|format(r.prorated_basic) }}</span></div>
+  <div class="formula-row"><span class="expr">Unpaid Deduction = (Prorated Basic &divide; {{ r.calendar_days_in_month }} calendar days) &times; {{ r.unpaid_days }} unpaid days</span><span class="val">RM {{ "%.2f"|format(r.unpaid_deduction) }}</span></div>
+  <div class="formula-row result"><span class="expr">Basic Salary (after unpaid) = {{ "%.2f"|format(r.prorated_basic) }} &minus; {{ "%.2f"|format(r.unpaid_deduction) }}</span><span class="val">RM {{ "%.2f"|format(r.basic_salary) }}</span></div>
+</div>
+
+<div class="card calc-section">
+  <h3>Allowances</h3>
+  <div class="formula-row"><span class="label">Fixed Allowance (unprorated, used for OT rate)</span><span class="val">RM {{ "%.2f"|format(r.fixed_allowance_unprorated) }}</span></div>
+  <div class="formula-row"><span class="label">Fixed Allowance (prorated, in Gross Pay)</span><span class="val">RM {{ "%.2f"|format(r.fixed_allowance) }}</span></div>
+  <div class="formula-row"><span class="label">Variable Allowance</span><span class="val">RM {{ "%.2f"|format(r.variable_allowance) }}</span></div>
+  <div class="formula-row"><span class="expr">Transport Allowance (prorated by join/leave &amp; effective date)</span><span class="val">RM {{ "%.2f"|format(r.transport_allowance) }}</span></div>
+  <div class="formula-row"><span class="expr">Meal Allowance = {{ r.meal_eligible_days }} eligible days &times; rate</span><span class="val">RM {{ "%.2f"|format(r.meal_allowance) }}</span></div>
+  <div class="formula-row"><span class="expr">CEWI = {{ r.meal_eligible_days }} eligible days &times; rate</span><span class="val">RM {{ "%.2f"|format(r.cewi_allowance) }}</span></div>
+</div>
+
+<div class="card calc-section">
+  <h3>Overtime</h3>
+  <div class="formula-row"><span class="expr">Hourly Rate = (Basic + Fixed Allowance) &divide; 26 &divide; Working Hours/Day</span><span class="val">RM {{ "%.4f"|format(r.ot_hourly_rate) }}/hr</span></div>
+  <div class="formula-row"><span class="expr">OT 1.5x = {{ r.ot_hours_1_5 }} hrs &times; 1.5 &times; {{ "%.4f"|format(r.ot_hourly_rate) }}</span><span class="val">RM {{ "%.2f"|format(r.ot_pay_1_5) }}</span></div>
+  <div class="formula-row"><span class="expr">OT 2.0x = {{ r.ot_hours_2_0 }} hrs &times; 2.0 &times; {{ "%.4f"|format(r.ot_hourly_rate) }}</span><span class="val">RM {{ "%.2f"|format(r.ot_pay_2_0) }}</span></div>
+  <div class="formula-row"><span class="expr">OT 3.0x = {{ r.ot_hours_3_0 }} hrs &times; 3.0 &times; {{ "%.4f"|format(r.ot_hourly_rate) }}</span><span class="val">RM {{ "%.2f"|format(r.ot_pay_3_0) }}</span></div>
+  <div class="formula-row result"><span class="label">Total OT Pay</span><span class="val">RM {{ "%.2f"|format(r.ot_pay) }}</span></div>
+</div>
+
+<div class="card calc-section">
+  <h3>Gross Pay</h3>
+  <div class="formula-row"><span class="expr">Basic (after unpaid) + Fixed Allow. + Variable Allow. + OT + Transport + Meal + CEWI</span></div>
+  <div class="formula-row"><span class="expr">= {{ "%.2f"|format(r.basic_salary) }} + {{ "%.2f"|format(r.fixed_allowance) }} + {{ "%.2f"|format(r.variable_allowance) }} + {{ "%.2f"|format(r.ot_pay) }} + {{ "%.2f"|format(r.transport_allowance) }} + {{ "%.2f"|format(r.meal_allowance) }} + {{ "%.2f"|format(r.cewi_allowance) }}</span></div>
+  <div class="formula-row result"><span class="label">Gross Pay</span><span class="val">RM {{ "%.2f"|format(r.gross_pay) }}</span></div>
+</div>
+
+<div class="card calc-section">
+  <h3>EPF</h3>
+  <div class="formula-row"><span class="expr">Wage Base = Gross Pay &minus; OT Pay &minus; Transport Allowance</span><span class="val">RM {{ "%.2f"|format(r.epf_wage_base) }}</span></div>
+  <div class="formula-row"><span class="label">Age (this month)</span><span class="val">{{ r.age }}</span></div>
+  <div class="formula-row"><span class="expr">Bracket matched: {{ r.epf_bracket_label or "n/a" }}</span></div>
+  <div class="formula-row"><span class="label">Statutory EPF &mdash; Employee</span><span class="val">RM {{ "%.2f"|format(r.epf_employee - r.additional_epf_employee) }}</span></div>
+  {% if r.additional_epf_pct %}
+  <div class="formula-row"><span class="expr">+ Voluntary EPF = {{ r.additional_epf_pct }}% &times; {{ "%.2f"|format(r.epf_wage_base) }}</span><span class="val">RM {{ "%.2f"|format(r.additional_epf_employee) }}</span></div>
+  {% endif %}
+  <div class="formula-row result"><span class="label">Total EPF &mdash; Employee</span><span class="val">RM {{ "%.2f"|format(r.epf_employee) }}</span></div>
+  <div class="formula-row"><span class="label">EPF &mdash; Employer</span><span class="val">RM {{ "%.2f"|format(r.epf_employer) }}</span></div>
+</div>
+
+<div class="card calc-section">
+  <h3>SOCSO</h3>
+  {% if r.socso_gate_reason %}
+  <div class="formula-row"><span class="gate-note">{{ r.socso_gate_reason }}</span><span class="val">RM 0.00</span></div>
+  {% else %}
+  <div class="formula-row"><span class="expr">Wage Base = Gross Pay</span><span class="val">RM {{ "%.2f"|format(r.gross_pay) }}</span></div>
+  <div class="formula-row"><span class="expr">Bracket matched: {{ r.socso_bracket_label }}</span></div>
+  <div class="formula-row"><span class="label">SOCSO &mdash; Employee</span><span class="val">RM {{ "%.2f"|format(r.socso_employee) }}</span></div>
+  <div class="formula-row"><span class="label">SOCSO &mdash; Employer</span><span class="val">RM {{ "%.2f"|format(r.socso_employer) }}</span></div>
+  {% endif %}
+</div>
+
+<div class="card calc-section">
+  <h3>SKBBK</h3>
+  {% if r.skbbk_gate_reason %}
+  <div class="formula-row"><span class="gate-note">{{ r.skbbk_gate_reason }}</span><span class="val">RM 0.00</span></div>
+  {% else %}
+  <div class="formula-row"><span class="expr">Wage Base = Gross Pay</span><span class="val">RM {{ "%.2f"|format(r.gross_pay) }}</span></div>
+  <div class="formula-row"><span class="expr">Bracket matched: {{ r.skbbk_bracket_label }}</span></div>
+  <div class="formula-row result"><span class="label">SKBBK &mdash; Employee</span><span class="val">RM {{ "%.2f"|format(r.skbbk_employee) }}</span></div>
+  {% endif %}
+</div>
+
+<div class="card calc-section">
+  <h3>EIS</h3>
+  {% if r.eis_gate_reason %}
+  <div class="formula-row"><span class="gate-note">{{ r.eis_gate_reason }}</span><span class="val">RM 0.00</span></div>
+  {% else %}
+  <div class="formula-row"><span class="expr">Wage Base = Gross Pay</span><span class="val">RM {{ "%.2f"|format(r.gross_pay) }}</span></div>
+  <div class="formula-row"><span class="expr">Bracket matched: {{ r.eis_bracket_label }}</span></div>
+  <div class="formula-row"><span class="label">EIS &mdash; Employee</span><span class="val">RM {{ "%.2f"|format(r.eis_employee) }}</span></div>
+  <div class="formula-row"><span class="label">EIS &mdash; Employer</span><span class="val">RM {{ "%.2f"|format(r.eis_employer) }}</span></div>
+  {% endif %}
+</div>
+
+<div class="card calc-section">
+  <h3>HRD Corp Levy (Employer-only, not deducted)</h3>
+  {% if r.hrd_registered == "Y" %}
+  <div class="formula-row"><span class="expr">Gross Pay &times; {{ "%.1f"|format(r.hrd_rate * 100) }}% = {{ "%.2f"|format(r.gross_pay) }} &times; {{ r.hrd_rate }}</span><span class="val">RM {{ "%.2f"|format(r.hrd_levy_employer) }}</span></div>
+  {% else %}
+  <div class="formula-row"><span class="gate-note">Company not registered for HRD Corp levy</span><span class="val">RM 0.00</span></div>
+  {% endif %}
+</div>
+
+<div class="card calc-section">
+  <h3>PCB (LHDN Computerised Method)</h3>
+  <div class="formula-row"><span class="label">Months Remaining in Year (incl. this one)</span><span class="val">{{ r.pcb_breakdown.months_remaining }}</span></div>
+  <div class="formula-row"><span class="expr">Estimated Annual Remuneration = YTD Gross + (Gross Pay &times; Months Remaining)</span><span class="val">RM {{ "%.2f"|format(r.pcb_breakdown.est_annual_remun) }}</span></div>
+  <div class="formula-row"><span class="label">EPF Relief (capped)</span><span class="val">RM {{ "%.2f"|format(r.pcb_breakdown.epf_relief) }}</span></div>
+  <div class="formula-row"><span class="label">SOCSO+EIS Relief (capped)</span><span class="val">RM {{ "%.2f"|format(r.pcb_breakdown.socso_eis_relief) }}</span></div>
+  <div class="formula-row"><span class="label">Spouse/Child Relief (if TP1 submitted)</span><span class="val">RM {{ "%.2f"|format(r.pcb_breakdown.spouse_child_relief) }}</span></div>
+  <div class="formula-row"><span class="expr">Chargeable Income = Est. Annual Remun. &minus; Individual Relief &minus; EPF Relief &minus; SOCSO/EIS Relief &minus; Spouse/Child Relief</span><span class="val">RM {{ "%.2f"|format(r.pcb_breakdown.chargeable_income) }}</span></div>
+  <div class="formula-row"><span class="expr">Tax Bracket: from RM {{ "%.2f"|format(r.pcb_breakdown.bracket_income_from) }} @ {{ "%.1f"|format(r.pcb_breakdown.bracket_rate * 100) }}%, base tax RM {{ "%.2f"|format(r.pcb_breakdown.bracket_base_tax) }}</span></div>
+  <div class="formula-row"><span class="label">Tax Before Rebate</span><span class="val">RM {{ "%.2f"|format(r.pcb_breakdown.tax_before_rebate) }}</span></div>
+  <div class="formula-row"><span class="label">Rebate</span><span class="val">RM {{ "%.2f"|format(r.pcb_breakdown.rebate) }}</span></div>
+  <div class="formula-row"><span class="expr">Annual Tax = Tax Before Rebate &minus; Rebate</span><span class="val">RM {{ "%.2f"|format(r.pcb_breakdown.annual_tax) }}</span></div>
+  <div class="formula-row"><span class="expr">PCB This Month = (Annual Tax &minus; Zakat YTD &minus; PCB Already Paid YTD) &divide; Months Remaining</span><span class="val">RM {{ "%.2f"|format(r.pcb_breakdown.pcb_this_month) }}</span></div>
+</div>
+
+<div class="card calc-section">
+  <h3>Total Deductions &amp; Net Pay</h3>
+  <div class="formula-row"><span class="label">EPF (Employee)</span><span class="val">RM {{ "%.2f"|format(r.epf_employee) }}</span></div>
+  <div class="formula-row"><span class="label">SOCSO (Employee)</span><span class="val">RM {{ "%.2f"|format(r.socso_employee) }}</span></div>
+  <div class="formula-row"><span class="label">EIS (Employee)</span><span class="val">RM {{ "%.2f"|format(r.eis_employee) }}</span></div>
+  <div class="formula-row"><span class="label">PCB</span><span class="val">RM {{ "%.2f"|format(r.pcb) }}</span></div>
+  <div class="formula-row"><span class="label">SKBBK</span><span class="val">RM {{ "%.2f"|format(r.skbbk_employee) }}</span></div>
+  {% if r.other_deduction %}
+  <div class="formula-row"><span class="label">Other Deduction{% if r.other_deduction_desc %} ({{ r.other_deduction_desc }}){% endif %}</span><span class="val">RM {{ "%.2f"|format(r.other_deduction) }}</span></div>
+  {% endif %}
+  <div class="formula-row result"><span class="label">Total Deductions</span><span class="val">RM {{ "%.2f"|format(r.total_deductions) }}</span></div>
+  <div class="formula-row result"><span class="expr">Net Pay = Gross Pay &minus; Total Deductions = {{ "%.2f"|format(r.gross_pay) }} &minus; {{ "%.2f"|format(r.total_deductions) }}</span><span class="val">RM {{ "%.2f"|format(r.net_pay) }}</span></div>
+</div>
+
+<a class="btn secondary no-print" href="{{ url_for('run_payroll', year=year, month=month) }}">Back to Payroll</a>
+{% endblock %}

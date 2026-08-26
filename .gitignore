@@ -1,0 +1,21 @@
+# Real employee/payroll data - never goes to GitHub
+payroll.db
+payroll.db-journal
+uploads/
+
+# Secret session key - regenerate a new one per environment, never commit it
+.secret_key
+
+# Government reference PDFs pulled in for verification - not needed to run the app
+reference/
+
+# Python
+__pycache__/
+*.pyc
+
+# Logs
+*.log
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db

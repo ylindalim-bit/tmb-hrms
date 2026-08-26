@@ -1,0 +1,628 @@
+{% extends "base.html" %}
+{% block title %}{% if is_new %}Add Employee{% else %}Edit {{ emp.emp_id }}{% endif %} - TMB Payroll{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px;">
+  <h1>
+    {% if is_new %}Add New Employee{% else %}{{ emp.emp_id }} &mdash; {{ emp.full_name }}{% endif %}
+    {% if not is_new and emp.status %}
+    <span class="pill status-{{ emp.status|lower|replace(' ', '-') }}">{{ emp.status }}</span>
+    {% endif %}
+  </h1>
+  {% if not is_new %}
+  <div style="text-align:center; flex-shrink:0;">
+    {% if emp.photo_path %}
+    <img src="{{ url_for('employee_photo', emp_id=emp.emp_id) }}" alt="Photo"
+         style="width:96px; height:96px; object-fit:cover; border-radius:8px; border:1px solid var(--border); display:block; margin-bottom:6px;">
+    {% else %}
+    <div style="width:96px; height:96px; border-radius:8px; border:1px dashed var(--border); display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:11px; margin-bottom:6px;">No Photo</div>
+    {% endif %}
+    <form method="post" action="{{ url_for('upload_photo', emp_id=emp.emp_id) }}" enctype="multipart/form-data" style="display:flex; flex-direction:column; gap:4px; align-items:center;">
+      <input type="file" name="photo" accept=".jpg,.jpeg,.png" style="font-size:11px; width:96px;">
+      <button class="btn secondary" type="submit" style="padding:2px 8px; font-size:11px;">Upload</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% if error %}
+<div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger);">{{ error }}</div>
+{% endif %}
+<div class="card">
+<form method="post" id="employee-form">
+  <h2 style="margin-top:0;">Status</h2>
+  <div class="form-grid">
+    <div><label>Status</label>
+      <select name="status" id="status_select" onchange="updateStatusColor()" style="{% if emp.status == 'Inactive' %}color:var(--danger); font-weight:700;{% endif %}">
+        {% for s in ["Active", "Confirmation Due", "Confirmed", "Inactive"] %}
+        <option value="{{ s }}" {% if emp.status == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <h2>Personal / Identification</h2>
+  <div class="form-grid">
+    {% if is_new %}
+    <div><label>Employee ID</label><input type="text" name="emp_id" value="{{ emp.emp_id or '' }}" placeholder="e.g. E026" required></div>
+    {% endif %}
+    <div><label>Full Name</label><input type="text" name="full_name" value="{{ emp.full_name or '' }}" style="font-weight:700;"></div>
+    <div><label>IC / Passport No.</label><input type="text" id="ic_passport_no" name="ic_passport_no" value="{{ emp.ic_passport_no or '' }}" oninput="calcDobFromIc()" style="font-weight:700;"></div>
+    <div><label>Date of Birth <span id="age_display" style="font-weight:400;"></span></label><input type="date" id="date_of_birth" name="date_of_birth" value="{{ emp.date_of_birth or '' }}" onchange="calcAge()"></div>
+    <div><label>Marital Status</label>
+      <select name="marital_status">
+        {% for s in ["Single", "Married", "Divorced"] %}
+        <option value="{{ s }}" {% if emp.marital_status == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div><label>Race</label>
+      <select name="race">
+        <option value="">-- select --</option>
+        {% for opt in race_options %}
+        <option value="{{ opt }}" {% if emp.race == opt %}selected{% endif %}>{{ opt }}</option>
+        {% endfor %}
+        {% if emp.race and emp.race not in race_options %}
+        <option value="{{ emp.race }}" selected>{{ emp.race }} (existing)</option>
+        {% endif %}
+      </select>
+    </div>
+    <div><label>Religion</label>
+      <select name="religion">
+        <option value="">-- select --</option>
+        {% for opt in religion_options %}
+        <option value="{{ opt }}" {% if emp.religion == opt %}selected{% endif %}>{{ opt }}</option>
+        {% endfor %}
+        {% if emp.religion and emp.religion not in religion_options %}
+        <option value="{{ emp.religion }}" selected>{{ emp.religion }} (existing)</option>
+        {% endif %}
+      </select>
+    </div>
+    <div><label>Holiday Pattern (State)</label>
+      <select name="holiday_state">
+        <option value="">-- select --</option>
+        {% for opt in holiday_state_options %}
+        <option value="{{ opt }}" {% if emp.holiday_state == opt %}selected{% endif %}>{{ opt }}</option>
+        {% endfor %}
+        {% if emp.holiday_state and emp.holiday_state not in holiday_state_options %}
+        <option value="{{ emp.holiday_state }}" selected>{{ emp.holiday_state }} (existing)</option>
+        {% endif %}
+      </select>
+    </div>
+    <div><label>EPF No.</label><input type="text" name="epf_no" value="{{ emp.epf_no or '' }}"></div>
+    <div><label>SOCSO No. <span id="socso_category_display" style="font-weight:400;"></span></label><input type="text" name="socso_no" value="{{ emp.socso_no or '' }}"></div>
+    <div><label>Tax No.</label><input type="text" name="tax_no" value="{{ emp.tax_no or '' }}"></div>
+    <div><label>EIS</label>
+      <select name="eis_flag">
+        <option value="Y" {% if not emp.eis_flag or emp.eis_flag=="Y" %}selected{% endif %}>Yes</option>
+        <option value="N" {% if emp.eis_flag=="N" %}selected{% endif %}>No</option>
+      </select>
+      {% if not is_new %}
+      <div style="font-size:11px; color:var(--muted); margin-top:4px;">
+        {% if eis_applies is none %}Can't determine &mdash; Date of Birth is not set.
+        {% elif eis_applies %}Actually applies: <strong>Yes</strong> (age 18&ndash;59).
+        {% elif emp.eis_flag == "N" %}Actually applies: <strong>No</strong> (opted out here).
+        {% else %}Actually applies: <strong>No</strong> &mdash; age is outside 18&ndash;59, so this "Yes" has no effect.
+        {% endif %}
+        This flag can only force EIS <em>off</em>; it can't force it on outside the 18&ndash;59 age range.
+      </div>
+      {% endif %}
+    </div>
+    <div><label>Email Address</label><input type="email" name="email" value="{{ emp.email or '' }}"></div>
+  </div>
+  <p style="color:var(--muted); font-size:12px; margin-top:6px;">
+    Date of Birth fills in automatically from a Malaysian IC number (the first 6 digits are YYMMDD) &mdash;
+    you can still edit it directly, e.g. for foreign staff using a passport number instead.
+  </p>
+
+  <h2>EPF</h2>
+  <div class="form-grid">
+    <div><label>Additional Voluntary EPF &mdash; Employee (%)</label>
+      <input type="number" step="0.1" name="additional_epf_employee" value="{{ "%.2f"|format(emp.additional_epf_employee or 0) }}">
+    </div>
+  </div>
+  <p style="color:var(--muted); font-size:12px; margin-top:6px;">
+    A percentage of the same EPF wage base as the statutory contribution (e.g. 2 = an extra 2%), on top of the statutory EPF rate. Deducted from the employee's net pay each month; the employer's statutory contribution is unaffected.
+  </p>
+
+  <h2>Employment</h2>
+  <div class="form-grid">
+    <div><label>Department</label><input type="text" name="department" value="{{ emp.department or '' }}"></div>
+    <div><label>Position</label><input type="text" name="position" value="{{ emp.position or '' }}"></div>
+    <div><label>Basic Salary (RM)</label><input type="number" step="0.01" name="basic_salary" value="{{ "%.2f"|format(emp.basic_salary or 0) }}"></div>
+    <div><label>Working Days/Week</label><input type="number" step="0.5" name="working_days_week" value="{{ emp.working_days_week or 6 }}"></div>
+    <div><label>Working Hours/Day</label><input type="number" step="0.5" name="working_hours_day" value="{{ emp.working_hours_day or 8 }}"></div>
+    <div><label>Work Pattern</label>
+      <select name="work_pattern">
+        <option value="Manual" {% if not emp.work_pattern or emp.work_pattern=="Manual" %}selected{% endif %}>Manual (set Working Days in Month yourself each time)</option>
+        <option value="5-day (Mon-Fri)" {% if emp.work_pattern=="5-day (Mon-Fri)" %}selected{% endif %}>5-day (Mon-Fri)</option>
+        <option value="5.5-day (Mon-Fri + half-day Sat)" {% if emp.work_pattern=="5.5-day (Mon-Fri + half-day Sat)" %}selected{% endif %}>5.5-day (Mon-Fri + half-day every Saturday)</option>
+        <option value="6-day (Mon-Sat)" {% if emp.work_pattern=="6-day (Mon-Sat)" %}selected{% endif %}>6-day (Mon-Sat, every Saturday)</option>
+      </select>
+    </div>
+    <div><label style="color:#db2777;">Bank Name</label><input type="text" name="bank_name" value="{{ emp.bank_name or '' }}"></div>
+    <div><label style="color:#db2777;">Bank Account No.</label><input type="text" name="bank_account_no" value="{{ emp.bank_account_no or '' }}"></div>
+    <div><label>Phone Number</label><input type="text" name="phone_number" value="{{ emp.phone_number or '' }}"></div>
+    <div><label>HP No.</label><input type="text" name="hp_no" value="{{ emp.hp_no or '' }}"></div>
+    <div><label>Address</label><input type="text" name="address" value="{{ emp.address or '' }}"></div>
+    <div><label>SKBBK</label>
+      <select name="skbbk_flag">
+        <option value="Y" {% if not emp.skbbk_flag or emp.skbbk_flag=="Y" %}selected{% endif %}>Yes</option>
+        <option value="N" {% if emp.skbbk_flag=="N" %}selected{% endif %}>No</option>
+      </select>
+    </div>
+    <div><label>Date Joined</label><input type="date" id="date_joined" name="date_joined" value="{{ emp.date_joined or '' }}" onchange="calcProbationEnd()"></div>
+    <div><label>Last Working Day (if Resigned)</label><input type="date" name="last_working_day" value="{{ emp.last_working_day or '' }}"></div>
+    <div><label>Probation Period</label>
+      <select id="probation_period_select" onchange="onProbationPeriodChange()">
+        <option value="">-- set Probation End Date manually --</option>
+        <option value="3">3 months</option>
+        <option value="6">6 months</option>
+        <option value="custom">Custom (key in months)</option>
+      </select>
+      <input type="number" id="probation_custom_months" min="0" step="1" placeholder="e.g. 2 months"
+             oninput="calcProbationEnd()" style="display:none; margin-top:6px;">
+    </div>
+    <div><label>Probation End Date</label><input type="date" id="probation_end_date" name="probation_end_date" value="{{ emp.probation_end_date or '' }}"></div>
+    <div><label>Passport Expiry</label><input type="date" name="passport_expiry" value="{{ emp.passport_expiry or '' }}"></div>
+    <div><label>Work Permit Expiry</label><input type="date" name="work_permit_expiry" value="{{ emp.work_permit_expiry or '' }}"></div>
+    <div><label>Termination Notice</label>
+      <select name="termination_notice_period">
+        <option value="">-- select --</option>
+        {% for opt in ["1 Month", "2 Months"] %}
+        <option value="{{ opt }}" {% if emp.termination_notice_period == opt %}selected{% endif %}>{{ opt }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <p style="color:var(--muted); font-size:12px; margin-top:6px;">
+    Date Joined and Last Working Day drive the mid-month proration for Basic Salary and Fixed Allowance (a new joiner or leaver only gets paid for the calendar days actually employed that month).
+    Probation Period is just a shortcut &mdash; picking 3 or 6 months (or "Custom" to key in any number, e.g. 0, 1, 2) fills in Probation End Date from Date Joined; you can still edit it directly any time. Need to push it out with a tracked reason instead? Use <strong>Probation Extension</strong> right below.
+    <strong>Work Pattern</strong>: set once here and every month's "Working Days in Month" on the Attendance page
+    auto-fills for you (Mon-Fri or Mon-Sat count for that calendar month, public holidays already subtracted) &mdash;
+    still editable per month if something's different. Leave as "Manual" for anyone with an irregular/alternating
+    Saturday schedule, since that can't be predicted from a calendar alone.
+  </p>
+</form>
+</div>
+
+{% if not is_new %}
+<div class="card">
+  <h2 style="margin-top:0;">Probation Extension</h2>
+  <p style="color:var(--muted); font-size:12px; margin-top:-4px;">
+    A dedicated action for pushing Probation End Date out &mdash; unlike editing the field above, this keeps a
+    record of the previous date, the new date, and why, so there's a history if it happens more than once.
+    Current Probation End Date: <strong>{{ emp.probation_end_date or "not set" }}</strong>.
+  </p>
+  <form method="post" action="{{ url_for('extend_probation', emp_id=emp.emp_id) }}">
+    <div class="form-grid">
+      <div><label>New Probation End Date</label><input type="date" name="new_end_date" required></div>
+      <div><label>Reason (optional)</label><input type="text" name="reason" placeholder="e.g. needs more time to meet KPIs"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn" type="submit">Extend Probation</button>
+    </div>
+  </form>
+
+  {% if extensions %}
+  <details style="margin-top:16px;">
+  <summary style="cursor:pointer; font-size:13px; font-weight:600; color:var(--muted);">Extension History ({{ extensions|length }})</summary>
+  <div class="table-wrap" style="margin-top:10px;">
+  {% for ext in extensions %}
+  <form id="ext-delete-{{ ext.id }}" method="post" action="{{ url_for('delete_probation_extension', emp_id=emp.emp_id, ext_id=ext.id) }}" onsubmit="return confirm('Delete this probation extension record?');"></form>
+  {% endfor %}
+  <table>
+    <thead><tr><th class="text">Previous End Date</th><th class="text">New End Date</th><th class="text">Reason</th><th class="text">Extended On</th><th></th></tr></thead>
+    <tbody>
+      {% for ext in extensions %}
+      <tr>
+        <td class="text">{{ ext.previous_end_date }}</td>
+        <td class="text">{{ ext.new_end_date }}</td>
+        <td class="text">{{ ext.reason or "" }}</td>
+        <td class="text">{{ ext.extended_at }}</td>
+        <td class="text"><button form="ext-delete-{{ ext.id }}" type="submit" class="btn secondary" style="padding:3px 8px; font-size:11px; color:var(--danger);">Delete</button></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0;">Confirmation</h2>
+  <div class="form-grid">
+    <div><label>Confirmation Date</label><input type="date" id="confirmation_date" form="employee-form" name="confirmation_date" value="{{ emp.confirmation_date or '' }}"></div>
+  </div>
+  <p style="color:var(--muted); font-size:12px; margin-top:6px;">
+    Set this once the employee is actually confirmed, then Save &mdash; this also removes them from the Alerts
+    "due for confirmation" list. Confirming with a pay rise? Use <strong>Confirmation &amp; Salary Update</strong>
+    below instead of Save here &mdash; it sets this same date for you, updates Basic Salary, and keeps a record,
+    all in one step.
+  </p>
+
+  <h2>Resignation</h2>
+  <div class="form-grid">
+    <div><label>Resignation Date (date notice was given)</label><input type="date" form="employee-form" name="resignation_date" value="{{ emp.resignation_date or '' }}"></div>
+  </div>
+  <p style="color:var(--muted); font-size:12px; margin-top:6px;">
+    Fill this in along with Last Working Day above once the employee has given notice, then use
+    {% if not is_new %}<a href="{{ url_for('resignation_letter', emp_id=emp.emp_id) }}">Print Resignation Letter</a>{% else %}"Print Resignation Letter" (available after saving){% endif %}
+    &mdash; it reads Resignation Date and Last Working Day from here automatically.
+    {% if not is_new %}Also need to notify LHDN? Use <a href="{{ url_for('cp22a_form', emp_id=emp.emp_id) }}">CP22A Reference Sheet</a>
+    to gather everything needed for the MyTax e-SPC filing.{% endif %}
+  </p>
+
+  <h2>Allowances</h2>
+  <p style="color:var(--muted); font-size:12px; margin:-4px 0 10px;">
+    Effective Date: leave blank to always apply (as long as the flag is Y). Set a date to start the
+    allowance from that day &mdash; a mid-month date is prorated for that first month automatically.
+  </p>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th class="text">Allowance</th><th>Amount (RM)</th><th>Flag</th><th>Effective Date</th></tr>
+    </thead>
+    <tbody>
+      {% for label, amount_field, flag_field, date_field in [
+        ("Transport Allowance", "transport_allowance", "transport_allowance_flag", "transport_allowance_effective_date"),
+        ("Meal Allowance Rate (RM/day)", "meal_allowance_rate", "meal_allowance_flag", "meal_allowance_effective_date"),
+        ("Position Allowance", "position_allowance", "position_allowance_flag", "position_allowance_effective_date"),
+        ("CEWI Rate (RM/day)", "cewi_rate", "cewi_flag", "cewi_effective_date"),
+        ("Training Incentive", "training_incentive", "training_incentive_flag", "training_incentive_effective_date"),
+        ("Oversea Incentive", "oversea_incentive", "oversea_incentive_flag", "oversea_incentive_effective_date"),
+      ] %}
+      <tr>
+        <td class="text allowance-label" style="{% if emp[flag_field]=='Y' %}color:var(--accent); font-weight:600;{% endif %}">{{ label }}</td>
+        <td><input type="number" step="0.01" form="employee-form" name="{{ amount_field }}" value="{{ "%.2f"|format(emp[amount_field] or 0) }}"></td>
+        <td>
+          <select name="{{ flag_field }}" form="employee-form" onchange="toggleAllowanceLabel(this)">
+            <option value="Y" {% if emp[flag_field]=="Y" %}selected{% endif %}>Y</option>
+            <option value="N" {% if not emp[flag_field] or emp[flag_field]=="N" %}selected{% endif %}>N</option>
+          </select>
+        </td>
+        <td><input type="date" form="employee-form" name="{{ date_field }}" value="{{ emp[date_field] or '' }}"></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <h2 style="color:var(--accent);">Leave Entitlements</h2>
+  <div class="form-grid">
+    <div><label>Annual Leave (days/year)</label>
+      <input type="number" step="1" form="employee-form" name="annual_leave_entitlement" value="{{ emp.annual_leave_entitlement or 0 }}" style="color:var(--accent); border-color:var(--accent); font-weight:600;">
+    </div>
+    <div><label>Medical Leave (days/year)</label>
+      <input type="number" step="1" form="employee-form" name="mc_entitlement" value="{{ emp.mc_entitlement or 0 }}" style="color:var(--accent); border-color:var(--accent); font-weight:600;">
+    </div>
+    <div><label>Hospitalisation Leave (days/year)</label>
+      <input type="number" step="1" form="employee-form" name="hospitalisation_leave_entitlement" value="{{ emp.hospitalisation_leave_entitlement or 0 }}" style="color:var(--accent); border-color:var(--accent); font-weight:600;">
+    </div>
+  </div>
+  <p style="color:var(--muted); font-size:12px; margin-top:6px;">
+    Sets each employee's yearly leave entitlement, used to calculate their Leave Balance on the Staff Portal (Entitlement minus days already taken this year).
+  </p>
+  {% if al_note %}
+  <div class="card" style="background:#fef3c7; border-color:#fcd34d; padding:10px 14px; margin-top:10px;">
+    <strong>Prorated AL ({{ al_year }}):</strong> {{ al_note }}<br>
+    {% if al_entitlement_effective is not none %}
+    Prorated Entitlement: <strong>{{ al_entitlement_effective }} days</strong> &mdash;
+    Used: {{ al_used }} days &mdash;
+    Balance: <strong{% if al_balance < 0 %} style="color:var(--danger);"{% endif %}>{{ al_balance }} days</strong>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="form-actions">
+    <button class="btn" type="submit" form="employee-form">Save</button>
+    <a class="btn secondary" href="{{ url_for('employees') }}">Cancel</a>
+  </div>
+</div>
+
+{% if not is_new %}
+<div class="card">
+  <h2 style="margin-top:0;">Confirmation &amp; Salary Update</h2>
+  <p style="color:var(--muted); font-size:12px; margin-top:-4px;">
+    The one place for any salary change &mdash; confirmation increment, ad-hoc adjustment, or yearly review.
+    Fill in the 3 fields below and click Update: it changes Basic Salary, keeps a permanent record (old salary,
+    new salary, reason, date), and &mdash; if the reason is Confirmation &mdash; also sets the Confirmation Date
+    used by the printed letter. Current Basic Salary: <strong>RM {{ "%.2f"|format(emp.basic_salary) }}</strong>.
+  </p>
+  <form method="post" action="{{ url_for('update_salary', emp_id=emp.emp_id) }}">
+    <div class="form-grid">
+      <div><label>1. Effective Date</label><input type="date" name="effective_date" required></div>
+      <div><label>2. Reason</label>
+        <select name="reason" required>
+          <option value="Confirmation">Confirmation</option>
+          <option value="Adjustment">Adjustment</option>
+          <option value="Yearly Increment">Yearly Increment</option>
+        </select>
+      </div>
+      <div><label>3. Increment (RM)</label><input type="number" step="0.01" id="salary-history-increment-input" placeholder="e.g. 100"></div>
+      <div><label>&hellip;or New Salary (RM)</label><input type="number" step="0.01" id="salary-history-new" name="new_salary" required></div>
+    </div>
+    <div class="card" id="salary-history-preview" style="background:#fef3c7; border-color:#fcd34d; padding:10px 14px; margin-top:10px; display:none; font-size:13px;">
+      Current Basic: <strong>RM {{ "%.2f"|format(emp.basic_salary) }}</strong>
+      &nbsp;&rarr;&nbsp; Increment: <strong id="salary-history-increment"></strong>
+      &nbsp;&rarr;&nbsp; New Salary: <strong>RM <span id="salary-history-new-preview"></span></strong>
+    </div>
+    <div class="form-actions">
+      <button class="btn" type="submit">Update Salary</button>
+    </div>
+  </form>
+  <script>
+  (function() {
+    var oldSalary = {{ emp.basic_salary or 0 }};
+    var newInput = document.getElementById('salary-history-new');
+    var incInput = document.getElementById('salary-history-increment-input');
+    var box = document.getElementById('salary-history-preview');
+    var incEl = document.getElementById('salary-history-increment');
+    var newEl = document.getElementById('salary-history-new-preview');
+
+    function refreshPreview(val) {
+      if (isNaN(val) || val <= 0) { box.style.display = 'none'; return; }
+      var increment = val - oldSalary;
+      incEl.textContent = (increment >= 0 ? '+RM ' : '-RM ') + Math.abs(increment).toFixed(2);
+      newEl.textContent = val.toFixed(2);
+      box.style.display = 'block';
+    }
+    function fromNewSalary() {
+      var val = parseFloat(newInput.value);
+      if (!isNaN(val)) incInput.value = (val - oldSalary).toFixed(2);
+      refreshPreview(val);
+    }
+    function fromIncrement() {
+      var inc = parseFloat(incInput.value);
+      if (!isNaN(inc)) {
+        var val = oldSalary + inc;
+        newInput.value = val.toFixed(2);
+        refreshPreview(val);
+      }
+    }
+    newInput.addEventListener('input', fromNewSalary);
+    incInput.addEventListener('input', fromIncrement);
+  })();
+  </script>
+
+  {% if salary_history %}
+  <details style="margin-top:16px;">
+  <summary style="cursor:pointer; font-size:13px; font-weight:600; color:var(--muted);">Salary History ({{ salary_history|length }})</summary>
+  <div class="table-wrap" style="margin-top:10px;">
+  {% for h in salary_history %}
+  <form id="hist-save-{{ h.id }}" method="post" action="{{ url_for('update_salary_history', emp_id=emp.emp_id, hist_id=h.id) }}"></form>
+  <form id="hist-delete-{{ h.id }}" method="post" action="{{ url_for('delete_salary_history', emp_id=emp.emp_id, hist_id=h.id) }}" onsubmit="return confirm('Delete this salary history record?');"></form>
+  {% endfor %}
+  <table>
+    <thead><tr><th class="text">Effective Date</th><th>Old Salary (RM)</th><th>New Salary (RM)</th><th>Increment (RM)</th><th class="text">Reason</th><th class="text">Recorded On</th><th></th></tr></thead>
+    <tbody>
+      {% for h in salary_history %}
+      <tr>
+        <td class="text"><input form="hist-save-{{ h.id }}" type="date" name="effective_date" value="{{ h.effective_date }}" style="width:130px;"></td>
+        <td>{{ "%.2f"|format(h.old_salary) }}</td>
+        <td><input form="hist-save-{{ h.id }}" type="number" step="0.01" name="new_salary" value="{{ "%.2f"|format(h.new_salary) }}" style="width:90px; text-align:right;"></td>
+        <td{% if h.increment < 0 %} style="color:var(--danger);"{% endif %}>{{ "+" if h.increment >= 0 else "" }}{{ "%.2f"|format(h.increment) }}</td>
+        <td class="text">
+          <select form="hist-save-{{ h.id }}" name="reason">
+            <option value="Initial" {% if h.reason == "Initial" %}selected{% endif %}>Initial</option>
+            <option value="Confirmation" {% if h.reason == "Confirmation" %}selected{% endif %}>Confirmation</option>
+            <option value="Adjustment" {% if h.reason == "Adjustment" %}selected{% endif %}>Adjustment</option>
+            <option value="Yearly Increment" {% if h.reason == "Yearly Increment" %}selected{% endif %}>Yearly Increment</option>
+          </select>
+        </td>
+        <td class="text">{{ h.recorded_at }}</td>
+        <td class="text" style="white-space:nowrap;">
+          <button form="hist-save-{{ h.id }}" type="submit" class="btn" style="padding:3px 8px; font-size:11px;">Save</button>
+          <button form="hist-delete-{{ h.id }}" type="submit" class="btn secondary" style="padding:3px 8px; font-size:11px; color:var(--danger);">Delete</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  </details>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">Documents</h2>
+  <p style="color:var(--muted); font-size:12px; margin-top:-4px;">
+    Keep Letter of Employment, Confirmation Letter, Resignation Letter, e-Stamping Certificate, and any other
+    signed documents here (PDF, Word, or image). These are stored locally alongside the rest of this employee's data.
+  </p>
+  <form method="post" action="{{ url_for('upload_document', emp_id=emp.emp_id) }}" enctype="multipart/form-data">
+    <div class="form-grid">
+      <div>
+        <label>Document Type</label>
+        <select name="doc_type">
+          {% for t in document_types %}
+          <option value="{{ t }}">{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div><label>File</label><input type="file" name="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" required></div>
+      <div><label>Notes (optional)</label><input type="text" name="notes" placeholder="e.g. signed 2026-08-14"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn" type="submit">Upload</button>
+    </div>
+  </form>
+
+  {% if documents %}
+  <div class="table-wrap" style="margin-top:16px;">
+  <table>
+    <thead><tr><th class="text">Type</th><th class="text">File</th><th class="text">Notes</th><th class="text">Uploaded</th><th></th></tr></thead>
+    <tbody>
+      {% for doc in documents %}
+      <tr>
+        <td class="text">{{ doc.doc_type }}</td>
+        <td class="text">{{ doc.original_name }}</td>
+        <td class="text">{{ doc.notes or "" }}</td>
+        <td class="text">{{ doc.uploaded_at }}</td>
+        <td class="text">
+          <a class="btn secondary" style="padding:4px 10px;" href="{{ url_for('view_document', emp_id=emp.emp_id, doc_id=doc.id) }}" target="_blank" rel="noopener">View</a>
+          <a class="btn secondary" style="padding:4px 10px;" href="{{ url_for('download_document', emp_id=emp.emp_id, doc_id=doc.id) }}">Download</a>
+          <form method="post" action="{{ url_for('delete_document', emp_id=emp.emp_id, doc_id=doc.id) }}" style="display:inline;" onsubmit="return confirm('Delete this document?');">
+            <button class="btn secondary" style="padding:4px 10px;" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p style="color:var(--muted); font-size:13px; margin-top:16px;">No documents uploaded yet.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0;">Staff Portal Access</h2>
+  <div class="form-grid">
+    <div>
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <label style="margin-bottom:0;">Portal Password {% if not is_new %}({{ "Active - login with Employee ID + password" if emp.portal_password_hash else "Not set" }}){% endif %}</label>
+        <span onclick="togglePortalPw()" id="portal-pw-toggle" style="font-size:12px; font-weight:600; color:var(--accent); cursor:pointer; user-select:none;">Show PW</span>
+      </div>
+      <input type="password" id="portal-pw-field" form="employee-form" name="portal_password" placeholder="{% if not is_new and emp.portal_password_hash %}leave blank to keep current{% else %}set a password to activate{% endif %}" autocomplete="new-password">
+    </div>
+  </div>
+  <p style="color:var(--muted); font-size:12px; margin-top:6px;">
+    Sets/resets this employee's login for the Staff Portal ({{ url_for('portal_login') }}) &mdash; they sign in
+    with their Employee ID ({{ emp.emp_id or "e.g. A001" }}) and this password. Leave blank to make no change.
+    {% if not is_new and emp.portal_password_hash %}
+    <br><a href="{{ url_for('portal_preview', emp_id=emp.emp_id) }}">View as this employee &rarr;</a>
+    &mdash; see exactly what they see on the Staff Portal, without needing their password.
+    {% endif %}
+  </p>
+  <div class="form-actions">
+    <button class="btn" type="submit" form="employee-form">{% if is_new %}Save (Create Employee){% else %}Save{% endif %}</button>
+  </div>
+</div>
+<script>
+function updateStatusColor() {
+  var sel = document.getElementById('status_select');
+  if (sel.value === 'Inactive') {
+    sel.style.color = 'var(--danger)';
+    sel.style.fontWeight = '700';
+  } else {
+    sel.style.color = '';
+    sel.style.fontWeight = '';
+  }
+}
+
+function calcDobFromIc() {
+  var raw = document.getElementById('ic_passport_no').value;
+  var digits = raw.replace(/\D/g, '');
+  if (digits.length < 6) return;   // not a Malaysian IC (e.g. a foreign passport number) - leave DOB alone
+  var yy = parseInt(digits.slice(0, 2), 10);
+  var mm = parseInt(digits.slice(2, 4), 10);
+  var dd = parseInt(digits.slice(4, 6), 10);
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return;
+  var currentYY = new Date().getFullYear() % 100;
+  var century = (yy <= currentYY) ? 2000 : 1900;
+  var year = century + yy;
+  var d = new Date(year, mm - 1, dd);
+  if (d.getMonth() !== mm - 1 || d.getDate() !== dd) return;   // e.g. 31 Feb - not a real date, not an IC
+  var iso = year + '-' + String(mm).padStart(2, '0') + '-' + String(dd).padStart(2, '0');
+  document.getElementById('date_of_birth').value = iso;
+  calcAge();
+}
+
+function toggleAllowanceLabel(select) {
+  var label = select.closest('tr').querySelector('.allowance-label');
+  if (select.value === 'Y') {
+    label.style.color = 'var(--accent)';
+    label.style.fontWeight = '600';
+  } else {
+    label.style.color = '';
+    label.style.fontWeight = '';
+  }
+}
+
+function calcAge() {
+  var dobStr = document.getElementById('date_of_birth').value;
+  var display = document.getElementById('age_display');
+  var socsoDisplay = document.getElementById('socso_category_display');
+  if (!dobStr) { display.textContent = ''; socsoDisplay.textContent = ''; return; }
+  var parts = dobStr.split('-').map(Number);
+  var dob = new Date(parts[0], parts[1] - 1, parts[2]);
+  var today = new Date();
+  var age = today.getFullYear() - dob.getFullYear();
+  var hadBirthdayThisYear = (today.getMonth() > dob.getMonth()) ||
+    (today.getMonth() === dob.getMonth() && today.getDate() >= dob.getDate());
+  if (!hadBirthdayThisYear) age--;
+  display.textContent = '(Age: ' + age + ')';
+  // Matches lookup_socso() in payroll_calc.py: under 60 contributes to
+  // Category 1 (Employment Injury + Invalidity Pension); 60+ moves to
+  // Category 2 (Employment Injury only, employer-paid).
+  socsoDisplay.textContent = age < 60 ? '(Category 1)' : '(Category 2)';
+}
+// Backfill DOB from an already-saved IC on page load (e.g. an existing
+// employee record saved before this feature existed) - only if DOB is
+// still blank, so it never overwrites a DOB that was deliberately set
+// differently (e.g. a foreign passport number that isn't a Malaysian IC).
+if (!document.getElementById('date_of_birth').value) {
+  calcDobFromIc();
+}
+calcAge();
+
+// The Probation Period dropdown itself is never saved - only the resulting
+// Probation End Date is. So on page load, re-derive which option it should
+// show by comparing Date Joined and Probation End Date: if they're exactly
+// N months apart, select N (or "Custom" and fill in N if it's not 3 or 6).
+(function inferProbationPeriod() {
+  var joinedStr = document.getElementById('date_joined').value;
+  var endStr = document.getElementById('probation_end_date').value;
+  if (!joinedStr || !endStr) return;
+  var jp = joinedStr.split('-').map(Number);
+  var ep = endStr.split('-').map(Number);
+  var joined = new Date(jp[0], jp[1] - 1, jp[2]);
+  var months = (ep[0] - jp[0]) * 12 + (ep[1] - jp[1]);
+  var check = new Date(jp[0], jp[1] - 1 + months, jp[2]);
+  if (check.getFullYear() !== ep[0] || check.getMonth() !== ep[1] - 1 || check.getDate() !== ep[2]) {
+    return;   // End Date isn't a clean N-month offset from Date Joined - leave dropdown on manual
+  }
+  var select = document.getElementById('probation_period_select');
+  if (months === 3 || months === 6) {
+    select.value = String(months);
+  } else if (months > 0) {
+    select.value = 'custom';
+    document.getElementById('probation_custom_months').value = months;
+    document.getElementById('probation_custom_months').style.display = 'block';
+  }
+})();
+
+function onProbationPeriodChange() {
+  var select = document.getElementById('probation_period_select');
+  var customInput = document.getElementById('probation_custom_months');
+  customInput.style.display = (select.value === 'custom') ? 'block' : 'none';
+  calcProbationEnd();
+}
+
+function calcProbationEnd() {
+  var select = document.getElementById('probation_period_select');
+  var months = select.value === 'custom' ? document.getElementById('probation_custom_months').value : select.value;
+  var joined = document.getElementById('date_joined').value;
+  if (!months || !joined) return;
+  var parts = joined.split('-').map(Number);
+  var d = new Date(parts[0], parts[1] - 1, parts[2]);
+  d.setMonth(d.getMonth() + parseInt(months, 10));
+  var iso = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  document.getElementById('probation_end_date').value = iso;
+}
+
+function togglePortalPw() {
+  var field = document.getElementById('portal-pw-field');
+  var toggle = document.getElementById('portal-pw-toggle');
+  if (field.type === 'password') {
+    field.type = 'text';
+    toggle.textContent = 'Hide PW';
+  } else {
+    field.type = 'password';
+    toggle.textContent = 'Show PW';
+  }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Performance Appraisal Form - {{ emp.emp_id }}</title>
+<style>
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    max-width: 860px;
+    margin: 30px auto;
+    padding: 0 20px;
+    color: #111;
+    line-height: 1.4;
+    font-size: 12px;
+  }
+  .letterhead { text-align: center; margin-bottom: 18px; }
+  .letterhead-row { display: grid; grid-template-columns: 90px 1fr 90px; align-items: center; }
+  .letterhead .tmb-logo { grid-column: 1; justify-self: start; height: 30px; width: auto; display: block; }
+  .letterhead h1 { grid-column: 2; font-size: 16px; margin: 0; letter-spacing: 0.5px; }
+  .letterhead .sub { color: #444; font-size: 10px; margin-top: 2px; }
+  .letterhead hr { border: none; border-top: 2px solid #111; margin-top: 10px; }
+  .confidential { text-align: center; font-weight: 700; margin: 10px 0; }
+  h2.form-title { text-align: center; text-decoration: underline; font-size: 15px; margin: 6px 0 14px; }
+  .purpose-row { display: flex; justify-content: center; gap: 22px; margin: 0 0 18px; font-weight: 600; }
+  .purpose-row .box { display: inline-flex; align-items: center; justify-content: center; width: 11px; height: 11px; border: 1px solid #333; margin-right: 5px; vertical-align: -1px; font-size: 10px; line-height: 1; }
+  h3.section {
+    background: #e5e7eb; font-size: 12px; font-weight: 700; text-transform: uppercase;
+    padding: 5px 8px; margin: 20px 0 8px;
+  }
+  table.grid { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+  table.grid td, table.grid th { border: 1px solid #999; padding: 4px 7px; font-size: 11.5px; vertical-align: top; }
+  table.grid td.label { color: #333; font-weight: 600; width: 15%; background: #f8f8f8; }
+  table.grid td.label + td { width: 20%; }
+  table.grid th { background: #f1f1f1; text-align: center; }
+  table.rating th { text-align: center; width: 8%; }
+  table.rating td.factor { text-align: left; width: 28%; }
+  table.rating td.cat-header { background: #f8f8f8; font-weight: 700; text-align: left; }
+  table.rating .box { display: inline-block; width: 11px; height: 11px; border: 1px solid #333; }
+  table.rating td.score-cell { width: 8%; text-align: center; }
+  .band-table { width: 100%; margin: 8px auto 0; }
+  .keep-together { page-break-inside: avoid; }
+  .salary-input {
+    border: none; border-bottom: 1px dashed #999; background: transparent;
+    font-family: inherit; font-size: inherit; color: inherit; width: 85px; padding: 0;
+  }
+  .salary-input:focus { outline: none; border-bottom: 1px solid #333; }
+  .salary-input[readonly] { border-bottom-style: solid; font-weight: 700; }
+  .band-table td { border: 1px solid #999; padding: 4px 8px; font-size: 11.5px; }
+  .tick-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  .tick-row .box { display: inline-block; width: 11px; height: 11px; border: 1px solid #333; flex-shrink: 0; }
+  .comment-lines .line { border-bottom: 1px dashed #999; height: 20px; }
+  .comment-lines.big .line { height: 30px; }
+  .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 40px; margin: 14px 0 8px; page-break-inside: avoid; }
+  .sig-block .line { border-top: 1px solid #111; margin-top: 34px; padding-top: 3px; font-size: 11px; }
+  .sig-block .role { font-weight: 700; margin-bottom: 2px; }
+  .toolbar {
+    max-width: 860px; margin: 0 auto 16px; padding: 12px 20px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    background: #f1f5f9; border-radius: 8px;
+  }
+  .toolbar button { background: #1d4ed8; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+  .toolbar label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: #444; font-weight: 600; }
+  .toolbar input { font-size: 13px; padding: 5px 6px; border: 1px solid #ccc; border-radius: 4px; }
+  .page-break { page-break-before: always; }
+  @media print {
+    .toolbar { display: none; }
+    body { margin: 0 auto; font-size: 9.5px; }
+    table.grid td, table.grid th { padding: 2px 4px; font-size: 9px; }
+    h3.section { margin: 8px 0 4px; padding: 3px 6px; }
+    .letterhead { margin-bottom: 8px; }
+    .confidential { margin: 4px 0; }
+    h2.form-title { margin: 4px 0 8px; }
+    .purpose-row { margin: 0 0 8px; }
+    .sig-grid { margin: 4px 0 2px; gap: 2px 40px; }
+    .sig-block { font-size: 8.5px; }
+    .sig-block .line { margin-top: 10px; padding-top: 1px; font-size: 8.5px; }
+    .sig-block .role { margin-bottom: 0; }
+    .comment-lines .line { height: 14px; }
+    .comment-lines.big .line { height: 22px; }
+    p { margin: 4px 0; }
+    @page { size: A4; margin: 8mm; }
+  }
+</style>
+</head>
+<body>
+
+<form class="toolbar" method="get">
+  <button type="button" onclick="window.print()">Print / Save as PDF</button>
+  <label>Appraisal Date <input type="date" name="appraisal_date" value="{{ appraisal_date.isoformat() }}"></label>
+  <button type="submit">Update</button>
+</form>
+
+<div class="letterhead">
+  <div class="letterhead-row">
+    <img src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="TMB" class="tmb-logo">
+    <h1>TIANMA PRECISION SDN. BHD.</h1>
+  </div>
+  <div class="sub">Plo 192, Jalan Bakau 5, Kawasan Perindustrian Tanjung Langsat, 81700 Pasir Gudang, Johor, Malaysia.</div>
+  <hr>
+</div>
+
+<div class="confidential">PRIVATE &amp; CONFIDENTIAL</div>
+<h2 class="form-title">PERFORMANCE APPRAISAL FORM</h2>
+
+<div class="purpose-row">
+  <span><span class="box">&#10003;</span>Confirmation</span>
+  <span><span class="box"></span>Promotion</span>
+  <span><span class="box"></span>Increment</span>
+  <span><span class="box"></span>Bonus</span>
+  <span><span class="box"></span>Assessment</span>
+</div>
+
+<h3 class="section">Employment Information (Filled by HR &amp; Administration Department)</h3>
+<table class="grid">
+  <tr><td class="label">Name</td><td>{{ emp.full_name }}</td>
+      <td class="label">Date Of Confirmation</td><td>{{ emp.confirmation_date or emp.probation_end_date or "-" }}{% if not emp.confirmation_date and emp.probation_end_date %} (due){% endif %}</td></tr>
+  <tr><td class="label">Emp. No.</td><td>{{ emp.emp_id }}</td>
+      <td class="label">Date Of Last Increment</td><td>&nbsp;</td></tr>
+  <tr><td class="label">Position</td><td>{{ emp.position or "-" }}</td>
+      <td class="label">Date Of Last Promotion</td><td>&nbsp;</td></tr>
+  <tr><td class="label">Department</td><td>{{ emp.department or "-" }}</td>
+      <td class="label">Date Of Last Adjustment / Bonus</td><td>&nbsp;</td></tr>
+  <tr><td class="label">Date Joined</td><td>{{ emp.date_joined or "-" }}</td>
+      <td class="label">Date Of Transferred/Redesigned</td><td>&nbsp;</td></tr>
+</table>
+
+<h3 class="section">Leave &amp; Discipline Records (Filled by HR &amp; Administration Department)</h3>
+<table class="grid">
+  <tr><td class="label">Record From</td><td>{{ record_from or "-" }}</td>
+      <td class="label">To</td><td>{{ appraisal_date.isoformat() }}</td></tr>
+</table>
+<table class="grid">
+  <tr><th>Factors</th><th>Days Taken</th><th>Disciplinary Action</th><th>Records</th></tr>
+  <tr><td class="factor">Medical Leave</td><td style="text-align:center;">{{ leave_totals.mc_days }}</td><td>Warning Letter</td><td>&nbsp;</td></tr>
+  <tr><td class="factor">Unpaid Leave</td><td style="text-align:center;">{{ leave_totals.ul_days }}</td><td>Domestic Inquiry</td><td>&nbsp;</td></tr>
+  <tr><td class="factor">Absent</td><td style="text-align:center;">{{ leave_totals.absent_days }}</td><td>Late In</td><td>&nbsp;</td></tr>
+</table>
+
+<h3 class="section">Appraisal Factors (Completed by Immediate Superior)</h3>
+<table class="grid rating">
+  <thead>
+    <tr><th rowspan="2" style="width:28%;">Factors</th><th colspan="5">Rating</th><th rowspan="2">Score</th></tr>
+    <tr><th>1<br>Poor</th><th>2<br>Fair</th><th>3<br>Average</th><th>4<br>Good</th><th>5<br>Excellent</th></tr>
+  </thead>
+  <tbody>
+    {% for category, factors in [
+      ("Behavior", ["Attitude", "Attendance", "Punctuality", "Discipline", "Integrity/Honesty"]),
+      ("Job Performance", ["Commitment", "Cooperation &amp; Team Work", "Dependability &amp; Adaptability", "Initiative", "Potentiality", "Quality Of Work"]),
+      ("Knowledge", ["House Keeping (5S)", "Safety, Health &amp; Environment"]),
+      ("Skills", ["Communication", "Decision Making", "Planning &amp; Organizing Ability", "Problem Solving", "Supervision / Leadership", "Time Management"]),
+    ] %}
+    <tr><td class="cat-header" colspan="7">{{ category }}</td></tr>
+    {% for f in factors %}
+    <tr>
+      <td class="factor">{{ f|safe }}</td>
+      <td style="text-align:center;"><span class="box"></span></td>
+      <td style="text-align:center;"><span class="box"></span></td>
+      <td style="text-align:center;"><span class="box"></span></td>
+      <td style="text-align:center;"><span class="box"></span></td>
+      <td style="text-align:center;"><span class="box"></span></td>
+      <td class="score-cell">&nbsp;</td>
+    </tr>
+    {% endfor %}
+    {% endfor %}
+    <tr><td colspan="6" style="text-align:right; font-weight:700;">Total Points Scored</td><td class="score-cell">&nbsp;</td></tr>
+  </tbody>
+</table>
+
+<div class="keep-together">
+<h3 class="section" style="margin-top:14px;">Overall Evaluation Of Employee <span style="font-weight:400; text-transform:none;">(Please tick (&#10003;) in the appropriate box.)</span></h3>
+<table class="band-table">
+  <tr>
+    {% for label, points in [("Excellent", "86-100"), ("Good", "66-85"), ("Average", "51-65"), ("Fair", "36-50"), ("Poor", "01-35")] %}
+    <td style="text-align:center; white-space:nowrap;"><span class="box" style="display:inline-block; width:11px; height:11px; border:1px solid #333; vertical-align:-1px; margin-right:4px;"></span>{{ label }} ({{ points }})</td>
+    {% endfor %}
+  </tr>
+</table>
+</div>
+
+<div class="page-break"></div>
+<h3 class="section">Comments</h3>
+<p style="font-weight:600; margin:4px 0 6px;">What are your recommendation with regard to the employee's future in the organization? (Please tick &#10003;)</p>
+<div class="tick-row"><span class="box"></span>a) Employee will qualify for advancement in higher level or responsibilities.</div>
+<div class="tick-row"><span class="box"></span>b) Employee has not yet demonstrated the level of service required.</div>
+<div class="tick-row"><span class="box"></span>c) Employee is better suited for another type of work.</div>
+<div class="tick-row"><span class="box"></span>d) Training is required.</div>
+
+<p style="font-weight:600; margin:14px 0 4px;">Comments By Immediate Superior:</p>
+<div class="comment-lines big"><div class="line"></div><div class="line"></div><div class="line"></div><div class="line"></div></div>
+
+<div class="sig-grid">
+  <div class="sig-block"><div class="role">Appraised by</div>Supervisor / Section Head / Manager / Director
+    <div class="line">Name:</div>
+    <div class="line" style="margin-top:16px;">Position:</div>
+    <div class="line" style="margin-top:16px;">Date:</div>
+  </div>
+  <div class="sig-block"><div class="role">Reviewed by</div>Manager / Director / Managing Director
+    <div class="line">Name:</div>
+    <div class="line" style="margin-top:16px;">Position:</div>
+    <div class="line" style="margin-top:16px;">Date:</div>
+  </div>
+</div>
+
+<p style="font-weight:600; margin:16px 0 4px;">Comments By Job Holder:</p>
+<p style="margin:0 0 6px;">We have discussed the contents of this Performance Appraisal Form.</p>
+<div class="comment-lines big"><div class="line"></div><div class="line"></div><div class="line"></div><div class="line"></div></div>
+
+<div class="sig-grid">
+  <div class="sig-block"><div class="role">Accepted by</div>Job Holder
+    <div class="line">Name: {{ emp.full_name }}</div>
+    <div class="line" style="margin-top:16px;">Position: {{ emp.position or "" }}</div>
+    <div class="line" style="margin-top:16px;">Date:</div>
+  </div>
+</div>
+
+<p style="font-weight:600; margin:16px 0 4px;">Final Comments By HR &amp; Administration Department And Higher Authority:</p>
+<div class="comment-lines"><div class="line"></div><div class="line"></div></div>
+
+<div class="sig-grid">
+  <div class="sig-block"><div class="role">Verified by</div>HR &amp; Administration Department
+    <div class="line">Name:</div>
+    <div class="line" style="margin-top:16px;">Position:</div>
+    <div class="line" style="margin-top:16px;">Date:</div>
+  </div>
+</div>
+
+<div class="page-break"></div>
+<h3 class="section">Recommendation By Immediate Superior (Manager/Director)</h3>
+<table class="grid">
+  <tr><th>Factors</th><th>Please Tick (&#10003;)</th><th>Effective Date</th><th>Location</th><th>Section / Department</th><th>New Position</th></tr>
+  <tr><td class="factor">To Confirm</td><td style="text-align:center;"><span class="box"></span></td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+  <tr><td class="factor">To Promote</td><td style="text-align:center;"><span class="box"></span></td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+  <tr><td class="factor">To Transfer</td><td style="text-align:center;"><span class="box"></span></td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+  <tr><td class="factor">To Redesignate</td><td style="text-align:center;"><span class="box"></span></td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+  <tr><td class="factor">To Terminate</td><td style="text-align:center;"><span class="box"></span></td><td colspan="2">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;) Days Pay In Lieu</td><td colspan="2">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;) Months Pay In Lieu</td></tr>
+  <tr><td class="factor">To Extend Probation</td><td style="text-align:center;"><span class="box"></span></td><td colspan="4">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;) Months</td></tr>
+</table>
+
+<p style="font-weight:600; margin:10px 0 4px;">Recommend For Training (Type Of Course):</p>
+<div class="comment-lines">
+  <div class="line">1)</div><div class="line">2)</div><div class="line">3)</div><div class="line">4)</div>
+</div>
+
+<table class="grid" style="margin-top:10px;">
+  <tr><th>Factors</th><th>Current Salary</th><th>Allowance</th><th>Increased Salary</th><th>New Salary</th></tr>
+  {% for label in ["Confirmation", "Promotion", "Increment", "Adjustment", "Transferred", "Redesignation"] %}
+  <tr><td class="factor">{{ label }}</td>
+    <td>RM <input type="number" step="0.01" class="salary-input" id="rec_cur_{{ loop.index }}" value="{{ "%.2f"|format(emp.basic_salary or 0) if label == "Confirmation" else "" }}" oninput="calcNewSalary('rec', {{ loop.index }})"></td>
+    <td>RM&nbsp;</td>
+    <td>RM <input type="number" step="0.01" class="salary-input" id="rec_inc_{{ loop.index }}" oninput="calcNewSalary('rec', {{ loop.index }})"></td>
+    <td>RM <input type="number" step="0.01" class="salary-input" id="rec_new_{{ loop.index }}" readonly></td>
+  </tr>
+  {% endfor %}
+</table>
+
+<div class="sig-grid">
+  <div class="sig-block"><div class="role">Recommended by</div>Supervisor / Section Head / Manager / Director
+    <div class="line">Name:</div>
+    <div class="line" style="margin-top:16px;">Position:</div>
+    <div class="line" style="margin-top:16px;">Date:</div>
+  </div>
+</div>
+
+<h3 class="section">For HR &amp; Administration Department Use Only</h3>
+<table class="grid">
+  <tr><th>Factors</th><th>Please Tick (&#10003;)</th><th>Effective Date</th><th>Location</th><th>Section / Department</th><th>New Position</th></tr>
+  <tr><td class="factor">To Confirm</td><td style="text-align:center;"><span class="box"></span></td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+  <tr><td class="factor">To Promote</td><td style="text-align:center;"><span class="box"></span></td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+  <tr><td class="factor">To Transfer</td><td style="text-align:center;"><span class="box"></span></td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+  <tr><td class="factor">To Redesignate</td><td style="text-align:center;"><span class="box"></span></td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+  <tr><td class="factor">To Terminate</td><td style="text-align:center;"><span class="box"></span></td><td colspan="2">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;) Days Pay In Lieu</td><td colspan="2">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;) Months Pay In Lieu</td></tr>
+  <tr><td class="factor">To Extend Probation</td><td style="text-align:center;"><span class="box"></span></td><td colspan="4">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;) Months</td></tr>
+</table>
+
+<table class="grid" style="margin-top:10px;">
+  <tr><th>Factors</th><th>Current Salary</th><th>Allowance</th><th>Increased Salary</th><th>New Salary</th></tr>
+  {% for label in ["Confirmation", "Promotion", "Increment", "Adjustment", "Transferred", "Redesignation"] %}
+  <tr><td class="factor">{{ label }}</td>
+    <td>RM <input type="number" step="0.01" class="salary-input" id="hr_cur_{{ loop.index }}" value="{{ "%.2f"|format(emp.basic_salary or 0) if label == "Confirmation" else "" }}" oninput="calcNewSalary('hr', {{ loop.index }})"></td>
+    <td>RM&nbsp;</td>
+    <td>RM <input type="number" step="0.01" class="salary-input" id="hr_inc_{{ loop.index }}" oninput="calcNewSalary('hr', {{ loop.index }})"></td>
+    <td>RM <input type="number" step="0.01" class="salary-input" id="hr_new_{{ loop.index }}" readonly></td>
+  </tr>
+  {% endfor %}
+</table>
+
+<table class="grid" style="margin-top:10px;">
+  <tr><td class="label">Previous Year Bonus Interim</td><td>Months&nbsp;</td>
+      <td class="label">Previous Year End Bonus</td><td>Months&nbsp;</td></tr>
+  <tr><td class="label">Current Year Bonus Interim</td><td>Months&nbsp;</td>
+      <td class="label">Current Year End Bonus</td><td>Months&nbsp;</td></tr>
+</table>
+
+<h3 class="section">Authorization</h3>
+<div class="sig-grid">
+  <div class="sig-block"><div class="role">Approved by</div>Director
+    <div class="line">Name:</div>
+    <div class="line" style="margin-top:16px;">Position:</div>
+    <div class="line" style="margin-top:16px;">Date:</div>
+  </div>
+</div>
+
+<script>
+function calcNewSalary(prefix, idx) {
+  var cur = parseFloat(document.getElementById(prefix + '_cur_' + idx).value) || 0;
+  var inc = parseFloat(document.getElementById(prefix + '_inc_' + idx).value) || 0;
+  var newField = document.getElementById(prefix + '_new_' + idx);
+  newField.value = (cur + inc).toFixed(2);
+}
+['rec', 'hr'].forEach(function(prefix) {
+  for (var i = 1; i <= 6; i++) {
+    calcNewSalary(prefix, i);
+  }
+});
+</script>
+
+</body>
+</html>

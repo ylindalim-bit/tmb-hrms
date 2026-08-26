@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Alerts - TMB Payroll{% endblock %}
+{% block content %}
+<h1>Alerts</h1>
+<p style="color:var(--muted); font-size:13px; margin-top:-8px;">As of {{ today }}.</p>
+
+{% macro alert_table(rows, date_label, empty_msg, show_letter_link=false) %}
+<div class="card table-wrap">
+<table>
+<thead>
+<tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Department</th><th class="text">Position</th>
+    <th class="text">{{ date_label }}</th><th>Days Left</th><th colspan="{{ 3 if show_letter_link else 1 }}"></th></tr>
+</thead>
+<tbody>
+{% for e in rows %}
+<tr>
+  <td class="text">{{ e.emp_id }}</td>
+  <td class="text">{{ e.full_name }}</td>
+  <td class="text">{{ e.department or "-" }}</td>
+  <td class="text">{{ e.position or "-" }}</td>
+  <td class="text">{{ e.the_date }}</td>
+  <td>
+    {% if e.overdue %}
+    <span class="pill" style="background:#fee2e2; color:var(--danger);">{{ -e.days_left }} days overdue</span>
+    {% elif e.days_left <= 30 %}
+    <span class="pill draft">{{ e.days_left }} days left</span>
+    {% else %}
+    {{ e.days_left }} days left
+    {% endif %}
+  </td>
+  <td><a class="emp-link" href="{{ url_for('edit_employee', emp_id=e.emp_id) }}">Edit</a></td>
+  {% if show_letter_link %}
+  <td><a class="emp-link" href="{{ url_for('confirmation_appraisal', emp_id=e.emp_id) }}" target="_blank">Appraisal Form</a></td>
+  <td><a class="emp-link" href="{{ url_for('confirmation_letter', emp_id=e.emp_id) }}" target="_blank">Print Letter</a></td>
+  {% endif %}
+</tr>
+{% endfor %}
+{% if not rows %}
+<tr><td class="text" colspan="{{ 9 if show_letter_link else 7 }}">{{ empty_msg }}</td></tr>
+{% endif %}
+</tbody>
+</table>
+</div>
+{% endmacro %}
+
+<h2>Probation ending (or overdue)</h2>
+<p style="color:var(--muted); font-size:13px; margin-top:-8px;">
+  Per TMB's handbook: probation is 3 months for non-executive positions, 6 months for core operational positions.
+</p>
+{{ alert_table(due, "Probation End", "No one has a Probation End Date on record yet — see the list below.", true) }}
+
+<h2>Recently Confirmed</h2>
+<p style="color:var(--muted); font-size:13px; margin-top:-8px;">
+  Has a Confirmation Date set on their record &mdash; already processed, so no longer shown as "due" above.
+</p>
+<div class="card table-wrap">
+<table>
+<thead>
+<tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Department</th><th class="text">Position</th>
+    <th class="text">Confirmation Date</th><th>New Salary</th><th></th></tr>
+</thead>
+<tbody>
+{% for e in confirmed %}
+<tr>
+  <td class="text">{{ e.emp_id }}</td>
+  <td class="text">{{ e.full_name }}</td>
+  <td class="text">{{ e.department or "-" }}</td>
+  <td class="text">{{ e.position or "-" }}</td>
+  <td class="text">{{ e.confirmation_date }}</td>
+  <td>{{ "RM %.2f"|format(e.confirmed_new_salary) if e.confirmed_new_salary else "-" }}</td>
+  <td><a class="emp-link" href="{{ url_for('confirmation_letter', emp_id=e.emp_id) }}" target="_blank">Print Letter</a></td>
+</tr>
+{% endfor %}
+{% if not confirmed %}
+<tr><td class="text" colspan="7">None yet.</td></tr>
+{% endif %}
+</tbody>
+</table>
+</div>
+
+<h2>Passport expiring</h2>
+{{ alert_table(passport_alerts, "Passport Expiry", "No passport expiry dates on record.") }}
+
+<h2>Work Permit expiring</h2>
+{{ alert_table(work_permit_alerts, "Work Permit Expiry", "No work permit expiry dates on record.") }}
+
+<h2>Missing a Probation End Date</h2>
+<p style="color:var(--muted); font-size:13px; margin-top:-8px;">
+  Joined within the last ~6 months and no Probation End Date is set &mdash; add one via Edit so they show up in the report above.
+</p>
+<div class="card table-wrap">
+<table>
+<thead>
+<tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Department</th><th class="text">Position</th>
+    <th class="text">Date Joined</th><th></th></tr>
+</thead>
+<tbody>
+{% for e in missing %}
+<tr>
+  <td class="text">{{ e.emp_id }}</td>
+  <td class="text">{{ e.full_name }}</td>
+  <td class="text">{{ e.department or "-" }}</td>
+  <td class="text">{{ e.position or "-" }}</td>
+  <td class="text">{{ e.date_joined }}</td>
+  <td><a class="emp-link" href="{{ url_for('edit_employee', emp_id=e.emp_id) }}">Edit</a></td>
+</tr>
+{% endfor %}
+{% if not missing %}
+<tr><td class="text" colspan="5">None.</td></tr>
+{% endif %}
+</tbody>
+</table>
+</div>
+{% endblock %}

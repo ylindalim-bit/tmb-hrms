@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Settings - TMB Payroll{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+
+<div class="card" style="max-width:480px;">
+  <h2 style="margin-top:0;">Staff Portal &mdash; Payslip Release Date</h2>
+  {% if error %}<div style="color:var(--danger); font-size:13px; margin-bottom:12px;">{{ error }}</div>{% endif %}
+  <p style="color:var(--muted); font-size:13px; margin-top:0;">
+    Controls the day of the month an employee can first see/download a given month's payslip on the
+    Staff Portal &mdash; even if it's already Finalized on your side. A payslip for e.g. August becomes
+    visible on this day <strong>of September</strong> (the following month), matching how Payment Date works.
+    This only affects the Staff Portal; you can always view/print any finalized payslip from the HR side
+    immediately.
+  </p>
+  <form method="post">
+    <label style="display:block; font-size:12px; font-weight:600; color:var(--muted); margin-bottom:4px;">
+      Release Day (of the following month)
+    </label>
+    <input type="number" name="payslip_release_day" min="1" max="31" value="{{ release_day }}" style="width:120px;">
+    <p style="color:var(--muted); font-size:12px; margin:8px 0;">
+      Currently: staff see each month's payslip starting the <strong>{{ release_day }}{{ "st" if release_day in [1,21,31] else "nd" if release_day in [2,22] else "rd" if release_day in [3,23] else "th" }}</strong>
+      of the following month. (Payment Date is fixed at day {{ payment_day }}, for reference.)
+    </p>
+    <button class="btn" type="submit">Save</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Payroll Summary {{ month_names[month] }} {{ year }} - TMB Payroll{% endblock %}
+{% block extra_style %}
+<style>
+  .print-only { display: none; }
+  @media print {
+    @page { size: A4 landscape; margin: 10mm; }
+    .print-only { display: block; }
+    .table-wrap { overflow-x: visible; }
+    table { font-size: 9px; width: 100%; table-layout: fixed; }
+    th, td { padding: 3px 4px; white-space: normal; word-break: break-word; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="no-print" style="display:flex; justify-content:space-between; align-items:center;">
+  <h1 style="margin-bottom:0;">Payroll Summary Report &mdash; {{ month_names[month] }} {{ year }}{% if totals_only %} (Totals Only){% endif %}</h1>
+  <div style="display:flex; gap:8px;">
+    {% if totals_only %}
+    <a class="btn secondary" href="{{ url_for('payroll_summary', year=year, month=month) }}">Show Individual Breakdown</a>
+    {% else %}
+    <a class="btn secondary" href="{{ url_for('payroll_summary', year=year, month=month, totals_only=1) }}">Totals Only (No Salaries)</a>
+    {% endif %}
+    <a class="btn secondary" href="{{ url_for('payroll_summary_view', year=year, month=month, totals_only=1 if totals_only else 0) }}" target="_blank">View Clean Report</a>
+    <a class="btn secondary" href="{{ url_for('payroll_summary_export', year=year, month=month, totals_only=1 if totals_only else 0) }}">Export to Excel</a>
+    <button class="btn" type="button" onclick="window.print()">Print / Save as PDF</button>
+    <a class="btn secondary" href="{{ url_for('run_payroll', year=year, month=month) }}">Back to Payroll</a>
+  </div>
+</div>
+<div class="print-only" style="margin-bottom:12px;">
+  <strong>TIANMA PRECISION SDN BHD</strong><br>
+  Payroll Summary Report &mdash; {{ month_names[month] }} {{ year }}{% if totals_only %} (Totals Only){% endif %}
+</div>
+
+{% include "_payroll_summary_table.html" %}
+{% endblock %}

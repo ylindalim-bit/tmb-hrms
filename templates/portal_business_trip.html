@@ -1,0 +1,75 @@
+{% extends "portal_base.html" %}
+{% block title %}Business Trip - Staff Portal{% endblock %}
+{% block content %}
+<h1>Business Trip / Out-Duty / Training Notice</h1>
+<p style="color:var(--muted); font-size:13px; margin-top:-8px;">
+  For any work-related time away from your normal workplace &mdash; overseas, outstation, or local. Covers
+  things like: client visits, site inspections, bank/government errands for work, factory audits,
+  <strong>training courses, seminars, conferences, and workshops</strong>. You're still working (or being
+  developed for work), so this does not use any of your leave balance. For a same-day local task, just set
+  Start Date and End Date to the same day. Use <a href="{{ url_for('portal_leave') }}">Apply Leave</a>
+  instead only for personal time off.
+</p>
+{% if error %}
+<div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger);">{{ error }}</div>
+{% endif %}
+<div class="card">
+<form method="post">
+  <div class="form-grid">
+    <div><label>Destination</label><input type="text" name="destination" placeholder="e.g. Shanghai, China / or Pasir Gudang (local)" required></div>
+    <div><label>Start Date</label><input type="date" id="trip_start_date" name="start_date" onchange="updateTripDays()" required></div>
+    <div><label>End Date</label><input type="date" id="trip_end_date" name="end_date" onchange="updateTripDays()" required></div>
+  </div>
+  <p id="trip_days" style="font-weight:600; margin-top:8px;"></p>
+  <div style="margin-top:12px;">
+    <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">Purpose (optional)</label>
+    <input type="text" name="purpose" style="width:100%;" placeholder="e.g. client meeting, factory audit, or attend [Course Name] training">
+  </div>
+  <div class="form-actions">
+    <button class="btn" type="submit">Submit Notice</button>
+  </div>
+</form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">My Business Trips</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th class="text">Destination</th><th class="text">Dates</th><th class="text">Purpose</th><th class="text">Status</th><th class="text">Notes</th></tr></thead>
+    <tbody>
+      {% for t in trips %}
+      <tr>
+        <td class="text">{{ t.destination }}</td>
+        <td class="text">{{ t.start_date }} &ndash; {{ t.end_date }}</td>
+        <td class="text">{{ t.purpose or "" }}</td>
+        <td class="text">
+          <span class="pill {% if t.status == 'Approved' %}finalized{% elif t.status == 'Pending' %}draft{% else %}rejected{% endif %}">{{ t.status }}</span>
+        </td>
+        <td class="text">{{ t.review_notes or "" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text" style="color:var(--muted);">No business trips submitted yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+<script>
+function updateTripDays() {
+  var startStr = document.getElementById('trip_start_date').value;
+  var endStr = document.getElementById('trip_end_date').value;
+  var display = document.getElementById('trip_days');
+  if (!startStr || !endStr) { display.textContent = ''; return; }
+  var start = new Date(startStr);
+  var end = new Date(endStr);
+  var days = Math.round((end - start) / 86400000) + 1;
+  if (days < 1) {
+    display.textContent = 'End date cannot be before start date.';
+    display.style.color = 'var(--danger)';
+  } else {
+    display.textContent = days + (days === 1 ? ' day' : ' days');
+    display.style.color = '';
+  }
+}
+</script>
+{% endblock %}

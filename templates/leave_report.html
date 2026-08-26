@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Leave Taken Report {{ year }} - TMB Payroll{% endblock %}
+{% block extra_style %}
+<style>
+  .print-only { display: none; }
+  @media print {
+    @page { size: A4 landscape; margin: 10mm; }
+    .print-only { display: block; }
+    .table-wrap { overflow-x: visible; }
+    table { font-size: 10px; width: 100%; }
+    th, td { padding: 3px 5px; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="no-print" style="display:flex; justify-content:space-between; align-items:center;">
+  <h1 style="margin-bottom:0;">Leave Taken Report &mdash; {{ year }}</h1>
+  <button class="btn" type="button" onclick="window.print()">Print / Save as PDF</button>
+</div>
+<div class="print-only" style="margin-bottom:12px;">
+  <strong>TIANMA PRECISION SDN BHD</strong><br>
+  Leave Taken Report &mdash; {{ year }}
+</div>
+
+<div class="month-nav no-print">
+  <span>Year:</span>
+  {% for y in years %}
+  <a href="{{ url_for('leave_report', year=y.year) }}" style="{% if y.year == year %}font-weight:700;{% endif %}">{{ y.year }}</a>
+  {% endfor %}
+</div>
+
+<div class="card table-wrap">
+<table>
+<thead>
+<tr>
+  <th class="text">Emp ID</th><th class="text">Name</th><th class="text">Department</th>
+  <th>AL Entitlement</th><th>AL Used</th><th>AL Balance</th>
+  <th>MC Entitlement</th><th>MC Used</th><th>MC Balance</th>
+  <th>Hospitalisation Used</th><th>Unpaid Leave</th><th>Other Paid Leave</th>
+</tr>
+</thead>
+<tbody>
+{% for r in rows %}
+<tr>
+  <td class="text">{{ r.emp_id }}</td>
+  <td class="text">{{ r.full_name }}
+    {% if r.al_note %}<br><span style="font-size:11px; color:var(--muted); font-style:italic;">{{ r.al_note }}</span>{% endif %}
+  </td>
+  <td class="text">{{ r.department or "-" }}</td>
+  <td>{{ r.al_entitlement }}</td>
+  <td>{{ r.al_used }}</td>
+  <td {% if r.al_balance < 0 %}style="color:var(--danger); font-weight:700;"{% endif %}>{{ r.al_balance }}</td>
+  <td>{{ r.mc_entitlement }}</td>
+  <td>{{ r.mc_used }}</td>
+  <td {% if r.mc_balance < 0 %}style="color:var(--danger); font-weight:700;"{% endif %}>{{ r.mc_balance }}</td>
+  <td>{{ r.hl_used }}</td>
+  <td>{{ r.ul_used }}</td>
+  <td>{{ r.other_used }}</td>
+</tr>
+{% endfor %}
+{% if not rows %}
+<tr><td class="text" colspan="12">No active employees.</td></tr>
+{% endif %}
+</tbody>
+</table>
+</div>
+<p><strong>Total Headcount: {{ rows|length }} employees</strong></p>
+{% endblock %}

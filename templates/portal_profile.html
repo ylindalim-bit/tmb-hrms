@@ -1,0 +1,51 @@
+{% extends "portal_base.html" %}
+{% block title %}My Profile - Staff Portal{% endblock %}
+{% block content %}
+<h1>My Profile</h1>
+{% if saved %}
+<div class="card" style="background:#dcfce7; color:var(--good); border-color:var(--good);">Saved.</div>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0;">Read-Only (contact HR to change)</h2>
+  <div class="form-grid">
+    <div><label style="display:block; font-size:12px; color:var(--muted);">Employee ID</label>{{ emp.emp_id }}</div>
+    <div><label style="display:block; font-size:12px; color:var(--muted);">Full Name</label>{{ emp.full_name }}</div>
+    <div><label style="display:block; font-size:12px; color:var(--muted);">Department</label>{{ emp.department or "-" }}</div>
+    <div><label style="display:block; font-size:12px; color:var(--muted);">Position</label>{{ emp.position or "-" }}</div>
+    <div><label style="display:block; font-size:12px; color:var(--muted);">Date Joined</label>{{ emp.date_joined or "-" }}</div>
+    <div><label style="display:block; font-size:12px; color:var(--muted);">IC / Passport No.</label>{{ emp.ic_passport_no or "-" }}</div>
+    <div><label style="display:block; font-size:12px; color:var(--muted);">EPF No.</label>{{ emp.epf_no or "-" }}</div>
+  </div>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0;">Update Contact / Bank Details</h2>
+<form method="post">
+  <div class="form-grid">
+    <div><label>Phone Number</label><input type="text" name="phone_number" value="{{ emp.phone_number or '' }}"></div>
+    <div><label>Bank Name</label><input type="text" name="bank_name" value="{{ emp.bank_name or '' }}"></div>
+    <div><label>Bank Account No.</label><input type="text" name="bank_account_no" value="{{ emp.bank_account_no or '' }}"></div>
+    <div><label>HP No.</label><input type="text" name="hp_no" value="{{ emp.hp_no or '' }}"></div>
+    <div><label>Address</label><input type="text" name="address" value="{{ emp.address or '' }}"></div>
+    <div><label>Email Address</label><input type="email" name="email" value="{{ emp.email or '' }}"></div>
+    <div><label>Marital Status</label>
+      <select name="marital_status">
+        {% for s in ["Single", "Married", "Divorced"] %}
+        <option value="{{ s }}" {% if emp.marital_status == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <h2>Change Password</h2>
+  <div class="form-grid">
+    <div><label>New Password (leave blank to keep current)</label><input type="password" name="new_password" autocomplete="new-password"></div>
+  </div>
+
+  <div class="form-actions">
+    <button class="btn" type="submit">Save Changes</button>
+  </div>
+</form>
+</div>
+{% endblock %}

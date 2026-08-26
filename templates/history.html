@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Payroll History - TMB Payroll{% endblock %}
+{% block content %}
+<h1>Payroll History</h1>
+<p style="color:var(--muted); font-size:13px; margin-top:-8px;">
+  Every finalized month is kept permanently here, frozen at the numbers it was finalized with &mdash;
+  editing an employee's salary or allowances later never changes a month already finalized.
+</p>
+<div class="card table-wrap">
+<table>
+<thead>
+<tr><th class="text">Month</th><th>Employees</th><th>Total Gross (RM)</th><th>Total Net (RM)</th><th class="text">Finalized At</th><th></th></tr>
+</thead>
+<tbody>
+{% for row in rows %}
+<tr>
+  <td class="text">{{ month_names[row.month] }} {{ row.year }}</td>
+  <td>{{ row.employees }}</td>
+  <td>{{ "%.2f"|format(row.total_gross) }}</td>
+  <td>{{ "%.2f"|format(row.total_net) }}</td>
+  <td class="text">{{ row.finalized_at }}</td>
+  <td><a class="emp-link" href="{{ url_for('run_payroll', year=row.year, month=row.month) }}">View</a></td>
+</tr>
+{% endfor %}
+{% if not rows %}
+<tr><td class="text" colspan="6">No finalized months yet.</td></tr>
+{% endif %}
+</tbody>
+</table>
+</div>
+{% endblock %}

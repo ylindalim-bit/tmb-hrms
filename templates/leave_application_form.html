@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Leave Application Form{% if emp %} - {{ emp.emp_id }}{% endif %}</title>
+<style>
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    max-width: 760px;
+    margin: 40px auto;
+    padding: 0 20px;
+    color: #111;
+    line-height: 1.6;
+    font-size: 14px;
+  }
+  .letterhead { text-align: center; margin-bottom: 30px; }
+  .letterhead-row { display: grid; grid-template-columns: 90px 1fr 90px; align-items: center; }
+  .letterhead .tmb-logo { grid-column: 1; justify-self: start; height: 36px; width: auto; display: block; }
+  .letterhead h1 { grid-column: 2; font-size: 19px; margin: 0; letter-spacing: 0.5px; font-family: Arial, sans-serif; }
+  .letterhead .reg-no { color: #333; font-size: 12px; margin-top: 4px; }
+  .letterhead .sub { color: #444; font-size: 12px; margin-top: 2px; }
+  .letterhead hr { border: none; border-top: 2px solid #111; margin-top: 14px; }
+  .form-title { text-align: center; font-weight: bold; font-size: 16px; letter-spacing: 1px; text-decoration: underline;
+                margin: 0 0 26px; font-family: Arial, sans-serif; }
+  table.fields { width: 100%; border-collapse: collapse; margin-bottom: 22px; }
+  table.fields td { padding: 7px 6px; vertical-align: bottom; }
+  table.fields td.label { color: #444; font-size: 12px; white-space: nowrap; padding-right: 8px; }
+  table.fields td.fill { border-bottom: 1px solid #111; }
+  .checkbox-row { display: flex; flex-wrap: wrap; gap: 22px; margin: 4px 0 24px; }
+  .checkbox-row .opt { display: flex; align-items: center; gap: 6px; }
+  .checkbox-row .box { display: inline-block; width: 15px; height: 15px; border: 1px solid #111; flex-shrink: 0; }
+  .checkbox-row .box.checked { background: #111; }
+  .section-title { font-weight: bold; font-size: 13px; letter-spacing: 0.5px; margin: 22px 0 8px; font-family: Arial, sans-serif; }
+  .reason-box { border: 1px solid #111; min-height: 70px; margin-bottom: 22px; padding: 8px; }
+  .balance-note { font-size: 12px; color: #444; background: #f1f5f9; padding: 8px 12px; border-radius: 6px;
+                  font-family: -apple-system, Arial, sans-serif; margin-bottom: 22px; }
+  .sign-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 34px; }
+  .sign-grid .block { border-top: 1px solid #111; padding-top: 6px; font-size: 12px; }
+  .approval-section { margin-top: 46px; border-top: 1px dashed #999; padding-top: 20px; }
+  .approval-title { font-weight: bold; letter-spacing: 0.5px; margin-bottom: 14px; font-family: Arial, sans-serif; font-size: 13px; }
+  .toolbar {
+    max-width: 760px; margin: 0 auto 16px; padding: 12px 20px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    background: #f1f5f9; border-radius: 8px; font-family: -apple-system, Arial, sans-serif;
+  }
+  .toolbar button {
+    background: #1d4ed8; color: #fff; border: none; padding: 8px 16px;
+    border-radius: 6px; font-weight: 600; cursor: pointer; font-family: -apple-system, Arial, sans-serif;
+  }
+  .toolbar label {
+    display: flex; flex-direction: column; gap: 3px;
+    font-size: 11px; color: #444; font-weight: 600;
+  }
+  .toolbar select {
+    font-family: -apple-system, Arial, sans-serif; font-size: 13px;
+    padding: 5px 6px; border: 1px solid #ccc; border-radius: 4px; min-width: 200px;
+  }
+  @media print {
+    .toolbar { display: none; }
+    body { margin: 0 auto; font-size: 12px; line-height: 1.4; }
+    .letterhead { margin-bottom: 14px; }
+    .form-title { margin-bottom: 16px; }
+    .sign-grid, .approval-section { page-break-inside: avoid; }
+    @page { margin: 12mm; }
+  }
+</style>
+</head>
+<body>
+
+<form class="toolbar" method="get">
+  <label>Pre-fill Employee
+    <select name="emp_id" onchange="this.form.submit()">
+      <option value="">-- Blank form (staff fills in by hand) --</option>
+      {% for e in employees %}
+      <option value="{{ e.emp_id }}" {% if emp and emp.emp_id == e.emp_id %}selected{% endif %}>{{ e.emp_id }} &mdash; {{ e.full_name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="button" onclick="window.print()">Print / Save as PDF</button>
+</form>
+
+<div class="letterhead">
+  <div class="letterhead-row">
+    <img src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="TMB" class="tmb-logo">
+    <h1>TIANMA PRECISION SDN. BHD.</h1>
+  </div>
+  <div class="reg-no">202301036641 (1530564-X)</div>
+  <div class="sub">Plo 192, Jalan Bakau 5, Kawasan Perindustrian Tanjung Langsat, 81700 Pasir Gudang, Johor, Malaysia.</div>
+  <hr>
+</div>
+
+<div class="form-title">LEAVE APPLICATION FORM</div>
+
+<table class="fields">
+  <tr>
+    <td class="label">Employee Name</td>
+    <td class="fill" style="width:44%;">{{ emp.full_name if emp else "" }}</td>
+    <td class="label">Employee ID</td>
+    <td class="fill">{{ emp.emp_id if emp else "" }}</td>
+  </tr>
+  <tr>
+    <td class="label">Department / Position</td>
+    <td class="fill">{{ (emp.department + " / " + emp.position) if emp and emp.department and emp.position else (emp.position if emp else "") }}</td>
+    <td class="label">Date Joined</td>
+    <td class="fill">{{ emp.date_joined if emp else "" }}</td>
+  </tr>
+  <tr>
+    <td class="label">Date of Application</td>
+    <td class="fill">{{ today.strftime('%d %B %Y') }}</td>
+    <td class="label"></td>
+    <td class="fill"></td>
+  </tr>
+</table>
+
+{% if balances %}
+<div class="balance-note">
+  Current balance as of today &mdash; Annual Leave: <strong>{{ balances.al }} days</strong> &nbsp;|&nbsp;
+  Medical Leave: <strong>{{ balances.mc }} days</strong> &nbsp;|&nbsp;
+  Hospitalisation Leave: <strong>{{ balances.hl }} days</strong>
+  (for reference only; final balance is confirmed by HR upon approval)
+</div>
+{% endif %}
+
+<div class="section-title">TYPE OF LEAVE</div>
+<div class="checkbox-row">
+  <div class="opt"><span class="box"></span> Annual Leave</div>
+  <div class="opt"><span class="box"></span> Medical Leave</div>
+  <div class="opt"><span class="box"></span> Hospitalisation Leave</div>
+  <div class="opt"><span class="box"></span> Unpaid Leave</div>
+  <div class="opt"><span class="box"></span> Other: ____________________</div>
+</div>
+
+<table class="fields">
+  <tr>
+    <td class="label">From (date)</td>
+    <td class="fill" style="width:26%;"></td>
+    <td class="label">To (date)</td>
+    <td class="fill" style="width:26%;"></td>
+    <td class="label">No. of Days</td>
+    <td class="fill" style="width:18%;"></td>
+  </tr>
+  <tr>
+    <td class="label">Contact No. during Leave</td>
+    <td class="fill" colspan="5"></td>
+  </tr>
+</table>
+
+<div class="section-title">REASON FOR LEAVE</div>
+<div class="reason-box">&nbsp;</div>
+
+<p style="font-size:12px; color:#444;">
+  Note: Medical Leave and Hospitalisation Leave applications must be accompanied by a valid medical
+  certificate / hospital admission note, attached to this form.
+</p>
+
+<div class="sign-grid">
+  <div class="block">Employee&rsquo;s Signature &amp; Date</div>
+  <div class="block">Supervisor&rsquo;s Signature &amp; Date (if applicable)</div>
+</div>
+
+<div class="approval-section">
+  <div class="approval-title">FOR HR USE ONLY</div>
+  <div class="checkbox-row" style="margin-bottom:18px;">
+    <div class="opt"><span class="box"></span> Approved</div>
+    <div class="opt"><span class="box"></span> Rejected</div>
+  </div>
+  <table class="fields">
+    <tr>
+      <td class="label">Leave Balance Before</td>
+      <td class="fill" style="width:22%;"></td>
+      <td class="label">Leave Balance After</td>
+      <td class="fill" style="width:22%;"></td>
+    </tr>
+  </table>
+  <p style="font-size:12px; color:#444; margin-bottom:18px;">Remarks: ____________________________________________________________</p>
+  <div class="sign-grid">
+    <div class="block">Reviewed By (Name &amp; Signature)</div>
+    <div class="block">Date</div>
+  </div>
+</div>
+
+</body>
+</html>

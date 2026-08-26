@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Leave Requests - TMB Payroll{% endblock %}
+{% block content %}
+<h1>Leave Requests {% if hr_role != "approver" %}<a href="{{ url_for('leave_application_form') }}" target="_blank" style="font-size:13px; font-weight:600; margin-left:10px;">Print Leave Application Form &rarr;</a>{% endif %}</h1>
+
+<div class="card">
+  <h2 style="margin-top:0;">Pending ({{ pending|length }})</h2>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th class="text">Employee</th><th class="text">Type</th><th class="text">Dates</th><th>Days</th><th class="text">Reason</th><th class="text">Document</th><th class="text">Submitted</th><th>Action</th></tr>
+    </thead>
+    <tbody>
+      {% for lr in pending %}
+      <tr>
+        <td class="text">{{ lr.emp_id }} &mdash; {{ lr.full_name }}</td>
+        <td class="text">{{ lr.leave_type }}</td>
+        <td class="text">{{ lr.start_date }} &ndash; {{ lr.end_date }}</td>
+        <td>{{ lr.days }}</td>
+        <td class="text">{{ lr.reason or "" }}</td>
+        <td class="text">
+          {% if lr.supporting_doc_stored %}
+          <a href="{{ url_for('leave_request_document', request_id=lr.id) }}" target="_blank" rel="noopener">View</a>
+          {% elif lr.leave_type in ("Medical Leave", "Hospitalisation Leave") %}
+          <span style="color:var(--danger);">Missing</span>
+          {% else %}<span style="color:var(--muted);">-</span>{% endif %}
+        </td>
+        <td class="text">{{ lr.submitted_at }}</td>
+        <td class="text" style="white-space:nowrap;">
+          <form method="post" action="{{ url_for('review_leave_request', request_id=lr.id) }}">
+            <button class="btn" type="submit" name="decision" value="Approved" style="padding:4px 10px;">Approve</button>
+            <button class="btn secondary" type="submit" name="decision" value="Rejected" style="padding:4px 10px;">Reject</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="text" style="color:var(--muted);">No pending requests.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">Recently Reviewed</h2>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th class="text">Employee</th><th class="text">Type</th><th class="text">Dates</th><th>Days</th><th class="text">Reason</th><th class="text">Status</th><th class="text">Document</th><th class="text">Reviewed By</th><th class="text">Reviewed</th></tr>
+    </thead>
+    <tbody>
+      {% for lr in reviewed %}
+      <tr>
+        <td class="text">{{ lr.emp_id }} &mdash; {{ lr.full_name }}</td>
+        <td class="text">{{ lr.leave_type }}</td>
+        <td class="text">{{ lr.start_date }} &ndash; {{ lr.end_date }}</td>
+        <td>{{ lr.days }}</td>
+        <td class="text">{{ lr.reason or "" }}</td>
+        <td class="text">
+          <span class="pill {% if lr.status == 'Approved' %}finalized{% else %}rejected{% endif %}">{{ lr.status }}</span>
+        </td>
+        <td class="text">
+          {% if lr.supporting_doc_stored %}
+          <a href="{{ url_for('leave_request_document', request_id=lr.id) }}" target="_blank" rel="noopener">View</a>
+          {% else %}<span style="color:var(--muted);">-</span>{% endif %}
+        </td>
+        <td class="text">{{ lr.reviewed_by or "" }}</td>
+        <td class="text">{{ lr.reviewed_at }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" class="text" style="color:var(--muted);">None yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

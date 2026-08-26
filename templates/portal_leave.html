@@ -1,0 +1,120 @@
+{% extends "portal_base.html" %}
+{% block title %}Apply Leave - Staff Portal{% endblock %}
+{% block content %}
+<h1>Apply Leave</h1>
+{% if error %}
+<div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger);">{{ error }}</div>
+{% endif %}
+<div class="card">
+<form method="post" enctype="multipart/form-data">
+  <div class="form-grid">
+    <div>
+      <label>Leave Type</label>
+      <select id="leave_type" name="leave_type" onchange="updateDaysRequested(); updateDocRequirement();" required>
+        <option value="Annual Leave">Annual Leave</option>
+        <option value="Medical Leave">Medical Leave</option>
+        <option value="Hospitalisation Leave">Hospitalisation Leave</option>
+        <option value="Unpaid Leave">Unpaid Leave</option>
+        <option value="Maternity/Paternity Leave">Maternity / Paternity Leave</option>
+        <option value="Emergency Leave">Emergency Leave</option>
+      </select>
+    </div>
+    <div><label>Start Date</label><input type="date" id="leave_start_date" name="start_date" onchange="updateDaysRequested()" required></div>
+    <div><label>End Date</label><input type="date" id="leave_end_date" name="end_date" onchange="updateDaysRequested()" required></div>
+  </div>
+  <p id="days_requested" style="font-weight:600; margin-top:8px;"></p>
+  <p id="balance_warning" style="font-weight:600; margin-top:4px; color:var(--danger); display:none;"></p>
+  <div id="doc_upload_row" style="margin-top:12px; display:none;">
+    <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">
+      Supporting Document <span id="doc_required_mark" style="color:var(--danger);">*</span>
+      <span style="font-weight:400;">(medical certificate / hospital admission note &mdash; PDF, Word, or image)</span>
+    </label>
+    <input type="file" id="supporting_doc" name="supporting_doc" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+  </div>
+  <div style="margin-top:12px;">
+    <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">Reason (optional)</label>
+    <input type="text" name="reason" style="width:100%;">
+  </div>
+  <div class="form-actions">
+    <button class="btn" type="submit">Submit Request</button>
+  </div>
+</form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">My Leave Requests</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th class="text">Type</th><th class="text">Dates</th><th>Days</th><th class="text">Status</th><th class="text">Notes</th><th class="text">Document</th></tr></thead>
+    <tbody>
+      {% for lr in requests %}
+      <tr>
+        <td class="text">{{ lr.leave_type }}</td>
+        <td class="text">{{ lr.start_date }} &ndash; {{ lr.end_date }}</td>
+        <td>{{ lr.days }}</td>
+        <td class="text">
+          <span class="pill {% if lr.status == 'Approved' %}finalized{% elif lr.status == 'Pending' %}draft{% else %}rejected{% endif %}">{{ lr.status }}</span>
+        </td>
+        <td class="text">{{ lr.review_notes or "" }}</td>
+        <td class="text">
+          {% if lr.supporting_doc_stored %}
+          <a href="{{ url_for('portal_leave_document', request_id=lr.id) }}" target="_blank" rel="noopener">View</a>
+          {% else %}<span style="color:var(--muted);">-</span>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text" style="color:var(--muted);">No leave requests yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+<script>
+var LEAVE_BALANCES = {
+  'Annual Leave': {{ al_balance }},
+  'Medical Leave': {{ mc_balance }},
+  'Hospitalisation Leave': {{ hl_balance }}
+};
+
+function updateDaysRequested() {
+  var startStr = document.getElementById('leave_start_date').value;
+  var endStr = document.getElementById('leave_end_date').value;
+  var leaveType = document.getElementById('leave_type').value;
+  var display = document.getElementById('days_requested');
+  var warning = document.getElementById('balance_warning');
+  warning.style.display = 'none';
+  if (!startStr || !endStr) { display.textContent = ''; return; }
+  var start = new Date(startStr);
+  var end = new Date(endStr);
+  var days = Math.round((end - start) / 86400000) + 1;
+  if (days < 1) {
+    display.textContent = 'End date cannot be before start date.';
+    display.style.color = 'var(--danger)';
+    return;
+  }
+  display.textContent = days + (days === 1 ? ' day requested' : ' days requested');
+  display.style.color = '';
+
+  var balance = LEAVE_BALANCES[leaveType];
+  if (balance !== undefined && days > balance) {
+    warning.textContent = 'Heads up: this is more than your remaining balance (' + balance + (balance === 1 ? ' day' : ' days') + '). You can still submit it — HR will review.';
+    warning.style.display = 'block';
+  }
+}
+
+var DOC_REQUIRED_TYPES = ['Medical Leave', 'Hospitalisation Leave'];
+
+function updateDocRequirement() {
+  var leaveType = document.getElementById('leave_type').value;
+  var row = document.getElementById('doc_upload_row');
+  var input = document.getElementById('supporting_doc');
+  var requiredMark = document.getElementById('doc_required_mark');
+  var required = DOC_REQUIRED_TYPES.indexOf(leaveType) !== -1;
+  row.style.display = required ? 'block' : 'none';
+  input.required = required;
+  requiredMark.style.display = required ? 'inline' : 'none';
+}
+
+updateDocRequirement();
+</script>
+{% endblock %}

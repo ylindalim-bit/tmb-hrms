@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Business Trips - TMB Payroll{% endblock %}
+{% block content %}
+<h1>Business Trips / Outstation Notices</h1>
+
+<div class="card">
+  <h2 style="margin-top:0;">Pending ({{ pending|length }})</h2>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th class="text">Employee</th><th class="text">Destination</th><th class="text">Dates</th><th class="text">Purpose</th><th class="text">Submitted</th><th>Action</th></tr>
+    </thead>
+    <tbody>
+      {% for t in pending %}
+      <tr>
+        <td class="text">{{ t.emp_id }} &mdash; {{ t.full_name }}</td>
+        <td class="text">{{ t.destination }}</td>
+        <td class="text">{{ t.start_date }} &ndash; {{ t.end_date }}</td>
+        <td class="text">{{ t.purpose or "" }}</td>
+        <td class="text">{{ t.submitted_at }}</td>
+        <td class="text" style="white-space:nowrap;">
+          <form method="post" action="{{ url_for('review_business_trip', trip_id=t.id) }}">
+            <input type="text" name="reviewed_by" placeholder="Your name" required
+                   style="width:110px; font-size:12px; padding:4px 6px; margin-bottom:4px;">
+            <div>
+              <button class="btn" type="submit" name="decision" value="Approved" style="padding:4px 10px;">Approve</button>
+              <button class="btn secondary" type="submit" name="decision" value="Rejected" style="padding:4px 10px;">Reject</button>
+            </div>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text" style="color:var(--muted);">No pending notices.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">Recently Reviewed</h2>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th class="text">Employee</th><th class="text">Destination</th><th class="text">Dates</th><th class="text">Status</th><th class="text">Reviewed By</th><th class="text">Reviewed</th></tr>
+    </thead>
+    <tbody>
+      {% for t in reviewed %}
+      <tr>
+        <td class="text">{{ t.emp_id }} &mdash; {{ t.full_name }}</td>
+        <td class="text">{{ t.destination }}</td>
+        <td class="text">{{ t.start_date }} &ndash; {{ t.end_date }}</td>
+        <td class="text">
+          <span class="pill {% if t.status == 'Approved' %}finalized{% else %}rejected{% endif %}">{{ t.status }}</span>
+        </td>
+        <td class="text">{{ t.reviewed_by or "" }}</td>
+        <td class="text">{{ t.reviewed_at }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text" style="color:var(--muted);">None yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

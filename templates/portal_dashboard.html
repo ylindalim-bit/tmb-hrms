@@ -1,0 +1,33 @@
+{% extends "portal_base.html" %}
+{% block title %}Dashboard - Staff Portal{% endblock %}
+{% block content %}
+<h1>Welcome, {{ emp.full_name }}</h1>
+<div class="card">
+  <p><strong>{{ emp.emp_id }}</strong> &mdash; {{ emp.position or "" }} {% if emp.department %}({{ emp.department }}){% endif %}</p>
+</div>
+
+<div class="form-grid">
+  <div class="card">
+    <h2 style="margin-top:0;">Latest Payslip</h2>
+    {% if latest_run %}
+    <p>{{ month_names[latest_run.month] }} {{ latest_run.year }}<br>
+      Net Pay: <span class="net-good">RM {{ "%.2f"|format(latest_run.net_pay) }}</span></p>
+    <a class="btn secondary" href="{{ url_for('portal_payslip', year=latest_run.year, month=latest_run.month) }}">View Payslip</a>
+    {% else %}
+    <p style="color:var(--muted);">No finalized payslip yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0;">Annual Leave Balance ({{ cur_year }})</h2>
+    <p style="font-size:22px; font-weight:700;">{{ al_balance }} days</p>
+    <a class="btn secondary" href="{{ url_for('portal_attendance') }}">View Details</a>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0;">Leave Requests</h2>
+    <p>{{ pending_leave }} pending</p>
+    <a class="btn secondary" href="{{ url_for('portal_leave') }}">Apply / View</a>
+  </div>
+</div>
+{% endblock %}

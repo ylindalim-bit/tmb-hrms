@@ -1,0 +1,61 @@
+{% extends "portal_base.html" %}
+{% block title %}Payslip {{ month_names[month] }} {{ year }} - Staff Portal{% endblock %}
+{% block extra_style %}
+<style>
+  .print-only { display: none; }
+  @media print {
+    .payslip-box { max-width: none; }
+    .print-only { display: block; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="no-print" style="display:flex; justify-content:space-between; align-items:center;">
+  <h1 style="margin-bottom:0;">Payslip &mdash; {{ month_names[month] }} {{ year }}</h1>
+  <button class="btn" type="button" onclick="window.print()">Print / Save as PDF</button>
+</div>
+<h1 class="print-only">Payslip &mdash; {{ month_names[month] }} {{ year }}</h1>
+<div class="card payslip-box">
+  <div style="display:flex; justify-content:space-between; gap:16px;">
+    <p><img src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="TMB" style="height:28px; width:auto; display:block; margin-bottom:6px;"><strong>TIANMA PRECISION SDN BHD</strong><br>
+    {{ emp.emp_id }} &mdash; {{ emp.full_name }}<br>
+    {{ emp.position or "" }} {% if emp.department %}({{ emp.department }}){% endif %}<br>
+    Bank: {{ emp.bank_name or "-" }} {{ emp.bank_account_no or "" }}</p>
+    <p style="text-align:right;">Payment Date: {{ "%02d"|format(payment_date.day) }} {{ month_names[payment_date.month] }} {{ payment_date.year }}<br>
+    EPF No.: {{ emp.epf_no or "-" }}<br>
+    Income Tax No.: {{ emp.tax_no or "-" }}</p>
+  </div>
+
+  <h2>Earnings</h2>
+  <div class="row"><span>Basic Salary</span><span>RM {{ "%.2f"|format(r.basic_salary) }}</span></div>
+  <div class="row"><span>Fixed Allowance</span><span>RM {{ "%.2f"|format(r.fixed_allowance) }}</span></div>
+  <div class="row"><span>Variable Allowance</span><span>RM {{ "%.2f"|format(r.variable_allowance) }}</span></div>
+  <div class="row"><span>OT 1.5x ({{ r.ot_hours_1_5 }} hrs @ RM {{ "%.4f"|format(r.ot_hourly_rate * 1.5) }}/hr)</span><span>RM {{ "%.2f"|format(r.ot_pay_1_5) }}</span></div>
+  <div class="row"><span>OT 2.0x ({{ r.ot_hours_2_0 }} hrs @ RM {{ "%.4f"|format(r.ot_hourly_rate * 2.0) }}/hr)</span><span>RM {{ "%.2f"|format(r.ot_pay_2_0) }}</span></div>
+  <div class="row"><span>OT 3.0x ({{ r.ot_hours_3_0 }} hrs @ RM {{ "%.4f"|format(r.ot_hourly_rate * 3.0) }}/hr)</span><span>RM {{ "%.2f"|format(r.ot_pay_3_0) }}</span></div>
+  <div class="row"><span>Transport Allowance</span><span>RM {{ "%.2f"|format(r.transport_allowance) }}</span></div>
+  <div class="row"><span>Meal Allowance</span><span>RM {{ "%.2f"|format(r.meal_allowance) }}</span></div>
+  <div class="row"><span>CEWI</span><span>RM {{ "%.2f"|format(r.cewi_allowance) }}</span></div>
+  <div class="row total"><span>Gross Pay</span><span>RM {{ "%.2f"|format(r.gross_pay) }}</span></div>
+
+  <h2>Deductions</h2>
+  <div class="row"><span>EPF (Employee){% if r.additional_epf_employee %} &mdash; incl. RM {{ "%.2f"|format(r.additional_epf_employee) }} voluntary{% endif %}</span><span>RM {{ "%.2f"|format(r.epf_employee) }}</span></div>
+  <div class="row"><span>SOCSO (Employee)</span><span>RM {{ "%.2f"|format(r.socso_employee) }}</span></div>
+  <div class="row"><span>EIS (Employee)</span><span>RM {{ "%.2f"|format(r.eis_employee) }}</span></div>
+  <div class="row"><span>PCB (Income Tax)</span><span>RM {{ "%.2f"|format(r.pcb) }}</span></div>
+  <div class="row"><span>SKBBK</span><span>RM {{ "%.2f"|format(r.skbbk_employee) }}</span></div>
+  {% if r.other_deduction %}
+  <div class="row"><span>Other Deduction{% if r.other_deduction_desc %} ({{ r.other_deduction_desc }}){% endif %}</span><span>RM {{ "%.2f"|format(r.other_deduction) }}</span></div>
+  {% endif %}
+  <div class="row total"><span>Total Deductions</span><span>RM {{ "%.2f"|format(r.total_deductions) }}</span></div>
+
+  <div class="row total"><span>NET PAY</span><span class="net-good">RM {{ "%.2f"|format(r.net_pay) }}</span></div>
+
+  <h2>Employer Contributions (not deducted from you)</h2>
+  <div class="row"><span>EPF (Employer)</span><span>RM {{ "%.2f"|format(r.epf_employer) }}</span></div>
+  <div class="row"><span>SOCSO (Employer)</span><span>RM {{ "%.2f"|format(r.socso_employer) }}</span></div>
+  <div class="row"><span>EIS (Employer)</span><span>RM {{ "%.2f"|format(r.eis_employer) }}</span></div>
+  <div class="row"><span>HRD Corp Levy</span><span>RM {{ "%.2f"|format(r.hrd_levy_employer) }}</span></div>
+</div>
+<a class="btn secondary no-print" href="{{ url_for('portal_payslips') }}">Back to Payslips</a>
+{% endblock %}

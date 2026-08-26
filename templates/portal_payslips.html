@@ -1,0 +1,41 @@
+{% extends "portal_base.html" %}
+{% block title %}My Payslips - Staff Portal{% endblock %}
+{% block content %}
+<h1>My Payslips</h1>
+<div class="card">
+  <div style="margin-bottom:16px;">
+    <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">Filter by Month</label>
+    <select id="month-filter" onchange="filterPayslips()" style="width:220px;">
+      <option value="">All Months</option>
+      {% for r in rows %}
+      <option value="{{ r.year }}-{{ r.month }}">{{ month_names[r.month] }} {{ r.year }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th class="text">Month</th><th>Net Pay</th><th>Finalized</th><th></th></tr></thead>
+    <tbody id="payslip-rows">
+      {% for r in rows %}
+      <tr data-ym="{{ r.year }}-{{ r.month }}">
+        <td class="text">{{ month_names[r.month] }} {{ r.year }}</td>
+        <td>RM {{ "%.2f"|format(r.net_pay) }}</td>
+        <td>{{ r.finalized_at }}</td>
+        <td><a class="btn secondary" href="{{ url_for('portal_payslip', year=r.year, month=r.month) }}">View</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="text" style="color:var(--muted);">No finalized payslips yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+<script>
+function filterPayslips() {
+  var val = document.getElementById('month-filter').value;
+  document.querySelectorAll('#payslip-rows tr[data-ym]').forEach(function(tr) {
+    tr.style.display = (!val || tr.dataset.ym === val) ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Acceptance of Resignation - {{ emp.emp_id }}</title>
+<style>
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    max-width: 760px;
+    margin: 40px auto;
+    padding: 0 20px;
+    color: #111;
+    line-height: 1.6;
+    font-size: 14px;
+  }
+  .letterhead { text-align: center; margin-bottom: 36px; }
+  .letterhead-row { display: grid; grid-template-columns: 90px 1fr 90px; align-items: center; }
+  .letterhead .tmb-logo { grid-column: 1; justify-self: start; height: 36px; width: auto; display: block; }
+  .letterhead h1 { grid-column: 2; font-size: 19px; margin: 0; letter-spacing: 0.5px; font-family: Arial, sans-serif; }
+  .letterhead .reg-no { color: #333; font-size: 12px; margin-top: 4px; }
+  .letterhead .sub { color: #444; font-size: 12px; margin-top: 2px; }
+  .letterhead hr { border: none; border-top: 2px solid #111; margin-top: 14px; }
+  .meta-row { display: flex; justify-content: space-between; margin-bottom: 28px; font-size: 13px; }
+  .subject { font-weight: bold; text-decoration: underline; margin: 20px 0; }
+  p { margin: 0 0 14px; text-align: justify; }
+  .details { margin: 18px 0; }
+  .details td { padding: 2px 10px 2px 0; vertical-align: top; }
+  .details td:first-child { color: #444; white-space: nowrap; }
+  ul.handover { margin: 0 0 14px; padding-left: 22px; }
+  ul.handover li { margin-bottom: 4px; }
+  .signature { margin-top: 60px; }
+  .signature .line { border-top: 1px solid #111; width: 240px; margin-top: 50px; padding-top: 4px; }
+  .ack-section { margin-top: 56px; border-top: 1px dashed #999; padding-top: 24px; }
+  .ack-title { font-weight: bold; letter-spacing: 0.5px; margin-bottom: 14px; }
+  .ack-field { margin: 18px 0 0; }
+  .warn { background: #fef3c7; color: #92400e; padding: 8px 12px; border-radius: 6px; font-family: -apple-system, Arial, sans-serif; font-size: 13px; margin-bottom: 14px; }
+  .toolbar {
+    max-width: 760px; margin: 0 auto 16px; padding: 12px 20px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    background: #f1f5f9; border-radius: 8px; font-family: -apple-system, Arial, sans-serif;
+  }
+  .toolbar button {
+    background: #1d4ed8; color: #fff; border: none; padding: 8px 16px;
+    border-radius: 6px; font-weight: 600; cursor: pointer; font-family: -apple-system, Arial, sans-serif;
+  }
+  .toolbar label {
+    display: flex; flex-direction: column; gap: 3px;
+    font-size: 11px; color: #444; font-weight: 600;
+  }
+  .toolbar input {
+    font-family: -apple-system, Arial, sans-serif; font-size: 13px;
+    padding: 5px 6px; border: 1px solid #ccc; border-radius: 4px;
+  }
+  @media print {
+    .toolbar { display: none; }
+    body { margin: 0 auto; font-size: 12px; line-height: 1.4; }
+    .letterhead { margin-bottom: 16px; }
+    .meta-row { margin-bottom: 16px; }
+    p { margin-bottom: 8px; }
+    .subject { margin: 12px 0; }
+    .details { margin: 10px 0; }
+    .signature { margin-top: 24px; }
+    .signature .line { margin-top: 24px; }
+    .ack-section { margin-top: 20px; padding-top: 14px; }
+    .signature, .ack-section { page-break-inside: avoid; }
+    @page { margin: 12mm; }
+  }
+</style>
+</head>
+<body>
+
+<form class="toolbar" method="get">
+  <button type="button" onclick="window.print()">Print / Save as PDF</button>
+  <label>Letter Date <input type="date" name="letter_date" value="{{ letter_date.isoformat() }}"></label>
+  <label>Resignation Date <input type="date" name="resignation_date" value="{{ resignation_date.isoformat() if resignation_date else '' }}"></label>
+  <label>Last Working Day <input type="date" name="last_working_day" value="{{ last_working_day.isoformat() if last_working_day else '' }}"></label>
+  <button type="submit">Update Letter</button>
+</form>
+
+<form class="toolbar" method="get">
+  <input type="hidden" name="letter_date" value="{{ letter_date.isoformat() }}">
+  <input type="hidden" name="resignation_date" value="{{ resignation_date.isoformat() if resignation_date else '' }}">
+  <input type="hidden" name="last_working_day" value="{{ last_working_day.isoformat() if last_working_day else '' }}">
+  <label>Final Month's Salary (RM) <input type="number" step="0.01" name="final_salary" placeholder="pro-rated" value="{{ settlement.final_salary if settlement and settlement.final_salary is not none else '' }}"></label>
+  <label>Payment in Lieu of Notice (RM) <input type="number" step="0.01" name="notice_pay" placeholder="if applicable" value="{{ settlement.notice_pay if settlement and settlement.notice_pay is not none else '' }}"></label>
+  <label>Unutilized Annual Leave (days) <input type="number" step="0.5" name="leave_days" value="{{ settlement.leave_days if settlement and settlement.leave_days is not none else '' }}"></label>
+  <label>Other Deductions (RM) <input type="number" step="0.01" name="deduction_amount" value="{{ settlement.deduction_amount if settlement else '' }}"></label>
+  <label>Deduction Description <input type="text" name="deduction_desc" placeholder="e.g. unreturned laptop" value="{{ settlement.deduction_desc if settlement else '' }}"></label>
+  <button type="submit">Update Settlement</button>
+</form>
+
+{% if not resignation_date or not last_working_day %}
+<div class="warn">
+  {% if not resignation_date %}Resignation Date is not set. {% endif %}
+  {% if not last_working_day %}Last Working Day is not set. {% endif %}
+  Fill these in above (or save them on the employee's Edit page) before printing the final letter.
+</div>
+{% endif %}
+
+<div class="letterhead">
+  <div class="letterhead-row">
+    <img src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="TMB" class="tmb-logo">
+    <h1>TIANMA PRECISION SDN. BHD.</h1>
+  </div>
+  <div class="reg-no">202301036641 (1530564-X)</div>
+  <div class="sub">Plo 192, Jalan Bakau 5, Kawasan Perindustrian Tanjung Langsat, 81700 Pasir Gudang, Johor, Malaysia.</div>
+  <hr>
+</div>
+
+<div class="meta-row">
+  <div>Ref: TMB/HR/{{ emp.emp_id }}/{{ letter_date.year }}</div>
+  <div>{{ letter_date.strftime('%d %B %Y') }}</div>
+</div>
+
+<p style="font-weight:bold; letter-spacing:0.5px;">PRIVATE &amp; CONFIDENTIAL</p>
+
+<p>
+  {{ emp.full_name }}<br>
+  {{ emp.position or "" }}
+</p>
+
+<p>Dear Sir/Madam,</p>
+
+<div class="subject">RE: ACCEPTANCE OF RESIGNATION</div>
+
+<p>
+  We refer to your resignation letter{% if resignation_date %} dated <strong>{{ resignation_date.strftime('%d %B %Y') }}</strong>{% endif %},
+  tendering your resignation from your position with Tianma Precision Sdn. Bhd.
+</p>
+
+<p>
+  We wish to inform you that the Company has accepted your resignation, and your last day
+  of service will be <strong>{{ last_working_day.strftime('%d %B %Y') if last_working_day else "____________________" }}</strong>.
+</p>
+
+<table class="details">
+  <tr><td>Employee ID</td><td>{{ emp.emp_id }}</td></tr>
+  <tr><td>Employee Name</td><td>{{ emp.full_name }}</td></tr>
+  <tr><td>Position</td><td>{{ emp.position or "-" }}</td></tr>
+  <tr><td>Resignation Date</td><td>{{ resignation_date.strftime('%d %B %Y') if resignation_date else "-" }}</td></tr>
+  <tr><td>Last Working Day</td><td>{{ last_working_day.strftime('%d %B %Y') if last_working_day else "-" }}</td></tr>
+</table>
+
+<p>
+  Prior to your last working day, kindly ensure a proper handover of your duties and the
+  return of all Company property in your possession, including but not limited to:
+</p>
+<ul class="handover">
+  <li>Employee identification card</li>
+  <li>Access cards / keys</li>
+  <li>Company-issued tools, equipment, and uniforms</li>
+  <li>Any documents, files, or data belonging to the Company</li>
+</ul>
+
+{% if settlement %}
+<p>Your final settlement is summarized below:</p>
+<table class="details">
+  {% if settlement.final_salary is not none %}
+  <tr><td>Final Month's Salary (pro-rated)</td><td>RM {{ "%.2f"|format(settlement.final_salary) }}</td></tr>
+  {% endif %}
+  {% if settlement.notice_pay is not none %}
+  <tr><td>Payment in Lieu of Notice</td><td>RM {{ "%.2f"|format(settlement.notice_pay) }}</td></tr>
+  {% endif %}
+  {% if settlement.leave_days is not none %}
+  <tr><td>Encashment of Unutilized Annual Leave ({{ settlement.leave_days }} days &times; RM {{ "%.2f"|format(settlement.daily_rate) }}/day)</td><td>RM {{ "%.2f"|format(settlement.leave_amount) }}</td></tr>
+  {% endif %}
+  {% if settlement.deduction_amount %}
+  <tr><td>Less: Deductions{% if settlement.deduction_desc %} ({{ settlement.deduction_desc }}){% endif %}</td><td>&minus; RM {{ "%.2f"|format(settlement.deduction_amount) }}</td></tr>
+  {% endif %}
+  <tr><td><strong>Net Amount Payable</strong></td><td><strong>RM {{ "%.2f"|format(settlement.net_amount) }}</strong></td></tr>
+</table>
+<p>
+  The above is a summary for your reference; the Final Month's Salary remains subject to
+  standard statutory deductions (EPF/SOCSO/PCB) processed through the Company's normal
+  payroll cycle. Any other outstanding entitlements or lawful deductions not listed above
+  will be settled in accordance with applicable statutory requirements.
+</p>
+{% else %}
+<p>
+  Your final salary and any outstanding entitlements will be processed and paid out in
+  accordance with the Company's standard payroll cycle and applicable statutory
+  requirements, subject to any deductions or set-offs the Company is entitled to make.
+</p>
+{% endif %}
+
+<p>
+  Please note that your obligations relating to confidentiality, as set out in your terms
+  of employment and the Company's Employee Handbook, shall continue to apply even after
+  the cessation of your employment with the Company.
+</p>
+
+<p>
+  We would like to take this opportunity to thank you for your contributions during your
+  time with Tianma Precision Sdn. Bhd., and we wish you all the best in your future
+  endeavours.
+</p>
+
+<p>Yours sincerely,<br>Tianma Precision Sdn. Bhd.</p>
+
+<div class="signature">
+  <div class="line">Yang Hui<br>Director</div>
+</div>
+
+<div class="ack-section">
+  <div class="ack-title">ACKNOWLEDGMENT OF RECEIPT</div>
+  <p>
+    I acknowledge that I have received, read and understood this Acceptance of Resignation
+    Letter, and confirm my last working day as
+    <strong>{{ last_working_day.strftime('%d %B %Y') if last_working_day else "____________________" }}</strong>.
+  </p>
+  <div class="ack-field">Employee&rsquo;s Name: {{ emp.full_name }}</div>
+  <div class="ack-field">Signature: ______________________________</div>
+  <div class="ack-field">Date: __________________________________</div>
+</div>
+
+</body>
+</html>

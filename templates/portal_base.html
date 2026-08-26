@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}TMB Staff Portal{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{% block extra_style %}{% endblock %}
+</head>
+<body>
+{% if hr_username and session.get("portal_emp_id") %}
+<div class="no-print" style="background:#1D4ED8; color:#fff; text-align:center; padding:6px 12px; font-size:13px;">
+  HR Preview &mdash; viewing as {{ session.get("portal_emp_id") }}
+  <a href="{{ url_for('portal_exit_preview') }}" style="color:#fff; text-decoration:underline; margin-left:10px;">Exit Preview</a>
+</div>
+{% endif %}
+<header class="topbar no-print">
+  <div class="brand"><img src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="TMB" class="brand-logo"> TIANMA PRECISION SDN BHD <span>Staff Portal</span></div>
+  <nav>
+    <a href="{{ url_for('portal_dashboard') }}">Dashboard</a>
+    <a href="{{ url_for('portal_payslips') }}">Payslips</a>
+    <a href="{{ url_for('portal_attendance') }}">Attendance &amp; Leave</a>
+    <a href="{{ url_for('portal_leave') }}">Apply Leave</a>
+    <a href="{{ url_for('portal_business_trip') }}">Business Trip</a>
+    <a href="{{ url_for('portal_profile') }}">My Profile</a>
+    <a href="{{ url_for('portal_logout') }}">Logout</a>
+  </nav>
+</header>
+<main>
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

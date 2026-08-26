@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Payroll {{ month_names[month] }} {{ year }} - TMB Payroll{% endblock %}
+{% block content %}
+<h1>Run Payroll &mdash; {{ month_names[month] }} {{ year }} ({{ results|length }})</h1>
+<div class="month-nav">
+  <a href="{{ url_for('run_payroll', year=year if month>1 else year-1, month=month-1 if month>1 else 12) }}">&laquo; Prev</a>
+  <strong>{{ month_names[month] }} {{ year }}</strong>
+  <a href="{{ url_for('run_payroll', year=year if month<12 else year+1, month=month+1 if month<12 else 1) }}">Next &raquo;</a>
+  <a class="btn secondary" href="{{ url_for('attendance', year=year, month=month) }}">Edit Attendance</a>
+  <a class="btn secondary" href="{{ url_for('payroll_summary', year=year, month=month) }}">Print Summary Report</a>
+  <a class="btn secondary" href="{{ url_for('payroll_export', year=year, month=month) }}">Export to Excel</a>
+  <a class="btn secondary" href="{{ url_for('socso_eis_textfile', year=year, month=month) }}">Download SOCSO+EIS Text File</a>
+</div>
+
+<div class="card table-wrap">
+<table>
+<thead>
+<tr>
+  <th class="text sticky-col sticky-col-1">Emp ID</th><th class="text sticky-col sticky-col-2">Name</th><th>Basic</th><th>Fixed Allow.</th>
+  <th>Var. Allow.</th><th>OT 1.5h</th><th>OT 2.0h</th><th>OT 3.0h</th><th>OT Rate</th><th>Total OT</th><th>Transport</th><th>Meal</th><th>CEWI</th>
+  <th>Gross</th><th>EPF (Emp)</th><th>EPF (Er)</th><th>SOCSO (Emp)</th><th>SOCSO (Er)</th>
+  <th>EIS (Emp)</th><th>EIS (Er)</th><th>PCB</th><th>SKBBK</th><th>HRD Levy</th><th>UL Deduction</th><th>Other Ded.</th>
+  <th>Total Ded.</th><th>NET PAY</th><th class="text">Status</th><th class="text">Bank</th><th class="text">Acct No.</th><th></th>
+</tr>
+</thead>
+<tbody>
+{% for r in results %}
+<tr>
+  <td class="text sticky-col sticky-col-1">{{ r.emp_id }}</td>
+  <td class="text sticky-col sticky-col-2">{{ r.full_name }}</td>
+  <td>{{ "%.2f"|format(r.basic_salary + (r.unpaid_deduction or 0)) }}</td>
+  <td>{{ "%.2f"|format(r.fixed_allowance) }}</td>
+  <td>{{ "%.2f"|format(r.variable_allowance) }}</td>
+  <td>{{ r.ot_hours_1_5 }}</td>
+  <td>{{ r.ot_hours_2_0 }}</td>
+  <td>{{ r.ot_hours_3_0 }}</td>
+  <td>{{ "%.4f"|format(r.ot_hourly_rate) }}</td>
+  <td>{{ "%.2f"|format(r.ot_pay) }}</td>
+  <td>{{ "%.2f"|format(r.transport_allowance) }}</td>
+  <td>{{ "%.2f"|format(r.meal_allowance) }}</td>
+  <td>{{ "%.2f"|format(r.cewi_allowance) }}</td>
+  <td><strong>{{ "%.2f"|format(r.gross_pay + (r.unpaid_deduction or 0)) }}</strong></td>
+  <td>{{ "%.2f"|format(r.epf_employee) }}</td>
+  <td>{{ "%.2f"|format(r.epf_employer) }}</td>
+  <td>{{ "%.2f"|format(r.socso_employee) }}</td>
+  <td>{{ "%.2f"|format(r.socso_employer) }}</td>
+  <td>{{ "%.2f"|format(r.eis_employee) }}</td>
+  <td>{{ "%.2f"|format(r.eis_employer) }}</td>
+  <td>{{ "%.2f"|format(r.pcb) }}</td>
+  <td>{{ "%.2f"|format(r.skbbk_employee) }}</td>
+  <td>{{ "%.2f"|format(r.hrd_levy_employer) }}</td>
+  <td{% if r.unpaid_deduction %} style="color:var(--danger); font-weight:600;" title="{{ r.unpaid_days|default(0)|round(1) }} day(s) unpaid leave/absence"{% endif %}>{{ "%.2f"|format(r.unpaid_deduction or 0) }}</td>
+  <td {% if r.other_deduction %}title="{{ r.other_deduction_desc or '' }}"{% endif %}>{{ "%.2f"|format(r.other_deduction) }}</td>
+  <td>{{ "%.2f"|format(r.total_deductions + (r.unpaid_deduction or 0)) }}</td>
+  <td><strong>{{ "%.2f"|format(r.net_pay) }}</strong></td>
+  <td class="text">
+    {% if r.emp_id in finalized %}
+    <span class="pill finalized">Finalized</span>
+    {% else %}
+    <span class="pill draft">Draft</span>
+    {% endif %}
+  </td>
+  <td class="text">{{ bank_info.get(r.emp_id, {}).get("bank_name") or "-" }}</td>
+  <td class="text">{{ bank_info.get(r.emp_id, {}).get("bank_account_no") or "-" }}</td>
+  <td><a class="emp-link" href="{{ url_for('payslip', emp_id=r.emp_id, year=year, month=month) }}">Payslip</a>
+      &nbsp;<a class="emp-link" href="{{ url_for('payroll_detail', emp_id=r.emp_id, year=year, month=month) }}">Details</a></td>
+</tr>
+{% endfor %}
+<tr class="totals-row">
+  <td class="text sticky-col" style="left:0" colspan="13">TOTAL</td>
+  <td>{{ "%.2f"|format(totals.gross_pay + totals.unpaid_deduction) }}</td>
+  <td>{{ "%.2f"|format(totals.epf_employee) }}</td>
+  <td>{{ "%.2f"|format(totals.epf_employer) }}</td>
+  <td>{{ "%.2f"|format(totals.socso_employee) }}</td>
+  <td>{{ "%.2f"|format(totals.socso_employer) }}</td>
+  <td>{{ "%.2f"|format(totals.eis_employee) }}</td>
+  <td>{{ "%.2f"|format(totals.eis_employer) }}</td>
+  <td>{{ "%.2f"|format(totals.pcb) }}</td>
+  <td>{{ "%.2f"|format(totals.skbbk_employee) }}</td>
+  <td>{{ "%.2f"|format(totals.hrd_levy_employer) }}</td>
+  <td>{{ "%.2f"|format(totals.unpaid_deduction) }}</td>
+  <td>{{ "%.2f"|format(totals.other_deduction) }}</td>
+  <td>{{ "%.2f"|format(totals.total_deductions + totals.unpaid_deduction) }}</td>
+  <td>{{ "%.2f"|format(totals.net_pay) }}</td>
+  <td colspan="4"></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>Total Headcount: {{ results|length }} employees</strong></p>
+{% if zero_pay_notes %}
+<div style="background:#fef3c7; color:#92400e; padding:10px 14px; border-radius:6px; font-size:13px; margin-bottom:12px;">
+  <strong>Note:</strong>
+  <ul style="margin:4px 0 0; padding-left:18px;">
+    {% for note in zero_pay_notes %}<li>{{ note }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('finalize_payroll', year=year, month=month) }}"
+      onsubmit="return confirm('Finalize payroll for {{ month_names[month] }} {{ year }}? This locks in the numbers above and updates YTD tax records.');">
+  <button class="btn" type="submit">Finalize Payroll for {{ month_names[month] }} {{ year }}</button>
+</form>
+{% endblock %}

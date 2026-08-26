@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block title %}Employees - TMB Payroll{% endblock %}
+{% block content %}
+{% set optional_columns = [
+  {"key": "department", "label": "Dept", "type": "select", "options": depts, "default": true},
+  {"key": "position", "label": "Position", "type": "select", "options": positions, "default": true},
+  {"key": "date_joined", "label": "Join Date", "type": "text", "default": true},
+  {"key": "confirmation_date", "label": "Confirm Date", "type": "text", "default": true},
+  {"key": "last_working_day", "label": "Resign Date", "type": "text", "default": true},
+  {"key": "eis", "label": "EIS", "type": "eis", "default": true},
+  {"key": "basic_salary", "label": "Basic (RM)", "type": "currency", "default": true},
+  {"key": "bank_name", "label": "Bank", "type": "text", "default": true},
+  {"key": "bank_account_no", "label": "Account No.", "type": "text", "default": true},
+  {"key": "ic_passport_no", "label": "IC / Passport No.", "type": "text", "default": false},
+  {"key": "date_of_birth", "label": "Date of Birth", "type": "text", "default": false},
+  {"key": "race", "label": "Race", "type": "text", "default": false},
+  {"key": "religion", "label": "Religion", "type": "text", "default": false},
+  {"key": "marital_status", "label": "Marital Status", "type": "text", "default": false},
+  {"key": "phone_number", "label": "Phone Number", "type": "text", "default": false},
+  {"key": "hp_no", "label": "HP No.", "type": "text", "default": false},
+  {"key": "email", "label": "Email", "type": "text", "default": false},
+  {"key": "work_pattern", "label": "Work Pattern", "type": "text", "default": false},
+  {"key": "probation_end_date", "label": "Probation End", "type": "text", "default": false},
+  {"key": "skbbk_flag", "label": "SKBBK", "type": "text", "default": false},
+  {"key": "working_days_week", "label": "Days/Week", "type": "text", "default": false},
+  {"key": "annual_leave_entitlement", "label": "AL Entitlement", "type": "text", "default": false},
+  {"key": "mc_entitlement", "label": "MC Entitlement", "type": "text", "default": false},
+  {"key": "hospitalisation_leave_entitlement", "label": "Hosp. Entitlement", "type": "text", "default": false},
+] %}
+<div style="display:flex; justify-content:space-between; align-items:center;">
+  <h1>Employee Master ({{ employees|length }})</h1>
+  <a class="btn" href="{{ url_for('add_employee') }}">+ Add Employee</a>
+</div>
+<div class="tabs" style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+  <div>
+    <a class="btn {% if view != 'inactive' %}{% else %}secondary{% endif %}" href="{{ url_for('employees') }}">Active Staff</a>
+    <a class="btn {% if view == 'inactive' %}{% else %}secondary{% endif %}" href="{{ url_for('employees', view='inactive') }}">Inactive Staff ({{ inactive_count }})</a>
+  </div>
+  <div style="position:relative;">
+    <button type="button" class="btn secondary" id="columns-toggle-btn">Columns &#9662;</button>
+    <div id="columns-panel" class="card" style="display:none; position:absolute; right:0; top:36px; z-index:20; width:280px; max-height:400px; overflow-y:auto; box-shadow:0 4px 16px rgba(0,0,0,0.15);">
+      {% for col in optional_columns %}
+      <label style="display:flex; align-items:center; gap:8px; font-size:13px; padding:4px 0; cursor:pointer;">
+        <input type="checkbox" class="col-toggle" data-key="{{ col.key }}" checked>
+        {{ col.label }}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+<div class="card table-wrap">
+<table>
+<thead>
+<tr>
+  <th class="text sticky-col sticky-col-1">ID</th><th class="text sticky-col sticky-col-2">Name</th>
+  {% for col in optional_columns %}
+  <th class="{{ 'text' if col.type != 'currency' else '' }}" data-key="{{ col.key }}">{{ col.label }}</th>
+  {% endfor %}
+  <th class="sticky-col sticky-col-right"></th>
+</tr>
+<tr class="filter-row no-print">
+  <th class="text sticky-col sticky-col-1"><input type="text" class="col-filter" data-key="emp_id" placeholder="Filter..."></th>
+  <th class="text sticky-col sticky-col-2"><input type="text" class="col-filter" data-key="full_name" placeholder="Filter..."></th>
+  {% for col in optional_columns %}
+  <th class="{{ 'text' if col.type != 'currency' else '' }}" data-key="{{ col.key }}">
+    {% if col.type == "select" %}
+    <select class="col-filter" data-key="{{ col.key }}">
+      <option value="">All</option>
+      {% for opt in col.options %}<option value="{{ opt }}">{{ opt }}</option>{% endfor %}
+    </select>
+    {% elif col.type == "eis" %}
+    <select class="col-filter" data-key="{{ col.key }}">
+      <option value="">All</option>
+      <option value="Yes">Yes</option>
+      <option value="No">No</option>
+      <option value="?">?</option>
+    </select>
+    {% else %}
+    <input type="text" class="col-filter" data-key="{{ col.key }}" placeholder="Filter...">
+    {% endif %}
+  </th>
+  {% endfor %}
+  <th class="sticky-col sticky-col-right"><button type="button" id="clear-filters" class="btn secondary" style="padding:3px 8px; font-size:11px;">Clear</button></th>
+</tr>
+</thead>
+<tbody>
+{% set cur_ym = "%04d-%02d"|format(cur_year, cur_month) %}
+{% for e in employees %}
+{% set is_new = e.date_joined and e.date_joined.startswith(cur_ym) %}
+<tr{% if e.last_working_day %} class="row-resigned"{% elif is_new %} class="row-new"{% endif %}>
+  <td class="text sticky-col sticky-col-1" data-key="emp_id">{{ e.emp_id }}</td>
+  <td class="text sticky-col sticky-col-2" data-key="full_name">
+    {% if e.status == "Inactive" %}<span style="color:var(--danger); font-weight:600;">{{ e.full_name }}</span>
+    {% else %}{{ e.full_name }}{% endif %}
+  </td>
+  {% for col in optional_columns %}
+    {% if col.type == "eis" %}
+    <td class="text" data-key="eis">
+      {% set applies = eis_applies[e.emp_id] %}
+      <a class="emp-link" href="{{ url_for('edit_employee', emp_id=e.emp_id) }}"
+         {% if applies is none %}style="color:var(--muted);"{% elif not applies %}style="color:var(--muted);"{% endif %}>
+        {% if applies is none %}?{% elif applies %}Yes{% else %}No{% endif %}
+      </a>
+    </td>
+    {% elif col.type == "currency" %}
+    <td data-key="{{ col.key }}">{{ "%.2f"|format(e[col.key] or 0) }}</td>
+    {% else %}
+    <td class="text" data-key="{{ col.key }}">{{ e[col.key] or "-" }}</td>
+    {% endif %}
+  {% endfor %}
+  <td class="sticky-col sticky-col-right"><a class="emp-link" href="{{ url_for('edit_employee', emp_id=e.emp_id) }}">Edit</a></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+<script>
+(function() {
+  var STORAGE_KEY = 'employeeMasterColumns';
+  var defaultVisible = {{ optional_columns | selectattr('default') | map(attribute='key') | list | tojson }};
+  var allKeys = {{ optional_columns | map(attribute='key') | list | tojson }};
+
+  var filters = document.querySelectorAll('.col-filter');
+  var rows = document.querySelectorAll('table tbody tr');
+  var clearBtn = document.getElementById('clear-filters');
+  var toggleBtn = document.getElementById('columns-toggle-btn');
+  var panel = document.getElementById('columns-panel');
+  var checkboxes = document.querySelectorAll('.col-toggle');
+
+  function loadVisible() {
+    try {
+      var saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return defaultVisible;
+  }
+  function saveVisible(visible) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(visible)); } catch (e) {}
+  }
+  function applyColumnVisibility() {
+    var visible = loadVisible();
+    allKeys.forEach(function(key) {
+      var show = visible.indexOf(key) !== -1;
+      document.querySelectorAll('[data-key="' + key + '"]').forEach(function(el) {
+        el.style.display = show ? '' : 'none';
+      });
+      var cb = document.querySelector('.col-toggle[data-key="' + key + '"]');
+      if (cb) cb.checked = show;
+    });
+  }
+
+  checkboxes.forEach(function(cb) {
+    cb.addEventListener('change', function() {
+      var visible = loadVisible();
+      var key = cb.dataset.key;
+      if (cb.checked) {
+        if (visible.indexOf(key) === -1) visible.push(key);
+      } else {
+        visible = visible.filter(function(k) { return k !== key; });
+      }
+      saveVisible(visible);
+      applyColumnVisibility();
+    });
+  });
+
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    });
+    document.addEventListener('click', function(e) {
+      if (!panel.contains(e.target) && e.target !== toggleBtn) {
+        panel.style.display = 'none';
+      }
+    });
+  }
+
+  function applyFilters() {
+    var active = [];
+    filters.forEach(function(f) {
+      var val = f.value.trim().toLowerCase();
+      if (val) {
+        // "-" is our own placeholder for a blank/not-set value (see "e[col.key] or '-'"
+        // in the template) - typing it means "show only blank", an exact match, not a
+        // substring search (which would also match real values containing a hyphen,
+        // like phone numbers e.g. "011-62160447").
+        var exact = f.tagName === 'SELECT' || val === '-';
+        active.push({ key: f.dataset.key, val: val, exact: exact });
+      }
+    });
+    rows.forEach(function(row) {
+      var visible = active.every(function(f) {
+        var cell = row.querySelector('[data-key="' + f.key + '"]');
+        if (!cell) return true;
+        var text = cell.textContent.trim().toLowerCase();
+        return f.exact ? text === f.val : text.indexOf(f.val) !== -1;
+      });
+      row.style.display = visible ? '' : 'none';
+    });
+  }
+
+  filters.forEach(function(f) {
+    f.addEventListener('input', applyFilters);
+    f.addEventListener('change', applyFilters);
+  });
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', function() {
+      filters.forEach(function(f) { f.value = ''; });
+      applyFilters();
+    });
+  }
+
+  applyColumnVisibility();
+})();
+</script>
+{% endblock %}

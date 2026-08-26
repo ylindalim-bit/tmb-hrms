@@ -1,0 +1,70 @@
+<div class="card table-wrap">
+<table>
+<thead>
+<tr>
+  {% if not totals_only %}<th class="text">Emp ID</th><th class="text">Name</th>{% endif %}
+  <th>Basic</th><th>Total Allowance</th><th>Total OT</th><th>Gross Pay</th>
+  <th>EPF (Emp)</th><th>EPF (Er)</th><th>SOCSO (Emp)</th><th>SOCSO (Er)</th>
+  <th>EIS (Emp)</th><th>EIS (Er)</th><th>SKBBK</th><th>PCB</th><th>HRD Levy</th>
+  <th>Total Ded.</th><th>NET PAY</th>
+  {% if not totals_only %}<th class="text">Bank</th><th class="text">Acct No.</th>{% endif %}
+</tr>
+</thead>
+<tbody>
+{% if not totals_only %}
+{% for r in results %}
+<tr>
+  <td class="text">{{ r.emp_id }}</td>
+  <td class="text">{{ r.full_name }}</td>
+  <td>{{ "%.2f"|format(r.basic) }}</td>
+  <td>{{ "%.2f"|format(r.total_allowance) }}</td>
+  <td>{{ "%.2f"|format(r.ot_pay) }}</td>
+  <td>{{ "%.2f"|format(r.gross_pay) }}</td>
+  <td>{{ "%.2f"|format(r.epf_employee) }}</td>
+  <td>{{ "%.2f"|format(r.epf_employer) }}</td>
+  <td>{{ "%.2f"|format(r.socso_employee) }}</td>
+  <td>{{ "%.2f"|format(r.socso_employer) }}</td>
+  <td>{{ "%.2f"|format(r.eis_employee) }}</td>
+  <td>{{ "%.2f"|format(r.eis_employer) }}</td>
+  <td>{{ "%.2f"|format(r.skbbk_employee) }}</td>
+  <td>{{ "%.2f"|format(r.pcb) }}</td>
+  <td>{{ "%.2f"|format(r.hrd_levy_employer) }}</td>
+  <td>{{ "%.2f"|format(r.total_deductions) }}</td>
+  <td><strong>{{ "%.2f"|format(r.net_pay) }}</strong></td>
+  <td class="text">{{ r.bank_name or "-" }}</td>
+  <td class="text">{{ r.bank_account_no or "-" }}</td>
+</tr>
+{% endfor %}
+{% endif %}
+<tr class="totals-row">
+  {% if not totals_only %}<td class="text" colspan="2">TOTAL ({{ results|length }} employees)</td>
+  {% else %}<td class="text">TOTAL ({{ results|length }} employees)</td>{% endif %}
+  <td>{{ "%.2f"|format(totals.basic) }}</td>
+  <td>{{ "%.2f"|format(totals.total_allowance) }}</td>
+  <td>{{ "%.2f"|format(totals.ot_pay) }}</td>
+  <td>{{ "%.2f"|format(totals.gross_pay) }}</td>
+  <td>{{ "%.2f"|format(totals.epf_employee) }}</td>
+  <td>{{ "%.2f"|format(totals.epf_employer) }}</td>
+  <td>{{ "%.2f"|format(totals.socso_employee) }}</td>
+  <td>{{ "%.2f"|format(totals.socso_employer) }}</td>
+  <td>{{ "%.2f"|format(totals.eis_employee) }}</td>
+  <td>{{ "%.2f"|format(totals.eis_employer) }}</td>
+  <td>{{ "%.2f"|format(totals.skbbk_employee) }}</td>
+  <td>{{ "%.2f"|format(totals.pcb) }}</td>
+  <td>{{ "%.2f"|format(totals.hrd_levy_employer) }}</td>
+  <td>{{ "%.2f"|format(totals.total_deductions) }}</td>
+  <td>{{ "%.2f"|format(totals.net_pay) }}</td>
+  {% if not totals_only %}<td colspan="2"></td>{% endif %}
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>Total Headcount: {{ results|length }} employees</strong></p>
+{% if zero_pay_notes %}
+<div style="background:#fef3c7; color:#92400e; padding:10px 14px; border-radius:6px; font-size:13px; margin-top:8px;">
+  <strong>Note:</strong>
+  <ul style="margin:4px 0 0; padding-left:18px;">
+    {% for note in zero_pay_notes %}<li>{{ note }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}

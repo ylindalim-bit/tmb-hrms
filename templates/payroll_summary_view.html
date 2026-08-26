@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Payroll Summary {{ month_names[month] }} {{ year }} - TMB Payroll</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<style>
+  body { background: #fff; }
+  main { padding: 24px; max-width: none; margin: 0; }
+  @media print {
+    @page { size: A4 landscape; margin: 10mm; }
+    .table-wrap { overflow-x: visible; }
+    table { font-size: 9px; width: 100%; table-layout: fixed; }
+    th, td { padding: 3px 4px; white-space: normal; word-break: break-word; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <p><strong>TIANMA PRECISION SDN BHD</strong><br>
+  Payroll Summary Report &mdash; {{ month_names[month] }} {{ year }}{% if totals_only %} (Totals Only){% endif %}</p>
+  {% include "_payroll_summary_table.html" %}
+</main>
+</body>
+</html>

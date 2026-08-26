@@ -1,0 +1,73 @@
+{% extends "portal_base.html" %}
+{% block title %}Attendance & Leave - Staff Portal{% endblock %}
+{% block content %}
+<h1>Attendance &amp; Leave Balance</h1>
+<p style="font-size:20px; font-weight:700; margin-top:-8px;">{{ emp.emp_id }} &mdash; {{ emp.full_name }}</p>
+<p style="color:var(--muted); margin-top:-8px;">
+  Date Joined: {{ emp.date_joined or "-" }} &nbsp;|&nbsp;
+  Date Of Confirmation: {{ emp.confirmation_date or "-" }}
+  {% if emp.resignation_date %}&nbsp;|&nbsp; Resignation Date: {{ emp.resignation_date }}{% endif %}
+</p>
+
+<div class="month-nav">
+  <span>Year:</span>
+  {% for y in years %}
+  <a href="{{ url_for('portal_attendance', year=y.year) }}" style="{% if y.year == year %}font-weight:700;{% endif %}">{{ y.year }}</a>
+  {% endfor %}
+</div>
+
+<div class="form-grid">
+  <div class="card">
+    <h2 style="margin-top:0;">Annual Leave</h2>
+    <p>Entitlement: {{ emp.annual_leave_entitlement or 0 }} days<br>
+       Used this year: {{ al_used }} days<br>
+       <strong>Balance: {{ al_balance }} days</strong></p>
+  </div>
+  <div class="card">
+    <h2 style="margin-top:0;">Medical Leave</h2>
+    <p>Entitlement: {{ emp.mc_entitlement or 0 }} days<br>
+       Used this year: {{ mc_used }} days<br>
+       <strong>Balance: {{ mc_balance }} days</strong></p>
+    <p style="color:var(--muted); font-size:12px; margin-top:10px; padding-top:10px; border-top:1px dashed var(--border);">
+      MC entitlement by length of service:<br>
+      Less than 2 years &mdash; 14 days<br>
+      2 to 5 years &mdash; 18 days<br>
+      5 years or more &mdash; 22 days
+    </p>
+  </div>
+  <div class="card">
+    <h2 style="margin-top:0;">Hospitalisation Leave</h2>
+    <p>Entitlement: {{ emp.hospitalisation_leave_entitlement or 0 }} days<br>
+       Used this year: {{ hl_used }} days<br>
+       <strong>Balance: {{ hl_balance }} days</strong></p>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">Monthly Attendance ({{ year }})</h2>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th class="text">Month</th><th>Days Worked</th><th>AL</th><th>MC</th><th>HL</th>
+        <th>UL</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="text">{{ month_names[r.month] }}</td>
+        <td>{{ r.days_worked }}</td>
+        <td>{{ r.al_days }}</td>
+        <td>{{ r.mc_days }}</td>
+        <td>{{ r.hl_days }}</td>
+        <td>{{ r.ul_days }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text" style="color:var(--muted);">No attendance recorded for {{ year }}.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

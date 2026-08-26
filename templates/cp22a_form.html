@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>CP22A Reference - {{ emp.emp_id }}</title>
+<style>
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    max-width: 760px;
+    margin: 40px auto;
+    padding: 0 20px;
+    color: #111;
+    line-height: 1.6;
+    font-size: 14px;
+  }
+  .letterhead { text-align: center; margin-bottom: 30px; }
+  .letterhead-row { display: grid; grid-template-columns: 90px 1fr 90px; align-items: center; }
+  .letterhead .tmb-logo { grid-column: 1; justify-self: start; height: 36px; width: auto; display: block; }
+  .letterhead h1 { grid-column: 2; font-size: 19px; margin: 0; letter-spacing: 0.5px; font-family: Arial, sans-serif; }
+  .letterhead .reg-no { color: #333; font-size: 12px; margin-top: 4px; }
+  .letterhead .sub { color: #444; font-size: 12px; margin-top: 2px; }
+  .letterhead hr { border: none; border-top: 2px solid #111; margin-top: 14px; }
+  .form-title { text-align: center; font-weight: bold; font-size: 16px; letter-spacing: 1px; text-decoration: underline;
+                margin: 0 0 6px; font-family: Arial, sans-serif; }
+  .form-subtitle { text-align: center; font-size: 12px; color: #555; margin-bottom: 24px; font-family: Arial, sans-serif; }
+  .notice {
+    background: #fef3c7; color: #92400e; padding: 10px 14px; border-radius: 6px;
+    font-family: -apple-system, Arial, sans-serif; font-size: 12.5px; margin-bottom: 24px; line-height: 1.5;
+  }
+  .missing { background: #fee2e2; color: #991b1b; padding: 10px 14px; border-radius: 6px;
+             font-family: -apple-system, Arial, sans-serif; font-size: 12.5px; margin-bottom: 24px; line-height: 1.6; }
+  .section-title { font-weight: bold; font-size: 13px; letter-spacing: 0.5px; margin: 24px 0 8px;
+                    font-family: Arial, sans-serif; border-bottom: 1px solid #111; padding-bottom: 4px; }
+  table.fields { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+  table.fields td { padding: 6px 6px; vertical-align: bottom; border-bottom: 1px solid #ddd; }
+  table.fields td.label { color: #444; font-size: 12px; width: 42%; }
+  table.fields td.val { font-weight: 600; }
+  table.fields td.missing-val { color: #b91c1c; font-weight: 600; }
+  table.remun { width: 100%; border-collapse: collapse; margin: 10px 0 18px; font-size: 13px; }
+  table.remun th, table.remun td { border: 1px solid #999; padding: 6px 8px; text-align: right; }
+  table.remun th { background: #f1f5f9; font-family: Arial, sans-serif; font-size: 12px; }
+  table.remun td:first-child, table.remun th:first-child { text-align: left; }
+  table.remun tr.total td { font-weight: bold; border-top: 2px solid #111; }
+  .toolbar {
+    max-width: 760px; margin: 0 auto 16px; padding: 12px 20px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    background: #f1f5f9; border-radius: 8px; font-family: -apple-system, Arial, sans-serif;
+  }
+  .toolbar button {
+    background: #1d4ed8; color: #fff; border: none; padding: 8px 16px;
+    border-radius: 6px; font-weight: 600; cursor: pointer; font-family: -apple-system, Arial, sans-serif;
+  }
+  .toolbar label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: #444; font-weight: 600; }
+  .toolbar input { font-family: -apple-system, Arial, sans-serif; font-size: 13px; padding: 5px 6px; border: 1px solid #ccc; border-radius: 4px; }
+  @media print {
+    .toolbar { display: none; }
+    body { margin: 0 auto; font-size: 12px; line-height: 1.4; }
+    @page { margin: 12mm; }
+  }
+</style>
+</head>
+<body>
+
+<form class="toolbar" method="get">
+  <button type="button" onclick="window.print()">Print / Save as PDF</button>
+  <label>Cessation Date <input type="date" name="cessation_date" value="{{ cessation_date.isoformat() if cessation_date else '' }}"></label>
+  <button type="submit">Update</button>
+</form>
+
+<div class="notice">
+  <strong>This is a reference sheet, not the official submission.</strong> Since 1 January 2024, LHDN requires
+  CP22A to be filed <strong>online via the e-SPC service in MyTax</strong> (mytax.hasil.gov.my) &mdash; the paper
+  form is no longer mailed/emailed to LHDN. Use this page to gather every figure in one place, then transcribe
+  it into e-SPC. Must be submitted not later than 30 days before the cessation date, or as soon as it's known.
+</div>
+
+<div class="letterhead">
+  <div class="letterhead-row">
+    <img src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="TMB" class="tmb-logo">
+    <h1>TIANMA PRECISION SDN. BHD.</h1>
+  </div>
+  <div class="reg-no">202301036641 (1530564-X)</div>
+  <div class="sub">Plo 192, Jalan Bakau 5, Kawasan Perindustrian Tanjung Langsat, 81700 Pasir Gudang, Johor, Malaysia.</div>
+  <hr>
+</div>
+
+<div class="form-title">CP22A REFERENCE SHEET</div>
+<div class="form-subtitle">Notification by Employer of Cessation of Employment of Private Sector Employee</div>
+
+{% set missing = [] %}
+{% if not emp.tax_no %}{% set _ = missing.append("Employee's own Income Tax No. (leave blank in e-SPC if he genuinely has none)") %}{% endif %}
+{% if not emp.address %}{% set _ = missing.append("Employee's forwarding/home address") %}{% endif %}
+{% if not cessation_date %}{% set _ = missing.append("Cessation Date (Last Working Day / Resignation Date not set on his Employee record)") %}{% endif %}
+{% if missing %}
+<div class="missing">
+  <strong>Still need before filing:</strong>
+  <ul style="margin:6px 0 0; padding-left:18px;">
+    {% for m in missing %}<li>{{ m }}</li>{% endfor %}
+  </ul>
+  Also required from your own records (not stored in this system): <strong>Employer's Income Tax No. (E Number)</strong>.
+</div>
+{% endif %}
+
+<div class="section-title">A &mdash; Employer Particulars</div>
+<table class="fields">
+  <tr><td class="label">Employer's Name</td><td class="val">TIANMA PRECISION SDN. BHD.</td></tr>
+  <tr><td class="label">Employer's Income Tax No. (E Number)</td><td class="missing-val">____________________ (fill in yourself)</td></tr>
+  <tr><td class="label">Address</td><td class="val">Plo 192, Jalan Bakau 5, Kawasan Perindustrian Tanjung Langsat, 81700 Pasir Gudang, Johor</td></tr>
+</table>
+
+<div class="section-title">B &mdash; Employee Particulars</div>
+<table class="fields">
+  <tr><td class="label">Full Name</td><td class="val">{{ emp.full_name }}</td></tr>
+  <tr><td class="label">IC / Passport No.</td><td class="val">{{ emp.ic_passport_no or "-" }}</td></tr>
+  <tr><td class="label">Employee's Income Tax No.</td>
+      <td class="{% if emp.tax_no %}val{% else %}missing-val{% endif %}">{{ emp.tax_no or "Not on file" }}</td></tr>
+  <tr><td class="label">Date of Birth</td><td class="val">{{ emp.date_of_birth or "-" }}</td></tr>
+  <tr><td class="label">Position</td><td class="val">{{ emp.position or "-" }}</td></tr>
+  <tr><td class="label">Address</td>
+      <td class="{% if emp.address %}val{% else %}missing-val{% endif %}">{{ emp.address or "Not on file" }}</td></tr>
+</table>
+
+<div class="section-title">C &mdash; Employment Particulars</div>
+<table class="fields">
+  <tr><td class="label">Date Employment Commenced</td><td class="val">{{ emp.date_joined or "-" }}</td></tr>
+  <tr><td class="label">Date of Cessation</td>
+      <td class="{% if cessation_date %}val{% else %}missing-val{% endif %}">{{ cessation_date.isoformat() if cessation_date else "Not set" }}</td></tr>
+  <tr><td class="label">Reason for Cessation</td><td class="val">Resignation</td></tr>
+</table>
+
+<div class="section-title">D &mdash; Remuneration Particulars ({{ year }}, up to cessation)</div>
+<table class="remun">
+  <thead>
+    <tr><th>Month</th><th>Gross Remuneration (RM)</th><th>EPF &ndash; Employee (RM)</th><th>PCB Deducted (RM)</th></tr>
+  </thead>
+  <tbody>
+    {% for m in monthly %}
+    <tr>
+      <td>{{ month_names[m.month] }}</td>
+      <td>{{ "%.2f"|format(m.gross_remun or 0) }}</td>
+      <td>{{ "%.2f"|format(m.epf_employee or 0) }}</td>
+      <td>{{ "%.2f"|format(m.pcb_deducted or 0) }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" style="text-align:center; color:#777;">No payroll records found for {{ year }}.</td></tr>
+    {% endfor %}
+    <tr class="total">
+      <td>Total (Year to Date)</td>
+      <td>{{ "%.2f"|format(totals.gross_remun) }}</td>
+      <td>{{ "%.2f"|format(totals.epf_employee) }}</td>
+      <td>{{ "%.2f"|format(totals.pcb_deducted) }}</td>
+    </tr>
+  </tbody>
+</table>
+
+<p style="font-size:12px; color:#555;">
+  Prepared {{ today.strftime('%d %B %Y') }} for internal reference. Figures are pulled directly from this
+  employee's finalized payroll records for {{ year }}; unfinalized months (if any) are not yet reflected.
+</p>
+
+</body>
+</html>

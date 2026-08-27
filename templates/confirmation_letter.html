@@ -27,10 +27,12 @@
   .details td { padding: 2px 10px 2px 0; vertical-align: top; }
   .details td:first-child { color: #444; white-space: nowrap; }
   .signature { margin-top: 60px; }
-  .signature .line { border-top: 1px solid #111; width: 240px; margin-top: 50px; padding-top: 4px; }
+  .signature .sign-space { height: 80px; }
+  .signature .sign-name { padding-top: 4px; }
   .ack-section { margin-top: 56px; border-top: 1px dashed #999; padding-top: 24px; }
   .ack-title { font-weight: bold; letter-spacing: 0.5px; margin-bottom: 14px; }
   .ack-field { margin: 18px 0 0; }
+  .ack-field .sign-line { border-bottom: 1px solid #111; width: 280px; height: 60px; margin-top: 4px; }
   .toolbar {
     max-width: 760px; margin: 0 auto 16px; padding: 12px 20px;
     display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
@@ -63,8 +65,9 @@
     .subject { margin: 12px 0; }
     .details { margin: 10px 0; }
     .signature { margin-top: 24px; }
-    .signature .line { margin-top: 24px; }
+    .signature .sign-space { height: 55px; }
     .ack-section { margin-top: 20px; padding-top: 14px; }
+    .ack-field .sign-line { height: 42px; }
     .signature, .ack-section { page-break-inside: avoid; }
     @page { margin: 12mm; }
   }
@@ -148,7 +151,8 @@
 <p>Yours sincerely,<br>Tianma Precision Sdn. Bhd.</p>
 
 <div class="signature">
-  <div class="line">Yang Hui<br>Director</div>
+  <div class="sign-space"></div>
+  <div class="sign-name">Yang Hui<br>Director</div>
 </div>
 
 <div class="ack-section">
@@ -160,8 +164,11 @@
     and conditions stated above.
   </p>
   <div class="ack-field">Employee&rsquo;s Name: {{ emp.full_name }}</div>
-  <div class="ack-field">Signature: ______________________________</div>
-  <div class="ack-field">Date: __________________________________</div>
+  <div class="ack-field">
+    <div>Signature:</div>
+    <div class="sign-line"></div>
+  </div>
+  <div class="ack-field">Date: {{ letter_date.strftime('%d %B %Y') }}</div>
 </div>
 
 </body>

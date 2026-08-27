@@ -823,13 +823,15 @@ def update_salary_history(emp_id, hist_id):
     effective_date = request.form.get("effective_date")
     reason = request.form.get("reason") or None
     new_salary_raw = request.form.get("new_salary")
-    if not effective_date or not reason or not new_salary_raw:
+    old_salary_raw = request.form.get("old_salary")
+    if not effective_date or not reason or not new_salary_raw or not old_salary_raw:
         return redirect(url_for("edit_employee", emp_id=emp_id))
     new_salary = float(new_salary_raw)
+    old_salary = float(old_salary_raw)
     db.execute(
-        """UPDATE salary_history SET effective_date=?, new_salary=?, increment=?, reason=?
+        """UPDATE salary_history SET effective_date=?, old_salary=?, new_salary=?, increment=?, reason=?
            WHERE id=?""",
-        (effective_date, new_salary, new_salary - row["old_salary"], reason, hist_id),
+        (effective_date, old_salary, new_salary, new_salary - old_salary, reason, hist_id),
     )
     _resync_basic_salary_from_history(db, emp_id)
     db.commit()

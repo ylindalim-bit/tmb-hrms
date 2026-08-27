@@ -1,60 +1,148 @@
 {% extends "base.html" %}
 {% block title %}New Appraisal - {{ emp.emp_id }}{% endblock %}
+{% block extra_style %}
+<style>
+  .appraisal-wrap { max-width: 900px; }
+  .letterhead { text-align: center; margin-bottom: 18px; }
+  .letterhead-row { display: grid; grid-template-columns: 90px 1fr 90px; align-items: center; }
+  .letterhead .tmb-logo { grid-column: 1; justify-self: start; height: 32px; width: auto; display: block; }
+  .letterhead h1 { grid-column: 2; font-size: 18px; margin: 0; letter-spacing: 0.5px; }
+  .letterhead .sub { color: #444; font-size: 11px; margin-top: 2px; }
+  .letterhead hr { border: none; border-top: 2px solid #111; margin-top: 10px; }
+  .form-title { text-align: center; text-decoration: underline; font-size: 16px; margin: 10px 0 18px; font-weight: 700; }
+  h3.section {
+    background: #e5e7eb; font-size: 12.5px; font-weight: 700; text-transform: uppercase;
+    padding: 6px 10px; margin: 20px 0 10px; color: #111;
+  }
+  table.grid { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+  table.grid td, table.grid th { border: 1px solid #999; padding: 5px 8px; font-size: 12.5px; vertical-align: top; }
+  table.grid td.label { color: #333; font-weight: 600; background: #f8f8f8; width: 20%; }
+  table.rating th { text-align: center; width: 8%; background: #f1f1f1; }
+  table.rating td.factor { text-align: left; width: 30%; }
+  table.rating td.cat-header { background: #f8f8f8; font-weight: 700; text-align: left; }
+  table.rating td.score-cell { width: 8%; text-align: center; font-weight: 700; }
+  table.rating input[type="radio"] { width: 16px; height: 16px; cursor: pointer; }
+  .band-table { width: 100%; margin: 8px auto 0; border-collapse: collapse; }
+  .band-table td { border: 1px solid #999; padding: 6px 8px; font-size: 12.5px; text-align: center; }
+  .band-table td.active-band { background: #dcfce7; font-weight: 700; border-color: #16a34a; }
+  .total-row td { font-weight: 700; background: #f8f8f8; }
+</style>
+{% endblock %}
 {% block content %}
-<h1>New Appraisal &mdash; {{ emp.emp_id }} &mdash; {{ emp.full_name }}</h1>
+<div class="appraisal-wrap">
+<div class="letterhead">
+  <div class="letterhead-row">
+    <img src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="TMB" class="tmb-logo">
+    <h1>TIANMA PRECISION SDN. BHD.</h1>
+  </div>
+  <div class="sub">Plo 192, Jalan Bakau 5, Kawasan Perindustrian Tanjung Langsat, 81700 Pasir Gudang, Johor, Malaysia.</div>
+  <hr>
+</div>
+<div class="form-title">PERFORMANCE APPRAISAL FORM</div>
+
 {% if error %}
 <div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger);">{{ error }}</div>
 {% endif %}
 
 <form method="post">
-<div class="card">
-  <div class="form-grid">
-    <div><label>Purpose</label>
-      <select name="purpose">
-        {% for p in purposes %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
-      </select>
-    </div>
-    <div><label>Appraisal Date</label><input type="date" name="appraisal_date" value="{{ today.isoformat() }}" required></div>
-  </div>
-</div>
+<h3 class="section">Employment Information</h3>
+<table class="grid">
+  <tr><td class="label">Name</td><td>{{ emp.full_name }}</td>
+      <td class="label">Emp. No.</td><td>{{ emp.emp_id }}</td></tr>
+  <tr><td class="label">Position</td><td>{{ emp.position or "-" }}</td>
+      <td class="label">Department</td><td>{{ emp.department or "-" }}</td></tr>
+  <tr><td class="label">Date Joined</td><td>{{ emp.date_joined or "-" }}</td>
+      <td class="label">Purpose</td><td>
+        <select name="purpose">
+          {% for p in purposes %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+        </select>
+      </td></tr>
+  <tr><td class="label">Appraisal Date</td><td colspan="3"><input type="date" name="appraisal_date" value="{{ today.isoformat() }}" required></td></tr>
+</table>
 
 {% for category, factors in categories %}
-<div class="card">
-  <h2 style="margin-top:0;">{{ category }}</h2>
-  <div class="table-wrap">
-  <table>
-    <thead><tr><th class="text">Factor</th><th>1<br>Poor</th><th>2<br>Fair</th><th>3<br>Average</th><th>4<br>Good</th><th>5<br>Excellent</th></tr></thead>
-    <tbody>
-      {% for f in factors %}
-      <tr>
-        <td class="text">{{ f }}</td>
-        {% for score in [1,2,3,4,5] %}
-        <td style="text-align:center;"><input type="radio" name="rating__{{ f }}" value="{{ score }}" required></td>
-        {% endfor %}
-      </tr>
+<h3 class="section">{{ category }}</h3>
+<table class="grid rating">
+  <thead>
+    <tr><th style="width:30%; text-align:left; background:#f8f8f8;">Factors</th>
+        <th>1<br>Poor</th><th>2<br>Fair</th><th>3<br>Average</th><th>4<br>Good</th><th>5<br>Excellent</th>
+        <th style="width:8%;">Score</th></tr>
+  </thead>
+  <tbody>
+    {% for f in factors %}
+    <tr>
+      <td class="factor">{{ f }}</td>
+      {% for score in [1,2,3,4,5] %}
+      <td style="text-align:center;"><input type="radio" name="rating__{{ f }}" value="{{ score }}" class="rating-input" data-factor="{{ f }}" required></td>
       {% endfor %}
-    </tbody>
-  </table>
-  </div>
-</div>
+      <td class="score-cell" id="score_{{ loop.index0 }}_{{ category|replace(' ', '_') }}">&nbsp;</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
 {% endfor %}
 
-<div class="card">
-  <h2 style="margin-top:0;">Recommendation</h2>
-  <p style="color:var(--muted); font-size:13px; margin-top:0;">What are your recommendations with regard to the employee's future in the organization? (tick any that apply)</p>
-  <label style="display:block; margin-bottom:8px;"><input type="checkbox" name="rec_advancement"> Employee will qualify for advancement in higher level or responsibilities.</label>
-  <label style="display:block; margin-bottom:8px;"><input type="checkbox" name="rec_not_yet_ready"> Employee has not yet demonstrated the level of service required.</label>
-  <label style="display:block; margin-bottom:8px;"><input type="checkbox" name="rec_better_suited"> Employee is better suited for another type of work.</label>
-  <label style="display:block; margin-bottom:8px;"><input type="checkbox" name="rec_training_required"> Training is required.</label>
-  <div style="margin-top:12px;">
-    <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">Comments</label>
-    <textarea name="comments" rows="4" style="width:100%;"></textarea>
-  </div>
+<h3 class="section">Total</h3>
+<table class="grid">
+  <tr class="total-row">
+    <td class="label">Total Points Scored</td><td id="total_score">0 <span id="max_score_display"></span></td>
+    <td class="label">Percentage</td><td id="total_pct">0%</td>
+  </tr>
+</table>
+<table class="band-table">
+  <tr>
+    {% for label, points in [("Excellent", "86-100"), ("Good", "66-85"), ("Average", "51-65"), ("Fair", "36-50"), ("Poor", "01-35")] %}
+    <td id="band_{{ label }}">{{ label }} ({{ points }})</td>
+    {% endfor %}
+  </tr>
+</table>
+
+<h3 class="section">Recommendation</h3>
+<p style="color:var(--muted); font-size:13px; margin-top:0;">What are your recommendations with regard to the employee's future in the organization? (tick any that apply)</p>
+<label style="display:block; margin-bottom:8px;"><input type="checkbox" name="rec_advancement"> Employee will qualify for advancement in higher level or responsibilities.</label>
+<label style="display:block; margin-bottom:8px;"><input type="checkbox" name="rec_not_yet_ready"> Employee has not yet demonstrated the level of service required.</label>
+<label style="display:block; margin-bottom:8px;"><input type="checkbox" name="rec_better_suited"> Employee is better suited for another type of work.</label>
+<label style="display:block; margin-bottom:8px;"><input type="checkbox" name="rec_training_required"> Training is required.</label>
+<div style="margin-top:12px;">
+  <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">Comments</label>
+  <textarea name="comments" rows="4" style="width:100%;"></textarea>
 </div>
 
-<div class="form-actions">
+<div class="form-actions" style="margin-top:16px;">
   <button class="btn" type="submit">Submit Appraisal</button>
   <a class="btn secondary" href="{{ url_for('appraisal_team') }}">Cancel</a>
 </div>
 </form>
+</div>
+
+<script>
+var MAX_SCORE = {{ (categories|map(attribute=1)|map('length')|sum) * 5 }};
+document.getElementById('max_score_display').textContent = ' / ' + MAX_SCORE;
+
+function updateTotals() {
+  var total = 0;
+  document.querySelectorAll('.rating-input:checked').forEach(function(input) {
+    total += parseInt(input.value, 10);
+    var row = input.closest('tr');
+    row.querySelector('.score-cell').textContent = input.value;
+  });
+  document.getElementById('total_score').firstChild.textContent = total + ' ';
+  var pct = MAX_SCORE ? Math.round((total / MAX_SCORE) * 1000) / 10 : 0;
+  document.getElementById('total_pct').textContent = pct + '%';
+
+  var bands = [['Excellent', 86], ['Good', 66], ['Average', 51], ['Fair', 36], ['Poor', 0]];
+  var activeLabel = 'Poor';
+  for (var i = 0; i < bands.length; i++) {
+    if (pct >= bands[i][1]) { activeLabel = bands[i][0]; break; }
+  }
+  bands.forEach(function(b) {
+    document.getElementById('band_' + b[0]).classList.toggle('active-band', b[0] === activeLabel);
+  });
+}
+
+document.querySelectorAll('.rating-input').forEach(function(input) {
+  input.addEventListener('change', updateTotals);
+});
+updateTotals();
+</script>
 {% endblock %}

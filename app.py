@@ -147,7 +147,7 @@ if not os.path.exists(DB_PATH):
     _bootstrap_conn.commit()
     _bootstrap_conn.close()
 DOCUMENT_TYPES = ["Job Application Form", "Letter of Employment", "Confirmation Letter",
-                   "Resignation Letter", "e-Stamping Certificate", "TP3 (Prior Employer Income)", "Other"]
+                   "Resignation Letter", "CP22A", "e-Stamping Certificate", "TP3 (Prior Employer Income)", "Other"]
 ALLOWED_DOC_EXTENSIONS = {"pdf", "doc", "docx", "jpg", "jpeg", "png"}
 ALLOWED_PHOTO_EXTENSIONS = {"jpg", "jpeg", "png"}
 RACE_OPTIONS = ["Malay", "Chinese", "Iban", "Kadazan", "Other"]

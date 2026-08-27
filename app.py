@@ -2835,13 +2835,17 @@ def hr_migrate_schema():
         applied.append("table: medical_claims")
 
     db.execute("UPDATE hr_users SET can_approve_leave='Y', can_approve_appraisal='Y' WHERE username='kee'")
+    yang_password = request.form.get("yang_password", "")
     if not db.execute("SELECT 1 FROM hr_users WHERE username='yang'").fetchone():
         db.execute(
             "INSERT INTO hr_users (username, password_hash, full_name, created_at, role, can_approve_leave, can_approve_appraisal) VALUES (?,?,?,?,?,?,?)",
-            ("yang", generate_password_hash(request.form.get("yang_password", "")), "Yang Hui",
+            ("yang", generate_password_hash(yang_password), "Yang Hui",
              datetime.datetime.now().isoformat(timespec="seconds"), "approver", "N", "Y"),
         )
-        applied.append("hr_users: yang")
+        applied.append("hr_users: yang (created)")
+    elif yang_password and request.form.get("reset_yang_password") == "1":
+        db.execute("UPDATE hr_users SET password_hash=? WHERE username='yang'", (generate_password_hash(yang_password),))
+        applied.append("hr_users: yang (password reset)")
     db.commit()
     return "OK - applied: " + (", ".join(applied) if applied else "(nothing new, already up to date)"), 200
 

@@ -254,6 +254,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/setup",     # first-run only - locks itself once any hr_users row exists
     "/hr/restore-database",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/restore-uploads",   # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/migrate-schema",    # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -2783,6 +2784,66 @@ def hr_restore_uploads():
         zf.extractall(UPLOAD_DIR)
     os.remove(zip_path)
     return f"OK - uploads restored to {UPLOAD_DIR}", 200
+
+
+@app.route("/hr/migrate-schema", methods=["POST"])
+def hr_migrate_schema():
+    """Additively applies schema changes that shipped after the database
+    was created/restored - new columns (ALTER TABLE ... ADD COLUMN, skipped
+    if already present) and new tables (CREATE TABLE IF NOT EXISTS) - never
+    touches existing data. Same RESTORE_TOKEN gate as the restore routes
+    above; safe to call more than once (every step checks first)."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    applied = []
+
+    hr_cols = [r[1] for r in db.execute("PRAGMA table_info(hr_users)").fetchall()]
+    for col, decl in [("can_approve_leave", "TEXT NOT NULL DEFAULT 'N'"),
+                       ("can_approve_appraisal", "TEXT NOT NULL DEFAULT 'N'")]:
+        if col not in hr_cols:
+            db.execute(f"ALTER TABLE hr_users ADD COLUMN {col} {decl}")
+            applied.append(f"hr_users.{col}")
+
+    emp_cols = [r[1] for r in db.execute("PRAGMA table_info(employees)").fetchall()]
+    if "appraisal_supervisor_username" not in emp_cols:
+        db.execute("ALTER TABLE employees ADD COLUMN appraisal_supervisor_username TEXT")
+        applied.append("employees.appraisal_supervisor_username")
+    if "medical_claim_limit" not in emp_cols:
+        db.execute("ALTER TABLE employees ADD COLUMN medical_claim_limit REAL DEFAULT 0")
+        applied.append("employees.medical_claim_limit")
+
+    existing_tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    if "appraisals" not in existing_tables:
+        db.execute("""CREATE TABLE appraisals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),
+            purpose TEXT NOT NULL DEFAULT 'Assessment', appraisal_date TEXT NOT NULL,
+            ratings_json TEXT NOT NULL, total_score REAL NOT NULL, max_score REAL NOT NULL,
+            percentage REAL NOT NULL, overall_band TEXT NOT NULL,
+            rec_advancement TEXT NOT NULL DEFAULT 'N', rec_not_yet_ready TEXT NOT NULL DEFAULT 'N',
+            rec_better_suited TEXT NOT NULL DEFAULT 'N', rec_training_required TEXT NOT NULL DEFAULT 'N',
+            comments TEXT, status TEXT NOT NULL DEFAULT 'Draft', supervisor_username TEXT NOT NULL,
+            submitted_at TEXT)""")
+        applied.append("table: appraisals")
+    if "medical_claims" not in existing_tables:
+        db.execute("""CREATE TABLE medical_claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),
+            claim_date TEXT NOT NULL, amount REAL NOT NULL, clinic_name TEXT, description TEXT,
+            supporting_doc_original TEXT, supporting_doc_stored TEXT, status TEXT NOT NULL DEFAULT 'Pending',
+            submitted_at TEXT NOT NULL, reviewed_by TEXT, reviewed_at TEXT, review_notes TEXT)""")
+        applied.append("table: medical_claims")
+
+    db.execute("UPDATE hr_users SET can_approve_leave='Y', can_approve_appraisal='Y' WHERE username='kee'")
+    if not db.execute("SELECT 1 FROM hr_users WHERE username='yang'").fetchone():
+        db.execute(
+            "INSERT INTO hr_users (username, password_hash, full_name, created_at, role, can_approve_leave, can_approve_appraisal) VALUES (?,?,?,?,?,?,?)",
+            ("yang", generate_password_hash(request.form.get("yang_password", "")), "Yang Hui",
+             datetime.datetime.now().isoformat(timespec="seconds"), "approver", "N", "Y"),
+        )
+        applied.append("hr_users: yang")
+    db.commit()
+    return "OK - applied: " + (", ".join(applied) if applied else "(nothing new, already up to date)"), 200
 
 
 if __name__ == "__main__":

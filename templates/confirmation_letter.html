@@ -132,8 +132,8 @@
   <tr><td>Confirmation Date</td><td>{{ confirm_date.strftime('%d %B %Y') }}</td></tr>
   {% if increment %}
   <tr><td>Previous Basic Salary</td><td>RM {{ "%.2f"|format(increment.old_salary) }}</td></tr>
-  <tr><td>New Basic Salary</td><td>RM {{ "%.2f"|format(increment.new_salary) }}</td></tr>
   <tr><td>Increment</td><td>RM {{ "%.2f"|format(increment.amount) }}</td></tr>
+  <tr><td>New Basic Salary</td><td>RM {{ "%.2f"|format(increment.new_salary) }}</td></tr>
   {% endif %}
 </table>
 

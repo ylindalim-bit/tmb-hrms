@@ -47,5 +47,14 @@
   <p style="white-space:pre-wrap; margin:0;">{{ a.comments or "-" }}</p>
 </div>
 
+<div class="card">
+  <h2 style="margin-top:0;">Salary Recommendation</h2>
+  <div class="form-grid">
+    <div><label>Current Salary</label><p style="margin:0;">RM {{ "%.2f"|format(a.current_salary or 0) }}</p></div>
+    <div><label>Increment</label><p style="margin:0;">RM {{ "%.2f"|format(a.increment_amount or 0) }}</p></div>
+    <div><label>New Salary</label><p style="margin:0;"><strong>RM {{ "%.2f"|format(a.new_salary or a.current_salary or 0) }}</strong></p></div>
+  </div>
+</div>
+
 <p style="color:var(--muted); font-size:12px;">Submitted {{ a.submitted_at }}</p>
 {% endblock %}

@@ -2696,13 +2696,20 @@ def appraisal_new(emp_id):
             total = sum(ratings.values())
             max_score = len(APPRAISAL_FACTORS) * 5
             percentage = round(total / max_score * 100, 1)
+            current_salary = emp["basic_salary"] or 0
+            try:
+                increment_amount = float(request.form.get("increment_amount") or 0)
+            except ValueError:
+                increment_amount = 0
+            new_salary = round(current_salary + increment_amount, 2)
             db.execute(
                 """INSERT INTO appraisals (
                        emp_id, purpose, appraisal_date, ratings_json, total_score, max_score,
                        percentage, overall_band, rec_advancement, rec_not_yet_ready,
-                       rec_better_suited, rec_training_required, comments, status,
+                       rec_better_suited, rec_training_required, comments,
+                       current_salary, increment_amount, new_salary, status,
                        supervisor_username, submitted_at
-                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'Submitted',?,?)""",
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'Submitted',?,?)""",
                 (
                     emp_id, request.form.get("purpose", "Assessment"),
                     request.form.get("appraisal_date") or datetime.date.today().isoformat(),
@@ -2712,6 +2719,7 @@ def appraisal_new(emp_id):
                     "Y" if request.form.get("rec_better_suited") else "N",
                     "Y" if request.form.get("rec_training_required") else "N",
                     request.form.get("comments") or None,
+                    current_salary, increment_amount, new_salary,
                     session["hr_username"],
                     datetime.datetime.now().isoformat(timespec="seconds"),
                 ),
@@ -2824,8 +2832,14 @@ def hr_migrate_schema():
             rec_advancement TEXT NOT NULL DEFAULT 'N', rec_not_yet_ready TEXT NOT NULL DEFAULT 'N',
             rec_better_suited TEXT NOT NULL DEFAULT 'N', rec_training_required TEXT NOT NULL DEFAULT 'N',
             comments TEXT, status TEXT NOT NULL DEFAULT 'Draft', supervisor_username TEXT NOT NULL,
-            submitted_at TEXT)""")
+            submitted_at TEXT, current_salary REAL, increment_amount REAL DEFAULT 0, new_salary REAL)""")
         applied.append("table: appraisals")
+    if "appraisals" in existing_tables:
+        appraisal_cols = [r[1] for r in db.execute("PRAGMA table_info(appraisals)").fetchall()]
+        for col, decl in [("current_salary", "REAL"), ("increment_amount", "REAL DEFAULT 0"), ("new_salary", "REAL")]:
+            if col not in appraisal_cols:
+                db.execute(f"ALTER TABLE appraisals ADD COLUMN {col} {decl}")
+                applied.append(f"appraisals.{col}")
     if "medical_claims" not in existing_tables:
         db.execute("""CREATE TABLE medical_claims (
             id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),

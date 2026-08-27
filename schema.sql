@@ -413,6 +413,12 @@ CREATE TABLE appraisals (
     rec_better_suited       TEXT NOT NULL DEFAULT 'N',  -- (c) better suited for another type of work
     rec_training_required   TEXT NOT NULL DEFAULT 'N',  -- (d) training required
     comments                TEXT,
+    -- Salary recommendation, matching the paper form's "Increment" row of
+    -- its salary table. current_salary is a snapshot of the employee's
+    -- Basic Salary at appraisal time (their real record may change later).
+    current_salary          REAL,
+    increment_amount        REAL DEFAULT 0,
+    new_salary               REAL,
     status                  TEXT NOT NULL DEFAULT 'Draft',  -- Draft (supervisor still editing) / Submitted (final)
     supervisor_username     TEXT NOT NULL,   -- hr_users.username who filled this in
     submitted_at            TEXT

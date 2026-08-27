@@ -9,6 +9,7 @@
     <thead>
       <tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Purpose</th>
           <th class="text">Date</th><th>Score</th><th class="text">Result</th>
+          <th>Increment (RM)</th><th>New Salary (RM)</th>
           <th class="text">Supervisor</th><th class="text">Submitted</th><th></th></tr>
     </thead>
     <tbody>
@@ -22,12 +23,14 @@
         <td class="text">
           <span class="pill {% if r.overall_band in ('Excellent','Good') %}finalized{% elif r.overall_band == 'Average' %}draft{% else %}rejected{% endif %}">{{ r.overall_band }}</span>
         </td>
+        <td {% if r.increment_amount %}style="color:var(--accent); font-weight:600;"{% endif %}>{{ "%.2f"|format(r.increment_amount or 0) }}</td>
+        <td>{{ "%.2f"|format(r.new_salary or r.current_salary or 0) }}</td>
         <td class="text">{{ r.supervisor_username }}</td>
         <td class="text">{{ r.submitted_at }}</td>
         <td class="text"><a class="emp-link" href="{{ url_for('appraisal_view', appraisal_id=r.id) }}">View</a></td>
       </tr>
       {% else %}
-      <tr><td colspan="9" class="text" style="color:var(--muted);">No appraisals submitted yet.</td></tr>
+      <tr><td colspan="11" class="text" style="color:var(--muted);">No appraisals submitted yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

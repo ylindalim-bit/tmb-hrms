@@ -108,6 +108,18 @@
   <textarea name="comments" rows="4" style="width:100%;"></textarea>
 </div>
 
+<h3 class="section">Salary Recommendation</h3>
+<table class="grid">
+  <tr>
+    <td class="label">Current Salary</td>
+    <td>RM {{ "%.2f"|format(emp.basic_salary or 0) }}</td>
+    <td class="label">Increment (RM)</td>
+    <td><input type="number" step="0.01" id="increment_amount" name="increment_amount" value="0.00" style="width:140px;"></td>
+    <td class="label">New Salary</td>
+    <td>RM <span id="new_salary_display">{{ "%.2f"|format(emp.basic_salary or 0) }}</span></td>
+  </tr>
+</table>
+
 <div class="form-actions" style="margin-top:16px;">
   <button class="btn" type="submit">Submit Appraisal</button>
   <a class="btn secondary" href="{{ url_for('appraisal_team') }}">Cancel</a>
@@ -144,5 +156,13 @@ document.querySelectorAll('.rating-input').forEach(function(input) {
   input.addEventListener('change', updateTotals);
 });
 updateTotals();
+
+var CURRENT_SALARY = {{ emp.basic_salary or 0 }};
+function updateNewSalary() {
+  var increment = parseFloat(document.getElementById('increment_amount').value) || 0;
+  document.getElementById('new_salary_display').textContent = (CURRENT_SALARY + increment).toFixed(2);
+}
+document.getElementById('increment_amount').addEventListener('input', updateNewSalary);
+updateNewSalary();
 </script>
 {% endblock %}

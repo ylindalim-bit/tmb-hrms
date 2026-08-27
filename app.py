@@ -1348,6 +1348,93 @@ def cp22a_form(emp_id):
     )
 
 
+@app.route("/hr/pcb-history-template")
+def pcb_history_template():
+    """Downloadable Excel template for bulk-loading pre-go-live PCB
+    year-to-date history (Gross Remuneration, EPF Employee, PCB Deducted)
+    per employee per month - needed whenever a company starts using this
+    system mid-year, so PCB from the first live month onward is computed
+    against accurate YTD figures under LHDN's Computerised Method, and so
+    CP22A cessation notices show the full year's figures, not just the
+    months actually run in this system."""
+    db = get_db()
+    employees = db.execute(
+        "SELECT emp_id, full_name FROM employees ORDER BY emp_id"
+    ).fetchall()
+    year = request.args.get("year", type=int) or datetime.date.today().year
+    upto_month = request.args.get("upto_month", type=int) or 12
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "PCB History"
+    ws.append(["YearMonth", "Emp ID", "Full Name (reference only)",
+               "Gross Remuneration (RM)", "EPF Employee (RM)", "PCB Deducted (RM)"])
+    for month in range(1, upto_month + 1):
+        yearmonth = year * 100 + month
+        for emp in employees:
+            ws.append([yearmonth, emp["emp_id"], emp["full_name"], None, None, None])
+    for col_idx, width in enumerate([12, 10, 32, 20, 16, 16], start=1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = width
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return Response(
+        buf.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=PCB_History_Template_{year}.xlsx"},
+    )
+
+
+@app.route("/hr/pcb-history-import", methods=["GET", "POST"])
+def pcb_history_import():
+    error = None
+    imported = []
+    skipped = []
+    if request.method == "POST":
+        file = request.files.get("file")
+        if not file or not file.filename:
+            error = "Please choose a file to upload."
+        else:
+            try:
+                wb = openpyxl.load_workbook(file, data_only=True)
+                ws = wb.active
+                db = get_db()
+                valid_emp_ids = {r["emp_id"] for r in db.execute("SELECT emp_id FROM employees").fetchall()}
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    if not row or row[0] is None or row[1] is None:
+                        continue
+                    yearmonth_raw, emp_id = row[0], str(row[1]).strip()
+                    gross, epf, pcb = row[3], row[4], row[5]
+                    if gross is None and epf is None and pcb is None:
+                        continue  # left blank - not filled in, skip silently
+                    if emp_id not in valid_emp_ids:
+                        skipped.append(f"{emp_id} / {yearmonth_raw}: unknown Emp ID")
+                        continue
+                    try:
+                        yearmonth = int(yearmonth_raw)
+                        year, month = yearmonth // 100, yearmonth % 100
+                        if not 1 <= month <= 12:
+                            raise ValueError
+                    except (TypeError, ValueError):
+                        skipped.append(f"{emp_id} / {yearmonth_raw}: invalid YearMonth")
+                        continue
+                    db.execute(
+                        """INSERT INTO pcb_monthly_record (emp_id, year, month, gross_remun, epf_employee, pcb_deducted)
+                           VALUES (?,?,?,?,?,?)
+                           ON CONFLICT(emp_id, year, month) DO UPDATE SET
+                             gross_remun=excluded.gross_remun, epf_employee=excluded.epf_employee,
+                             pcb_deducted=excluded.pcb_deducted""",
+                        (emp_id, year, month, float(gross or 0), float(epf or 0), float(pcb or 0)),
+                    )
+                    imported.append(f"{emp_id} {year}-{month:02d}: Gross RM{float(gross or 0):.2f}, "
+                                     f"EPF RM{float(epf or 0):.2f}, PCB RM{float(pcb or 0):.2f}")
+                db.commit()
+            except Exception as exc:
+                error = f"Could not read file: {exc}"
+    return render_template("pcb_history_import.html", error=error, imported=imported, skipped=skipped)
+
+
 @app.route("/leave-form")
 def leave_application_form():
     db = get_db()

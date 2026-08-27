@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Import PCB History - TMB Payroll{% endblock %}
+{% block content %}
+<h1>Import PCB Year-to-Date History</h1>
+<p style="color:var(--muted); max-width:700px;">
+  For months before you started running payroll in this system, PCB (income tax)
+  needs each employee's Gross Remuneration, EPF (Employee), and PCB Deducted from
+  those earlier months so the Computerised Method calculates the right tax from
+  here on &mdash; and so CP22A cessation notices show the full year's figures.
+  This only fills in history; it never changes a month already run in this system.
+</p>
+
+<div class="card">
+  <h2 style="margin-top:0;">Step 1 &mdash; Download the template</h2>
+  <form method="get" action="{{ url_for('pcb_history_template') }}" style="display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap;">
+    <div><label>Year</label><input type="number" name="year" value="{{ cur_year }}" style="width:100px;"></div>
+    <div><label>Up to month</label>
+      <select name="upto_month">
+        {% for m in range(1,13) %}<option value="{{ m }}" {% if m==7 %}selected{% endif %}>{{ m }}</option>{% endfor %}
+      </select>
+    </div>
+    <button class="btn" type="submit">Download Template</button>
+  </form>
+  <p style="color:var(--muted); font-size:12px; margin-top:8px;">
+    One row per employee per month, already listed for you &mdash; just fill in the three RM columns.
+    Leave a row blank to skip it.
+  </p>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">Step 2 &mdash; Upload the filled-in file</h2>
+  {% if error %}
+  <div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger);">{{ error }}</div>
+  {% endif %}
+  <form method="post" enctype="multipart/form-data" style="display:flex; gap:14px; align-items:center;">
+    <input type="file" name="file" accept=".xlsx">
+    <button class="btn" type="submit">Import</button>
+  </form>
+
+  {% if imported %}
+  <h3 style="margin-top:20px;">Imported ({{ imported|length }})</h3>
+  <div class="table-wrap" style="max-height:300px; overflow-y:auto;">
+    <ul style="margin:0; padding-left:18px; font-size:13px;">
+      {% for line in imported %}<li>{{ line }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if skipped %}
+  <h3 style="margin-top:20px; color:var(--danger);">Skipped ({{ skipped|length }})</h3>
+  <ul style="margin:0; padding-left:18px; font-size:13px; color:var(--danger);">
+    {% for line in skipped %}<li>{{ line }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endblock %}

@@ -25,4 +25,14 @@
     <button class="btn" type="submit">Save</button>
   </form>
 </div>
+
+<div class="card" style="max-width:480px;">
+  <h2 style="margin-top:0;">PCB Year-to-Date History</h2>
+  <p style="color:var(--muted); font-size:13px; margin-top:0;">
+    Load in Gross Pay / EPF / PCB figures from months before you started using this
+    system, so PCB tax calculations and CP22A cessation notices use accurate
+    year-to-date totals.
+  </p>
+  <a class="btn" href="{{ url_for('pcb_history_import') }}">Import PCB History</a>
+</div>
 {% endblock %}

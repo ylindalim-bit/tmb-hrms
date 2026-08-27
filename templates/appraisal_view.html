@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Appraisal - {{ a.emp_id }}{% endblock %}
+{% block content %}
+<h1>Appraisal &mdash; {{ a.emp_id }} &mdash; {{ a.full_name }}</h1>
+
+<div class="card">
+  <div class="form-grid">
+    <div><label>Position</label><p style="margin:0;">{{ a.position or "-" }}</p></div>
+    <div><label>Purpose</label><p style="margin:0;">{{ a.purpose }}</p></div>
+    <div><label>Appraisal Date</label><p style="margin:0;">{{ a.appraisal_date }}</p></div>
+    <div><label>Overall Result</label><p style="margin:0;">
+      <span class="pill {% if a.overall_band in ('Excellent','Good') %}finalized{% elif a.overall_band == 'Average' %}draft{% else %}rejected{% endif %}">
+        {{ a.overall_band }} ({{ a.total_score }}/{{ a.max_score }} &mdash; {{ a.percentage }}%)
+      </span>
+    </p></div>
+  </div>
+</div>
+
+{% for category, factors in categories %}
+<div class="card">
+  <h2 style="margin-top:0;">{{ category }}</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th class="text">Factor</th><th>Score</th></tr></thead>
+    <tbody>
+      {% for f in factors %}
+      <tr><td class="text">{{ f }}</td><td>{{ ratings.get(f, "-") }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endfor %}
+
+<div class="card">
+  <h2 style="margin-top:0;">Recommendation</h2>
+  <ul style="margin:0 0 12px; padding-left:18px;">
+    {% if a.rec_advancement == "Y" %}<li>Employee will qualify for advancement in higher level or responsibilities.</li>{% endif %}
+    {% if a.rec_not_yet_ready == "Y" %}<li>Employee has not yet demonstrated the level of service required.</li>{% endif %}
+    {% if a.rec_better_suited == "Y" %}<li>Employee is better suited for another type of work.</li>{% endif %}
+    {% if a.rec_training_required == "Y" %}<li>Training is required.</li>{% endif %}
+    {% if a.rec_advancement != "Y" and a.rec_not_yet_ready != "Y" and a.rec_better_suited != "Y" and a.rec_training_required != "Y" %}
+    <li style="color:var(--muted); list-style:none; margin-left:-18px;">None ticked.</li>
+    {% endif %}
+  </ul>
+  <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">Comments</label>
+  <p style="white-space:pre-wrap; margin:0;">{{ a.comments or "-" }}</p>
+</div>
+
+<p style="color:var(--muted); font-size:12px;">Submitted {{ a.submitted_at }}</p>
+{% endblock %}

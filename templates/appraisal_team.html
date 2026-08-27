@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Appraisals - TMB Payroll{% endblock %}
+{% block content %}
+<h1>Appraisals {% if hr_role != "admin" %}&mdash; My Team{% endif %}</h1>
+
+<div class="card">
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Position</th>
+          <th class="text">Last Appraisal</th><th class="text">Result</th><th>Action</th></tr>
+    </thead>
+    <tbody>
+      {% for e in staff %}
+      {% set latest = latest_by_emp.get(e.emp_id) %}
+      <tr>
+        <td class="text">{{ e.emp_id }}</td>
+        <td class="text">{{ e.full_name }}</td>
+        <td class="text">{{ e.position or "" }}</td>
+        <td class="text">{{ latest.appraisal_date if latest else "-" }}</td>
+        <td class="text">
+          {% if latest %}
+          <span class="pill {% if latest.overall_band in ('Excellent','Good') %}finalized{% elif latest.overall_band == 'Average' %}draft{% else %}rejected{% endif %}">{{ latest.overall_band }}</span>
+          {% else %}<span style="color:var(--muted);">Never appraised</span>{% endif %}
+        </td>
+        <td class="text" style="white-space:nowrap;">
+          <a class="emp-link" href="{{ url_for('appraisal_new', emp_id=e.emp_id) }}">New Appraisal</a>
+          {% if latest %}&nbsp;<a class="emp-link" href="{{ url_for('appraisal_view', appraisal_id=latest.id) }}">View Last</a>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text" style="color:var(--muted);">No staff assigned to you yet &mdash; ask HR to set this on the employee's Edit page.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

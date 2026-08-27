@@ -12,9 +12,14 @@
   <div class="brand"><img src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="TMB" class="brand-logo"> TIANMA PRECISION SDN BHD <span>Payroll</span></div>
   <nav>
     {% if hr_role == "approver" %}
+    {% if can_approve_leave == "Y" %}
     <a href="{{ url_for('leave_requests_admin') }}">Leave Requests
       {% if pending_leave_count %}<span class="pill draft" style="margin-left:3px;">{{ pending_leave_count }}</span>{% endif %}
     </a>
+    {% endif %}
+    {% if can_approve_appraisal == "Y" %}
+    <a href="{{ url_for('appraisal_team') }}">Appraisals</a>
+    {% endif %}
     {% else %}
     <a href="{{ url_for('run_payroll', year=cur_year, month=cur_month) }}">Run Payroll</a>
     <a href="{{ url_for('attendance', year=cur_year, month=cur_month) }}">Attendance</a>
@@ -32,6 +37,7 @@
     <a href="{{ url_for('medical_claims_admin') }}">Medical Claims
       {% if pending_medical_claim_count %}<span class="pill draft" style="margin-left:3px;">{{ pending_medical_claim_count }}</span>{% endif %}
     </a>
+    <a href="{{ url_for('appraisals_admin') }}">Appraisals</a>
     <a href="{{ url_for('payroll_settings_page') }}">Settings</a>
     <a href="{{ url_for('portal_login') }}" style="color:var(--muted);">Staff Portal &rarr;</a>
     {% endif %}

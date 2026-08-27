@@ -3,6 +3,7 @@ import calendar
 import datetime
 import functools
 import io
+import json
 import os
 import secrets
 import sqlite3
@@ -259,11 +260,26 @@ HR_LOGIN_EXEMPT_PREFIXES = (
 # requests only, plus the housekeeping routes every logged-in user needs.
 # Which specific requests they can act on is enforced separately in
 # leave_requests_admin/review_leave_request via employees.leave_approver_username.
-APPROVER_ALLOWED_PREFIXES = (
-    "/leave-requests",
-    "/hr/logout",
-    "/hr/change-password",
-)
+# Always allowed for a logged-in approver, regardless of which capability
+# flags they have.
+APPROVER_ALWAYS_ALLOWED_PREFIXES = ("/hr/logout", "/hr/change-password")
+# Capability flag (session key) -> path prefixes it unlocks for a
+# role='approver' account. Mr Kee has both; Mr Yang has only appraisal.
+APPROVER_CAPABILITY_PREFIXES = {
+    "can_approve_leave": ("/leave-requests",),
+    "can_approve_appraisal": ("/appraisals",),
+}
+
+
+def _approver_home():
+    """Where to send a role='approver' account after login or when they hit
+    a page outside their capabilities - whichever section their flags grant,
+    preferring Leave Requests if they have both."""
+    if session.get("can_approve_leave") == "Y":
+        return url_for("leave_requests_admin")
+    if session.get("can_approve_appraisal") == "Y":
+        return url_for("appraisal_team")
+    return url_for("hr_change_password")
 
 
 @app.before_request
@@ -272,8 +288,13 @@ def require_hr_login():
         return None
     if not session.get("hr_username"):
         return redirect(url_for("hr_login", next=request.path))
-    if session.get("hr_role") == "approver" and not request.path.startswith(APPROVER_ALLOWED_PREFIXES):
-        return redirect(url_for("leave_requests_admin"))
+    if session.get("hr_role") == "approver":
+        allowed_prefixes = APPROVER_ALWAYS_ALLOWED_PREFIXES
+        for flag, prefixes in APPROVER_CAPABILITY_PREFIXES.items():
+            if session.get(flag) == "Y":
+                allowed_prefixes += prefixes
+        if not request.path.startswith(allowed_prefixes):
+            return redirect(_approver_home())
     return None
 
 
@@ -281,7 +302,9 @@ def require_hr_login():
 def inject_globals():
     today = datetime.date.today()
     return {"month_names": MONTH_NAMES, "cur_year": today.year, "cur_month": today.month,
-            "hr_username": session.get("hr_username"), "hr_role": session.get("hr_role")}
+            "hr_username": session.get("hr_username"), "hr_role": session.get("hr_role"),
+            "can_approve_leave": session.get("can_approve_leave"),
+            "can_approve_appraisal": session.get("can_approve_appraisal")}
 
 
 def employed_this_month(db, year, month, select_cols="emp_id"):
@@ -403,7 +426,7 @@ def current_portal_employee(db):
 @app.route("/")
 def index():
     if session.get("hr_role") == "approver":
-        return redirect(url_for("leave_requests_admin"))
+        return redirect(_approver_home())
     today = datetime.date.today()
     return redirect(url_for("run_payroll", year=today.year, month=today.month))
 
@@ -427,6 +450,8 @@ def hr_login():
             session.clear()
             session["hr_username"] = user["username"]
             session["hr_role"] = user["role"]
+            session["can_approve_leave"] = user["can_approve_leave"]
+            session["can_approve_appraisal"] = user["can_approve_appraisal"]
             next_url = request.form.get("next") or url_for("index")
             # Never redirect off-site or back into the login route itself.
             if not next_url.startswith("/") or next_url.startswith("/hr/login"):
@@ -510,7 +535,7 @@ TEXT_FIELDS = ["full_name", "ic_passport_no", "date_of_birth", "marital_status",
                "phone_number", "hp_no", "email", "address",
                "date_joined", "last_working_day", "probation_end_date",
                "passport_expiry", "work_permit_expiry", "termination_notice_period",
-               "confirmation_date", "resignation_date"]
+               "confirmation_date", "resignation_date", "appraisal_supervisor_username"]
 NUM_FIELDS = ["basic_salary", "working_days_week", "working_hours_day",
               "additional_epf_employee", "annual_leave_entitlement", "mc_entitlement",
               "hospitalisation_leave_entitlement", "medical_claim_limit"]
@@ -698,13 +723,18 @@ def edit_employee(emp_id):
     al_entitlement_effective = prorated_al
     al_balance = (al_entitlement_effective - al_used) if al_entitlement_effective is not None else None
 
+    appraisal_supervisors = db.execute(
+        "SELECT username, full_name FROM hr_users WHERE can_approve_appraisal='Y' ORDER BY full_name"
+    ).fetchall()
+
     return render_template("employee_edit.html", emp=emp, is_new=False, extensions=extensions,
                             salary_history=salary_history, eis_applies=eis_applies,
                             documents=documents, document_types=DOCUMENT_TYPES,
                             al_note=al_note, al_year=al_year, al_entitlement_effective=al_entitlement_effective,
                             al_used=al_used, al_balance=al_balance,
                             race_options=RACE_OPTIONS, religion_options=RELIGION_OPTIONS,
-                            holiday_state_options=HOLIDAY_STATE_OPTIONS)
+                            holiday_state_options=HOLIDAY_STATE_OPTIONS,
+                            appraisal_supervisors=appraisal_supervisors)
 
 
 @app.route("/employees/<emp_id>/extend-probation", methods=["POST"])
@@ -2556,6 +2586,161 @@ def review_medical_claim(claim_id):
     )
     db.commit()
     return redirect(url_for("medical_claims_admin"))
+
+
+# ---------------- Appraisals ----------------
+# Digitized version of the paper Performance Appraisal Form
+# (confirmation_appraisal.html) - same rating factors, 1-5 scale, and
+# overall evaluation bands. Scope for now: the supervisor's rating +
+# recommendation only, not the paper form's later Manager/Director
+# countersign, HR verification, or salary sections.
+
+APPRAISAL_CATEGORIES = [
+    ("Behavior", ["Attitude", "Attendance", "Punctuality", "Discipline", "Integrity/Honesty"]),
+    ("Job Performance", ["Commitment", "Cooperation & Team Work", "Dependability & Adaptability",
+                          "Initiative", "Potentiality", "Quality Of Work"]),
+    ("Knowledge", ["House Keeping (5S)", "Safety, Health & Environment"]),
+    ("Skills", ["Communication", "Decision Making", "Planning & Organizing Ability",
+                "Problem Solving", "Supervision / Leadership", "Time Management"]),
+]
+APPRAISAL_FACTORS = [f for _, factors in APPRAISAL_CATEGORIES for f in factors]
+APPRAISAL_PURPOSES = ["Confirmation", "Promotion", "Increment", "Bonus", "Assessment"]
+# Matches confirmation_appraisal.html's band table exactly (percentage of max score).
+APPRAISAL_BANDS = [(86, "Excellent"), (66, "Good"), (51, "Average"), (36, "Fair"), (0, "Poor")]
+
+
+def _appraisal_band(percentage):
+    for threshold, label in APPRAISAL_BANDS:
+        if percentage >= threshold:
+            return label
+    return "Poor"
+
+
+def _require_appraisal_access():
+    """role='admin' always has access; role='approver' needs can_approve_appraisal='Y'
+    (already enforced by the before_request gate for the /appraisals prefix, but
+    individual routes still need to know which supervisor's team to scope to)."""
+    if session.get("hr_role") == "admin":
+        return None  # unscoped - sees everyone
+    return session.get("hr_username")  # scoped to this supervisor's assigned staff
+
+
+@app.route("/appraisals/team")
+def appraisal_team():
+    """A supervisor's (Mr Kee's or Mr Yang's) list of assigned staff, each
+    with their most recent appraisal status. Admin visiting this directly
+    sees everyone (no supervisor assignment required)."""
+    db = get_db()
+    supervisor_username = _require_appraisal_access()
+    if supervisor_username:
+        staff = db.execute(
+            "SELECT emp_id, full_name, position FROM employees WHERE appraisal_supervisor_username=? ORDER BY emp_id",
+            (supervisor_username,),
+        ).fetchall()
+    else:
+        staff = db.execute(
+            "SELECT emp_id, full_name, position FROM employees WHERE status != 'Inactive' ORDER BY emp_id"
+        ).fetchall()
+
+    latest_by_emp = {}
+    for row in db.execute(
+        "SELECT emp_id, id, status, overall_band, appraisal_date FROM appraisals ORDER BY id DESC"
+    ).fetchall():
+        latest_by_emp.setdefault(row["emp_id"], row)
+
+    return render_template("appraisal_team.html", staff=staff, latest_by_emp=latest_by_emp)
+
+
+@app.route("/appraisals")
+def appraisals_admin():
+    """HR's outcomes view - every submitted appraisal, company-wide.
+    Admin-only in practice (an approver's /appraisals requests never reach
+    here - the before_request gate only allows them onto /appraisals/team,
+    /appraisals/<id> for their own submissions, and /appraisals/<emp_id>/new)."""
+    db = get_db()
+    rows = db.execute(
+        """SELECT a.*, e.full_name FROM appraisals a
+           JOIN employees e ON e.emp_id = a.emp_id
+           WHERE a.status='Submitted' ORDER BY a.submitted_at DESC"""
+    ).fetchall()
+    return render_template("appraisals_admin.html", rows=rows)
+
+
+@app.route("/appraisals/<emp_id>/new", methods=["GET", "POST"])
+def appraisal_new(emp_id):
+    db = get_db()
+    emp = db.execute("SELECT * FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+    if emp is None:
+        return "Employee not found", 404
+
+    supervisor_username = _require_appraisal_access()
+    if supervisor_username and emp["appraisal_supervisor_username"] != supervisor_username:
+        abort(403)
+
+    error = None
+    if request.method == "POST":
+        ratings = {}
+        for factor in APPRAISAL_FACTORS:
+            raw = request.form.get(f"rating__{factor}")
+            try:
+                score = int(raw)
+            except (TypeError, ValueError):
+                score = None
+            if score is None or not 1 <= score <= 5:
+                error = f"Please give a 1-5 rating for every factor (missing: {factor})."
+                break
+            ratings[factor] = score
+
+        if error is None:
+            total = sum(ratings.values())
+            max_score = len(APPRAISAL_FACTORS) * 5
+            percentage = round(total / max_score * 100, 1)
+            db.execute(
+                """INSERT INTO appraisals (
+                       emp_id, purpose, appraisal_date, ratings_json, total_score, max_score,
+                       percentage, overall_band, rec_advancement, rec_not_yet_ready,
+                       rec_better_suited, rec_training_required, comments, status,
+                       supervisor_username, submitted_at
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'Submitted',?,?)""",
+                (
+                    emp_id, request.form.get("purpose", "Assessment"),
+                    request.form.get("appraisal_date") or datetime.date.today().isoformat(),
+                    json.dumps(ratings), total, max_score, percentage, _appraisal_band(percentage),
+                    "Y" if request.form.get("rec_advancement") else "N",
+                    "Y" if request.form.get("rec_not_yet_ready") else "N",
+                    "Y" if request.form.get("rec_better_suited") else "N",
+                    "Y" if request.form.get("rec_training_required") else "N",
+                    request.form.get("comments") or None,
+                    session["hr_username"],
+                    datetime.datetime.now().isoformat(timespec="seconds"),
+                ),
+            )
+            db.commit()
+            return redirect(url_for("appraisal_team"))
+
+    return render_template(
+        "appraisal_form.html", emp=emp, error=error, categories=APPRAISAL_CATEGORIES,
+        purposes=APPRAISAL_PURPOSES, today=datetime.date.today(),
+    )
+
+
+@app.route("/appraisals/<int:appraisal_id>")
+def appraisal_view(appraisal_id):
+    db = get_db()
+    row = db.execute(
+        """SELECT a.*, e.full_name, e.position, e.department FROM appraisals a
+           JOIN employees e ON e.emp_id = a.emp_id WHERE a.id=?""",
+        (appraisal_id,),
+    ).fetchone()
+    if row is None:
+        abort(404)
+    supervisor_username = _require_appraisal_access()
+    if supervisor_username and row["supervisor_username"] != supervisor_username:
+        abort(403)
+    ratings = json.loads(row["ratings_json"])
+    return render_template(
+        "appraisal_view.html", a=row, ratings=ratings, categories=APPRAISAL_CATEGORIES,
+    )
 
 
 # ---------------- One-time data migration (local -> production) ----------------

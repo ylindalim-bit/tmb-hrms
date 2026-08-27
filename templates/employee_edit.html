@@ -127,6 +127,16 @@
   <div class="form-grid">
     <div><label>Department</label><input type="text" name="department" value="{{ emp.department or '' }}"></div>
     <div><label>Position</label><input type="text" name="position" value="{{ emp.position or '' }}"></div>
+    {% if not is_new %}
+    <div><label>Reports To (Appraisal)</label>
+      <select name="appraisal_supervisor_username">
+        <option value="">-- Not assigned --</option>
+        {% for s in appraisal_supervisors %}
+        <option value="{{ s.username }}" {% if emp.appraisal_supervisor_username == s.username %}selected{% endif %}>{{ s.full_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
     <div><label>Basic Salary (RM)</label><input type="number" step="0.01" name="basic_salary" value="{{ "%.2f"|format(emp.basic_salary or 0) }}"></div>
     <div><label>Working Days/Week</label><input type="number" step="0.5" name="working_days_week" value="{{ emp.working_days_week or 6 }}"></div>
     <div><label>Working Hours/Day</label><input type="number" step="0.5" name="working_hours_day" value="{{ emp.working_hours_day or 8 }}"></div>

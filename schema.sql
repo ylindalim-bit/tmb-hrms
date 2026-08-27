@@ -94,7 +94,12 @@ CREATE TABLE employees (
     -- Designated first-line approver (hr_users.username) for this
     -- employee's leave requests, in addition to HR (role='admin'), who can
     -- always approve anyone. NULL = HR only.
-    leave_approver_username   TEXT
+    leave_approver_username   TEXT,
+    -- Designated supervisor (hr_users.username, role='approver' with
+    -- can_approve_appraisal='Y') who appraises this employee - e.g. 'kee'
+    -- or 'yang'. NULL = no supervisor assigned yet (won't show up under
+    -- anyone's Appraisal team list until set).
+    appraisal_supervisor_username TEXT
 );
 
 CREATE TABLE public_holidays (
@@ -367,16 +372,50 @@ CREATE TABLE medical_claims (
 -- separate from employees.portal_password_hash, which only ever grants
 -- access to that one employee's own Staff Portal.
 -- role='admin' (e.g. Linda/HR): full access to every HR route.
--- role='approver' (e.g. Mr Kee): restricted by app.py's before_request gate
--- to only Leave Requests, and only for employees whose
--- employees.leave_approver_username matches their own username.
+-- role='approver' (e.g. Mr Kee, Mr Yang): restricted by app.py's
+-- before_request gate to only the specific sections their can_approve_*
+-- flags grant - Leave Requests only for employees whose
+-- employees.leave_approver_username matches their own username, and/or
+-- Appraisals only for employees whose employees.appraisal_supervisor_username
+-- matches their own username. A role='approver' account can have either,
+-- both, or (temporarily) neither flag set.
 CREATE TABLE hr_users (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    username       TEXT NOT NULL UNIQUE,
-    password_hash  TEXT NOT NULL,
-    full_name      TEXT NOT NULL,
-    created_at     TEXT NOT NULL,
-    role           TEXT NOT NULL DEFAULT 'admin'
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    username              TEXT NOT NULL UNIQUE,
+    password_hash         TEXT NOT NULL,
+    full_name             TEXT NOT NULL,
+    created_at            TEXT NOT NULL,
+    role                  TEXT NOT NULL DEFAULT 'admin',
+    can_approve_leave     TEXT NOT NULL DEFAULT 'N',
+    can_approve_appraisal TEXT NOT NULL DEFAULT 'N'
+);
+
+-- Employee performance appraisals - digitized version of the paper
+-- "Performance Appraisal Form". Scope for now: the supervisor's rating +
+-- recommendation only (not the paper form's later Manager/Director
+-- countersign, HR verification, or salary recommendation sections - those
+-- stay on the printed confirmation_appraisal.html for now). ratings_json
+-- holds {"Attitude": 4, "Attendance": 5, ...} for all ~18 factors from the
+-- paper form; total_score/percentage are computed at submit time so the
+-- HR outcomes list doesn't need to recompute from ratings_json.
+CREATE TABLE appraisals (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    emp_id                TEXT NOT NULL REFERENCES employees(emp_id),
+    purpose               TEXT NOT NULL DEFAULT 'Assessment',  -- Confirmation/Promotion/Increment/Bonus/Assessment
+    appraisal_date        TEXT NOT NULL,
+    ratings_json          TEXT NOT NULL,   -- {"factor name": 1-5, ...}
+    total_score           REAL NOT NULL,   -- sum of ratings
+    max_score              REAL NOT NULL,   -- factor count x 5, for percentage calc
+    percentage             REAL NOT NULL,   -- total_score / max_score x 100
+    overall_band           TEXT NOT NULL,   -- Excellent/Good/Average/Fair/Poor, per the paper form's bands
+    rec_advancement        TEXT NOT NULL DEFAULT 'N',  -- (a) qualify for advancement
+    rec_not_yet_ready       TEXT NOT NULL DEFAULT 'N',  -- (b) not yet demonstrated required service level
+    rec_better_suited       TEXT NOT NULL DEFAULT 'N',  -- (c) better suited for another type of work
+    rec_training_required   TEXT NOT NULL DEFAULT 'N',  -- (d) training required
+    comments                TEXT,
+    status                  TEXT NOT NULL DEFAULT 'Draft',  -- Draft (supervisor still editing) / Submitted (final)
+    supervisor_username     TEXT NOT NULL,   -- hr_users.username who filled this in
+    submitted_at            TEXT
 );
 
 -- Audit trail of probation extensions, separate from just editing

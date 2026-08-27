@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Appraisals - TMB Payroll{% endblock %}
+{% block content %}
+<h1>Appraisals &mdash; Outcomes</h1>
+
+<div class="card">
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Purpose</th>
+          <th class="text">Date</th><th>Score</th><th class="text">Result</th>
+          <th class="text">Supervisor</th><th class="text">Submitted</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="text">{{ r.emp_id }}</td>
+        <td class="text">{{ r.full_name }}</td>
+        <td class="text">{{ r.purpose }}</td>
+        <td class="text">{{ r.appraisal_date }}</td>
+        <td>{{ r.total_score }}/{{ r.max_score }} ({{ r.percentage }}%)</td>
+        <td class="text">
+          <span class="pill {% if r.overall_band in ('Excellent','Good') %}finalized{% elif r.overall_band == 'Average' %}draft{% else %}rejected{% endif %}">{{ r.overall_band }}</span>
+        </td>
+        <td class="text">{{ r.supervisor_username }}</td>
+        <td class="text">{{ r.submitted_at }}</td>
+        <td class="text"><a class="emp-link" href="{{ url_for('appraisal_view', appraisal_id=r.id) }}">View</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" class="text" style="color:var(--muted);">No appraisals submitted yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

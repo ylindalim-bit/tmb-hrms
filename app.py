@@ -1181,21 +1181,34 @@ def confirmation_letter(emp_id):
     letter_date = datetime.date.fromisoformat(letter_date_str) if letter_date_str else today
     confirm_date = datetime.date.fromisoformat(confirm_date_str) if confirm_date_str else today
 
+    hist_row = db.execute(
+        """SELECT old_salary, new_salary FROM salary_history
+           WHERE emp_id=? AND reason='Confirmation' AND effective_date=?
+           ORDER BY recorded_at DESC LIMIT 1""",
+        (emp_id, confirm_date.isoformat()),
+    ).fetchone()
+
     new_salary_str = request.args.get("new_salary")
     if new_salary_str:
         new_salary = float(new_salary_str)
+    elif hist_row:
+        new_salary = hist_row["new_salary"]
     elif emp["confirmed_new_salary"]:
         new_salary = emp["confirmed_new_salary"]
     else:
         new_salary = None
     increment = None
     if new_salary is not None:
+        # Basic Salary on the employee record already reflects the *new*
+        # salary once Update Salary has been clicked, so the previous salary
+        # for this letter has to come from the matching history row instead.
+        old_salary = hist_row["old_salary"] if hist_row else emp["basic_salary"]
         increment = {
             "new_salary": new_salary,
-            "old_salary": emp["basic_salary"],
-            "amount": round(new_salary - emp["basic_salary"], 2),
-            "pct": round((new_salary - emp["basic_salary"]) / emp["basic_salary"] * 100, 1)
-                   if emp["basic_salary"] else None,
+            "old_salary": old_salary,
+            "amount": round(new_salary - old_salary, 2),
+            "pct": round((new_salary - old_salary) / old_salary * 100, 1)
+                   if old_salary else None,
         }
 
     return render_template(

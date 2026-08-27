@@ -699,6 +699,7 @@ def edit_employee(emp_id):
         return redirect(url_for("edit_employee", emp_id=emp_id))
 
     emp = db.execute("SELECT * FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+    tax_profile = db.execute("SELECT * FROM tax_profile WHERE emp_id=?", (emp_id,)).fetchone()
     extensions = db.execute(
         "SELECT * FROM probation_extensions WHERE emp_id=? ORDER BY extended_at DESC",
         (emp_id,),
@@ -735,7 +736,49 @@ def edit_employee(emp_id):
                             al_used=al_used, al_balance=al_balance,
                             race_options=RACE_OPTIONS, religion_options=RELIGION_OPTIONS,
                             holiday_state_options=HOLIDAY_STATE_OPTIONS,
-                            appraisal_supervisors=appraisal_supervisors)
+                            appraisal_supervisors=appraisal_supervisors,
+                            tax_profile=tax_profile)
+
+
+@app.route("/employees/<emp_id>/tax-profile/update", methods=["POST"])
+def update_tax_profile(emp_id):
+    db = get_db()
+    emp = db.execute("SELECT emp_id FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+    if emp is None:
+        return "Employee not found", 404
+    f = request.form
+    tax_category = f.get("tax_category") or "Single"
+    children_full = int(f.get("children_full_relief") or 0)
+    children_half = int(f.get("children_half_relief") or 0)
+    tp1_submitted = "Y" if f.get("tp1_submitted") else ""
+    tp1_date = f.get("tp1_date") or None
+    zakat_paid_ytd = float(f.get("zakat_paid_ytd") or 0)
+    tp3_submitted = "Y" if f.get("tp3_submitted") else ""
+    tp3_date = f.get("tp3_date") or None
+    tp3_prior_gross = float(f.get("tp3_prior_gross") or 0)
+    tp3_prior_epf_employee = float(f.get("tp3_prior_epf_employee") or 0)
+    tp3_prior_pcb = float(f.get("tp3_prior_pcb") or 0)
+    db.execute(
+        """INSERT INTO tax_profile (
+               emp_id, tax_category, children_full_relief, children_half_relief,
+               tp1_submitted, tp1_date, zakat_paid_ytd,
+               tp3_submitted, tp3_date, tp3_prior_gross, tp3_prior_epf_employee, tp3_prior_pcb
+           ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(emp_id) DO UPDATE SET
+             tax_category=excluded.tax_category,
+             children_full_relief=excluded.children_full_relief,
+             children_half_relief=excluded.children_half_relief,
+             tp1_submitted=excluded.tp1_submitted, tp1_date=excluded.tp1_date,
+             zakat_paid_ytd=excluded.zakat_paid_ytd,
+             tp3_submitted=excluded.tp3_submitted, tp3_date=excluded.tp3_date,
+             tp3_prior_gross=excluded.tp3_prior_gross,
+             tp3_prior_epf_employee=excluded.tp3_prior_epf_employee,
+             tp3_prior_pcb=excluded.tp3_prior_pcb""",
+        (emp_id, tax_category, children_full, children_half, tp1_submitted, tp1_date, zakat_paid_ytd,
+         tp3_submitted, tp3_date, tp3_prior_gross, tp3_prior_epf_employee, tp3_prior_pcb),
+    )
+    db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id))
 
 
 @app.route("/employees/<emp_id>/extend-probation", methods=["POST"])

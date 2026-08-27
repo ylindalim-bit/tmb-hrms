@@ -439,6 +439,55 @@
 </div>
 
 <div class="card">
+  <h2 style="margin-top:0;">Tax Profile (PCB)</h2>
+  <form method="post" action="{{ url_for('update_tax_profile', emp_id=emp.emp_id) }}">
+    <div class="form-grid">
+      <div><label>Tax Category</label>
+        <select name="tax_category">
+          <option value="Single" {% if not tax_profile or tax_profile.tax_category=="Single" %}selected{% endif %}>Single</option>
+          <option value="Married" {% if tax_profile and tax_profile.tax_category=="Married" %}selected{% endif %}>Married</option>
+        </select>
+      </div>
+      <div><label>Children (Full Relief)</label><input type="number" step="1" name="children_full_relief" value="{{ tax_profile.children_full_relief if tax_profile else 0 }}"></div>
+      <div><label>Children (Half Relief)</label><input type="number" step="1" name="children_half_relief" value="{{ tax_profile.children_half_relief if tax_profile else 0 }}"></div>
+      <div><label>Zakat Paid (YTD, RM)</label><input type="number" step="0.01" name="zakat_paid_ytd" value="{{ "%.2f"|format(tax_profile.zakat_paid_ytd or 0) if tax_profile else "0.00" }}"></div>
+    </div>
+    <div class="form-grid" style="margin-top:10px;">
+      <div><label>TP1 Submitted?</label>
+        <label style="display:flex; align-items:center; gap:6px; font-weight:400; margin-top:6px;">
+          <input type="checkbox" name="tp1_submitted" value="Y" {% if tax_profile and tax_profile.tp1_submitted == "Y" %}checked{% endif %} style="width:auto;">
+          Spouse/children relief claimed via TP1
+        </label>
+      </div>
+      <div><label>TP1 Date</label><input type="date" name="tp1_date" value="{{ tax_profile.tp1_date if tax_profile else '' }}"></div>
+    </div>
+    <p style="color:var(--muted); font-size:12px; margin:10px 0 0;">
+      Spouse/children relief (TP1) is only applied when this box is ticked &mdash; matching LHDN's Computerised Method, which requires TP1 to be on file before granting these deductions.
+    </p>
+
+    <h3 style="margin:18px 0 8px; font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px;">TP3 &mdash; Prior Employer Income (Current Year)</h3>
+    <div class="form-grid">
+      <div><label>TP3 Submitted?</label>
+        <label style="display:flex; align-items:center; gap:6px; font-weight:400; margin-top:6px;">
+          <input type="checkbox" name="tp3_submitted" value="Y" {% if tax_profile and tax_profile.tp3_submitted == "Y" %}checked{% endif %} style="width:auto;">
+          Employee has submitted a signed TP3 for this year
+        </label>
+      </div>
+      <div><label>TP3 Date</label><input type="date" name="tp3_date" value="{{ tax_profile.tp3_date if tax_profile else '' }}"></div>
+      <div><label>Prior Employer Gross Remuneration (RM)</label><input type="number" step="0.01" name="tp3_prior_gross" value="{{ "%.2f"|format(tax_profile.tp3_prior_gross or 0) if tax_profile else "0.00" }}"></div>
+      <div><label>Prior Employer EPF &mdash; Employee (RM)</label><input type="number" step="0.01" name="tp3_prior_epf_employee" value="{{ "%.2f"|format(tax_profile.tp3_prior_epf_employee or 0) if tax_profile else "0.00" }}"></div>
+      <div><label>Prior Employer PCB (RM)</label><input type="number" step="0.01" name="tp3_prior_pcb" value="{{ "%.2f"|format(tax_profile.tp3_prior_pcb or 0) if tax_profile else "0.00" }}"></div>
+    </div>
+    <p style="color:var(--muted); font-size:12px; margin:10px 0 0;">
+      From the employee's signed TP3 form (income earned with a previous employer earlier this same year, before joining Tianma). Folded into this employer's own year-to-date figures when computing PCB, so the Computerised Method sees the employee's true full-year income.
+    </p>
+    <div class="form-actions" style="margin-top:14px;">
+      <button class="btn" type="submit">Save Tax Profile</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
   <h2 style="margin-top:0;">Documents</h2>
   <p style="color:var(--muted); font-size:12px; margin-top:-4px;">
     Keep Letter of Employment, Confirmation Letter, Resignation Letter, e-Stamping Certificate, and any other

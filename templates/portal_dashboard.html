@@ -38,6 +38,12 @@
     <a class="btn secondary" href="{{ url_for('portal_leave') }}">Apply / View</a>
   </div>
 
+  <div class="card">
+    <h2 style="margin-top:0;">My Profile</h2>
+    <p style="color:var(--muted);">Contact details, bank &amp; emergency contacts</p>
+    <a class="btn secondary" href="{{ url_for('portal_profile') }}">View / Edit</a>
+  </div>
+
   {% if supervisor %}
   <div class="card">
     <h2 style="margin-top:0;">Team Reminders</h2>

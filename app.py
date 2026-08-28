@@ -3017,7 +3017,8 @@ def appraisal_team():
     ).fetchall():
         latest_by_emp.setdefault(row["emp_id"], row)
 
-    return render_template("appraisal_team.html", staff=staff, latest_by_emp=latest_by_emp)
+    return render_template("appraisal_team.html", staff=staff, latest_by_emp=latest_by_emp,
+                            today=datetime.date.today().isoformat())
 
 
 @app.route("/appraisals")

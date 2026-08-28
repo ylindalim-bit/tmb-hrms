@@ -45,6 +45,31 @@
 </div>
 {% endmacro %}
 
+<h2>Recent profile updates</h2>
+<p style="color:var(--muted); font-size:13px; margin-top:-8px;">
+  Staff self-service changes to contact/bank details, emergency contacts, or password &mdash; last 50.
+</p>
+<div class="card table-wrap">
+<table>
+<thead>
+<tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Updated</th><th></th></tr>
+</thead>
+<tbody>
+{% for u in profile_updates %}
+<tr>
+  <td class="text">{{ u.emp_id }}</td>
+  <td class="text">{{ u.full_name }}</td>
+  <td class="text">{{ u.updated_at }}</td>
+  <td><a class="emp-link" href="{{ url_for('edit_employee', emp_id=u.emp_id) }}">View</a></td>
+</tr>
+{% endfor %}
+{% if not profile_updates %}
+<tr><td class="text" colspan="4">No self-service profile updates yet.</td></tr>
+{% endif %}
+</tbody>
+</table>
+</div>
+
 <h2>Probation ending (or overdue)</h2>
 <p style="color:var(--muted); font-size:13px; margin-top:-8px;">
   Per TMB's handbook: probation is 3 months for non-executive positions, 6 months for core operational positions.

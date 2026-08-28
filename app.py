@@ -233,11 +233,15 @@ def inject_pending_counts():
             pending_appraisal_count = db.execute(
                 "SELECT COUNT(*) AS c FROM appraisals WHERE status='Submitted' AND hr_viewed_at IS NULL"
             ).fetchone()["c"]
+        pending_profile_update_count = db.execute(
+            "SELECT COUNT(*) AS c FROM profile_update_log WHERE hr_viewed_at IS NULL"
+        ).fetchone()["c"] if session.get("hr_role") != "approver" else 0
     except sqlite3.OperationalError:
         return {}
     return {"pending_leave_count": pending_leave_count, "pending_trip_count": pending_trip_count,
             "pending_medical_claim_count": pending_medical_claim_count,
-            "pending_appraisal_count": pending_appraisal_count}
+            "pending_appraisal_count": pending_appraisal_count,
+            "pending_profile_update_count": pending_profile_update_count}
 
 
 def get_db():
@@ -1261,9 +1265,23 @@ def confirmation_due():
            ORDER BY confirmation_date DESC"""
     ).fetchall()
 
+    # Recent self-service profile updates, most recent first - viewing this
+    # page marks them all seen (clears the Alerts nav badge), like reading
+    # a notification inbox.
+    profile_updates = db.execute(
+        """SELECT pul.id, pul.emp_id, pul.updated_at, e.full_name FROM profile_update_log pul
+           JOIN employees e ON e.emp_id = pul.emp_id
+           ORDER BY pul.updated_at DESC LIMIT 50"""
+    ).fetchall()
+    db.execute(
+        "UPDATE profile_update_log SET hr_viewed_at=? WHERE hr_viewed_at IS NULL",
+        (datetime.datetime.now().isoformat(timespec="seconds"),),
+    )
+    db.commit()
+
     return render_template("confirmation_due.html", due=due, missing=missing, today=today,
                             passport_alerts=passport_alerts, work_permit_alerts=work_permit_alerts,
-                            confirmed=confirmed)
+                            confirmed=confirmed, profile_updates=profile_updates)
 
 
 @app.route("/confirmation-letter/<emp_id>")
@@ -2637,6 +2655,10 @@ def portal_profile():
             f"UPDATE employees SET {set_clause} WHERE emp_id=?",
             list(fields.values()) + [emp["emp_id"]],
         )
+        db.execute(
+            "INSERT INTO profile_update_log (emp_id, updated_at) VALUES (?,?)",
+            (emp["emp_id"], datetime.datetime.now().isoformat(timespec="seconds")),
+        )
         db.commit()
         emp = current_portal_employee(db)
         saved = True
@@ -3287,6 +3309,11 @@ def hr_migrate_schema():
             supporting_doc_original TEXT, supporting_doc_stored TEXT, status TEXT NOT NULL DEFAULT 'Pending',
             submitted_at TEXT NOT NULL, reviewed_by TEXT, reviewed_at TEXT, review_notes TEXT)""")
         applied.append("table: medical_claims")
+    if "profile_update_log" not in existing_tables:
+        db.execute("""CREATE TABLE profile_update_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),
+            updated_at TEXT NOT NULL, hr_viewed_at TEXT)""")
+        applied.append("table: profile_update_log")
 
     db.execute("UPDATE hr_users SET can_approve_leave='Y', can_approve_appraisal='Y' WHERE username='kee'")
     yang_password = request.form.get("yang_password", "")

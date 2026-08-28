@@ -29,7 +29,9 @@
     <a href="{{ url_for('run_payroll', year=cur_year, month=cur_month) }}">Run Payroll</a>
     <a href="{{ url_for('attendance', year=cur_year, month=cur_month) }}">Attendance</a>
     <a href="{{ url_for('history') }}">History</a>
-    <a href="{{ url_for('confirmation_due') }}">Alerts</a>
+    <a href="{{ url_for('confirmation_due') }}">Alerts
+      {% if pending_profile_update_count %}<span class="pill rejected" style="margin-left:3px;">{{ pending_profile_update_count }}</span>{% endif %}
+    </a>
     <a href="{{ url_for('employees') }}">Employees</a>
     <a href="{{ url_for('holidays') }}">Public Holidays</a>
     <a href="{{ url_for('leave_requests_admin') }}">Leave Requests

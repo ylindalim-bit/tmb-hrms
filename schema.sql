@@ -387,6 +387,18 @@ CREATE TABLE medical_claims (
     review_notes           TEXT
 );
 
+-- One row per time an employee saves their own Staff Portal profile
+-- (contact/bank details, emergency contacts, password) - drives the
+-- "recent profile updates" alert on the Alerts page so HR notices a
+-- change without checking every employee's record. hr_viewed_at is set
+-- the first time HR opens the Alerts page after the update.
+CREATE TABLE profile_update_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    emp_id      TEXT NOT NULL REFERENCES employees(emp_id),
+    updated_at  TEXT NOT NULL,
+    hr_viewed_at TEXT
+);
+
 -- HR/admin accounts that can access the HR side of this app (Employees,
 -- Payroll, Attendance, Leave Requests, Business Trips, etc.) - completely
 -- separate from employees.portal_password_hash, which only ever grants

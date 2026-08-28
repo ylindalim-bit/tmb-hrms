@@ -5,7 +5,7 @@
 
 <div class="card">
   <h2 style="margin-top:0;">Balance (This Year)</h2>
-  <p>Annual Limit: RM {{ "%.2f"|format(emp.medical_claim_limit or 0) }}<br>
+  <p>Annual Limit: RM {{ "%.2f"|format(claim_limit) }}<br>
      Claimed (Approved) this year: RM {{ "%.2f"|format(claimed_this_year) }}<br>
      <strong>Balance: RM {{ "%.2f"|format(claim_balance) }}</strong></p>
 </div>

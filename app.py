@@ -2531,10 +2531,12 @@ def portal_medical_claim():
            WHERE emp_id=? AND status='Approved' AND claim_date LIKE ?""",
         (emp["emp_id"], f"{cur_year:04d}-%"),
     ).fetchone()["total"]
-    claim_balance = (emp["medical_claim_limit"] or 0) - claimed_this_year
+    claim_limit, _limit_note = _prorated_medical_claim_limit(emp, cur_year)
+    claim_balance = claim_limit - claimed_this_year
 
     return render_template("portal_medical_claim.html", emp=emp, claims=my_claims, error=error,
-                            claimed_this_year=claimed_this_year, claim_balance=claim_balance)
+                            claimed_this_year=claimed_this_year, claim_balance=claim_balance,
+                            claim_limit=claim_limit)
 
 
 @app.route("/portal/medical-claim/<int:claim_id>/document")
@@ -2720,19 +2722,20 @@ def portal_profile():
 
 # ---------------- HR: Leave Taken Report ----------------
 
-def _prorated_al_note(e, year):
-    """Malaysian practice (EA1955) is to prorate a calendar year's Annual
-    Leave entitlement by days of service in that year - both for someone
-    who resigned partway through the year, and for someone who joined
-    partway through the year (whether they're still active or have since
-    resigned). Prorated by calendar days (not completed months) so someone
-    employed the whole year - e.g. joined 1 Jan, still active - always
-    comes out to the full entitlement. Returns (prorated_entitlement,
-    note), or (None, note) if there isn't enough data on file (Date Joined
-    / Last Working Day) to prorate reliably - in that case we refuse to
-    guess rather than show a made-up number. Returns (None, None) if the
-    person was employed for the whole of `year`, so no proration is
-    needed at all.
+def _prorate_by_days(e, year, full):
+    """Malaysian practice (EA1955) is to prorate a calendar-year entitlement
+    (Annual Leave, medical claim limit, etc.) by days of service in that
+    year - both for someone who resigned partway through the year, and for
+    someone who joined partway through the year (whether they're still
+    active or have since resigned). Prorated by calendar days (not
+    completed months) so someone employed the whole year - e.g. joined 1
+    Jan, still active - always comes out to the full amount. `full` is the
+    already-resolved full-year amount to prorate. Returns
+    (prorated_amount, note), or (None, note) if there isn't enough data on
+    file (Date Joined / Last Working Day) to prorate reliably - in that
+    case we refuse to guess rather than show a made-up number. Returns
+    (None, None) if the person was employed for the whole of `year`, so no
+    proration is needed at all.
     """
     dj = e["date_joined"]
     lwd = e["last_working_day"]
@@ -2753,13 +2756,23 @@ def _prorated_al_note(e, year):
     end = datetime.date.fromisoformat(lwd) if resigned_this_year else end_of_year
     days_employed = max((end - start).days + 1, 0)
     days_in_year = (end_of_year - start_of_year).days + 1  # 365 or 366
-    full = e["annual_leave_entitlement"] or 0
-    prorated = round(full * days_employed / days_in_year, 2)
+    prorated = round((full or 0) * days_employed / days_in_year, 2)
     if resigned_this_year:
         note = "resigned {} - prorated for {} of {} days in {}".format(lwd, days_employed, days_in_year, year)
     else:
         note = "joined {} - prorated for {} of {} days in {}".format(dj, days_employed, days_in_year, year)
     return prorated, note
+
+
+def _prorated_al_note(e, year):
+    return _prorate_by_days(e, year, e["annual_leave_entitlement"])
+
+
+def _prorated_medical_claim_limit(e, year):
+    """Same day-based proration as Annual Leave, applied to the RM/year
+    medical claim limit."""
+    prorated, note = _prorate_by_days(e, year, e["medical_claim_limit"])
+    return prorated if prorated is not None else (e["medical_claim_limit"] or 0), note
 
 
 @app.route("/leave-report")

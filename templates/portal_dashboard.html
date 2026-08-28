@@ -1,12 +1,21 @@
 {% extends "portal_base.html" %}
 {% block title %}Dashboard - Staff Portal{% endblock %}
+{% block extra_style %}
+<style>
+  /* Keeps every dashboard card's button on the same row, regardless of how
+     much text sits above it, and the same width across cards. */
+  .dash-grid { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: stretch; }
+  .dash-grid .card { flex: 1 1 220px; display: flex; flex-direction: column; }
+  .dash-grid .card .btn { margin-top: auto; align-self: flex-start; width: 160px; text-align: center; }
+</style>
+{% endblock %}
 {% block content %}
 <h1>Welcome, {{ emp.full_name }}</h1>
 <div class="card">
   <p><strong>{{ emp.emp_id }}</strong> &mdash; {{ emp.position or "" }} {% if emp.department %}({{ emp.department }}){% endif %}</p>
 </div>
 
-<div class="form-grid">
+<div class="dash-grid">
   <div class="card">
     <h2 style="margin-top:0;">Latest Payslip</h2>
     {% if latest_run %}

@@ -2193,6 +2193,22 @@ def portal_payslips():
     # (and its Net Pay figure) simply doesn't exist yet from the employee's
     # point of view before then, not just the itemized breakdown.
     rows = [r for r in all_rows if today >= payslip_release_date(db, r["year"], r["month"])]
+    # A payroll_runs row can exist for a month before someone actually
+    # joined (e.g. finalized while their Date Joined was still wrong/unset,
+    # later corrected to net RM0.00) - don't show that month at all rather
+    # than a confusing zero payslip for a month they weren't employed.
+    date_joined = payroll_calc._parse_date(emp["date_joined"])
+    last_working_day = payroll_calc._parse_date(emp["last_working_day"])
+    def _was_employed(year, month):
+        days_in_month = calendar.monthrange(year, month)[1]
+        month_start = datetime.date(year, month, 1)
+        month_end = datetime.date(year, month, days_in_month)
+        if date_joined and date_joined > month_end:
+            return False
+        if last_working_day and last_working_day < month_start:
+            return False
+        return True
+    rows = [r for r in rows if _was_employed(r["year"], r["month"])]
     return render_template("portal_payslips.html", emp=emp, rows=rows)
 
 

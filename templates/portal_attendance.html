@@ -2,12 +2,6 @@
 {% block title %}Attendance & Leave - Staff Portal{% endblock %}
 {% block content %}
 <h1>Attendance &amp; Leave Balance</h1>
-<p style="font-size:20px; font-weight:700; margin-top:-8px;">{{ emp.emp_id }} &mdash; {{ emp.full_name }}</p>
-<p style="color:var(--muted); margin-top:-8px;">
-  Date Joined: {{ emp.date_joined or "-" }} &nbsp;|&nbsp;
-  Date Of Confirmation: {{ emp.confirmation_date or "-" }}
-  {% if emp.resignation_date %}&nbsp;|&nbsp; Resignation Date: {{ emp.resignation_date }}{% endif %}
-</p>
 
 <div class="month-nav">
   <span>Year:</span>

@@ -47,6 +47,16 @@
     <a href="{{ url_for('portal_logout') }}">Logout</a>
   </nav>
 </header>
+{% if emp %}
+<div class="no-print" style="padding:10px 24px; background:var(--card); border-bottom:1px solid var(--border);">
+  <span style="font-weight:700;">{{ emp.emp_id }} &mdash; {{ emp.full_name }}</span>
+  <span style="color:var(--muted); margin-left:14px;">
+    Date Joined: {{ emp.date_joined or "-" }} &nbsp;|&nbsp;
+    Date Of Confirmation: {{ emp.confirmation_date or "-" }}
+    {% if emp.resignation_date %}&nbsp;|&nbsp; Resignation Date: {{ emp.resignation_date }}{% endif %}
+  </span>
+</div>
+{% endif %}
 <main>
   {% block content %}{% endblock %}
 </main>

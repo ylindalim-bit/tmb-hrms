@@ -10,8 +10,7 @@
   <div class="card">
     <h2 style="margin-top:0;">Latest Payslip</h2>
     {% if latest_run %}
-    <p>{{ month_names[latest_run.month] }} {{ latest_run.year }}<br>
-      Net Pay: <span class="net-good">RM {{ "%.2f"|format(latest_run.net_pay) }}</span></p>
+    <p>{{ month_names[latest_run.month] }} {{ latest_run.year }}</p>
     <a class="btn secondary" href="{{ url_for('portal_payslip', year=latest_run.year, month=latest_run.month) }}">View Payslip</a>
     {% else %}
     <p style="color:var(--muted);">No finalized payslip yet.</p>

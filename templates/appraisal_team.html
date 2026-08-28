@@ -19,11 +19,7 @@
         <td class="text">{{ e.full_name }}</td>
         <td class="text">{{ e.position or "" }}</td>
         <td class="text">{{ e.date_joined or "-" }}</td>
-        <td class="text">
-          {% if e.confirmation_date %}
-          <span style="color:var(--muted);">Confirmed {{ e.confirmation_date }}</span>
-          {% else %}{{ e.probation_end_date or "-" }}{% endif %}
-        </td>
+        <td class="text">{{ e.probation_end_date or "-" }}</td>
         <td class="text">{{ latest.appraisal_date if latest else "-" }}</td>
         <td class="text">
           {% if latest %}

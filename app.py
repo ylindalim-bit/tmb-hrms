@@ -1182,7 +1182,14 @@ def confirmation_due():
     db = get_db()
     today = datetime.date.today()
 
-    due = _rows_with_days_left(db, "probation_end_date", ", date_joined", exclude_if_confirmed=True)
+    due = _rows_with_days_left(db, "probation_end_date", ", date_joined, appraisal_supervisor_username",
+                                exclude_if_confirmed=True)
+    supervisor_names = {
+        r["username"]: r["full_name"]
+        for r in db.execute("SELECT username, full_name FROM hr_users").fetchall()
+    }
+    for r in due:
+        r["reports_to"] = supervisor_names.get(r["appraisal_supervisor_username"]) or r["appraisal_supervisor_username"] or "-"
     passport_alerts = _rows_with_days_left(db, "passport_expiry")
     work_permit_alerts = _rows_with_days_left(db, "work_permit_expiry")
 

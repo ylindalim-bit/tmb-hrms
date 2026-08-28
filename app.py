@@ -2479,8 +2479,6 @@ def portal_profile():
             "hp_no": request.form.get("hp_no") or None,
             "email": request.form.get("email") or None,
             "address": request.form.get("address") or None,
-            "bank_name": request.form.get("bank_name") or None,
-            "bank_account_no": request.form.get("bank_account_no") or None,
             "marital_status": request.form.get("marital_status") or None,
             "emergency_contact_1_name": request.form.get("emergency_contact_1_name") or None,
             "emergency_contact_1_phone": request.form.get("emergency_contact_1_phone") or None,

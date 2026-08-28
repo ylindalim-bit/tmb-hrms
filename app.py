@@ -2977,12 +2977,14 @@ def appraisal_team():
     supervisor_username = _require_appraisal_access()
     if supervisor_username:
         staff = db.execute(
-            "SELECT emp_id, full_name, position FROM employees WHERE appraisal_supervisor_username=? ORDER BY emp_id",
+            """SELECT emp_id, full_name, position, date_joined, probation_end_date FROM employees
+               WHERE appraisal_supervisor_username=? ORDER BY emp_id""",
             (supervisor_username,),
         ).fetchall()
     else:
         staff = db.execute(
-            "SELECT emp_id, full_name, position FROM employees WHERE status != 'Inactive' ORDER BY emp_id"
+            """SELECT emp_id, full_name, position, date_joined, probation_end_date FROM employees
+               WHERE status != 'Inactive' ORDER BY emp_id"""
         ).fetchall()
 
     latest_by_emp = {}

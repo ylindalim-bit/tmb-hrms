@@ -32,12 +32,12 @@
     {% if session.get("portal_self_login") %}
     {% if can_approve_leave == "Y" %}
     <a href="{{ url_for('leave_requests_admin') }}" style="color:var(--accent);">Approve Leave
-      {% if pending_leave_count %}<span class="pill draft" style="margin-left:3px;">{{ pending_leave_count }}</span>{% endif %}
+      {% if pending_leave_count %}<span class="pill rejected" style="margin-left:3px;">{{ pending_leave_count }}</span>{% endif %}
     </a>
     {% endif %}
     {% if can_approve_appraisal == "Y" %}
     <a href="{{ url_for('appraisal_team') }}" style="color:var(--accent);">Appraisals
-      {% if pending_appraisal_count %}<span class="pill draft" style="margin-left:3px;">{{ pending_appraisal_count }}</span>{% endif %}
+      {% if pending_appraisal_count %}<span class="pill rejected" style="margin-left:3px;">{{ pending_appraisal_count }}</span>{% endif %}
     </a>
     {% endif %}
     {% endif %}

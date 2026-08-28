@@ -566,7 +566,8 @@ TEXT_FIELDS = ["full_name", "ic_passport_no", "date_of_birth", "marital_status",
                "emergency_contact_2_name", "emergency_contact_2_phone", "emergency_contact_2_relationship",
                "date_joined", "last_working_day", "probation_end_date",
                "passport_expiry", "work_permit_expiry", "termination_notice_period",
-               "confirmation_date", "resignation_date", "appraisal_supervisor_username"]
+               "confirmation_date", "resignation_date", "appraisal_supervisor_username",
+               "leave_approver_username"]
 NUM_FIELDS = ["basic_salary", "working_days_week", "working_hours_day",
               "additional_epf_employee", "annual_leave_entitlement", "mc_entitlement",
               "hospitalisation_leave_entitlement", "medical_claim_limit"]
@@ -758,6 +759,9 @@ def edit_employee(emp_id):
     appraisal_supervisors = db.execute(
         "SELECT username, full_name FROM hr_users WHERE can_approve_appraisal='Y' ORDER BY full_name"
     ).fetchall()
+    leave_approvers = db.execute(
+        "SELECT username, full_name FROM hr_users WHERE can_approve_leave='Y' ORDER BY full_name"
+    ).fetchall()
 
     return render_template("employee_edit.html", emp=emp, is_new=False, extensions=extensions,
                             salary_history=salary_history, eis_applies=eis_applies,
@@ -766,7 +770,7 @@ def edit_employee(emp_id):
                             al_used=al_used, al_balance=al_balance,
                             race_options=RACE_OPTIONS, religion_options=RELIGION_OPTIONS,
                             holiday_state_options=HOLIDAY_STATE_OPTIONS,
-                            appraisal_supervisors=appraisal_supervisors,
+                            appraisal_supervisors=appraisal_supervisors, leave_approvers=leave_approvers,
                             tax_profile=tax_profile)
 
 

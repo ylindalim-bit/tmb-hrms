@@ -2349,7 +2349,10 @@ def portal_attendance():
         if last_working_day and last_working_day < month_start:
             return False
         return True
-    rows = [r for r in rows if _was_employed(r["month"])]
+    today = datetime.date.today()
+    def _not_future(month):
+        return (year, month) <= (today.year, today.month)
+    rows = [r for r in rows if _was_employed(r["month"]) and _not_future(r["month"])]
 
     al_used = sum(r["al_days"] or 0 for r in rows)
     mc_used = sum(r["mc_days"] or 0 for r in rows)

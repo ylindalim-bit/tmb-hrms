@@ -534,6 +534,8 @@ TEXT_FIELDS = ["full_name", "ic_passport_no", "date_of_birth", "marital_status",
                "race", "religion", "holiday_state", "epf_no", "socso_no", "tax_no", "skbbk_flag", "eis_flag",
                "department", "position", "status", "work_pattern", "bank_name", "bank_account_no",
                "phone_number", "hp_no", "email", "address",
+               "emergency_contact_1_name", "emergency_contact_1_phone",
+               "emergency_contact_2_name", "emergency_contact_2_phone",
                "date_joined", "last_working_day", "probation_end_date",
                "passport_expiry", "work_permit_expiry", "termination_notice_period",
                "confirmation_date", "resignation_date", "appraisal_supervisor_username"]
@@ -2480,6 +2482,10 @@ def portal_profile():
             "bank_name": request.form.get("bank_name") or None,
             "bank_account_no": request.form.get("bank_account_no") or None,
             "marital_status": request.form.get("marital_status") or None,
+            "emergency_contact_1_name": request.form.get("emergency_contact_1_name") or None,
+            "emergency_contact_1_phone": request.form.get("emergency_contact_1_phone") or None,
+            "emergency_contact_2_name": request.form.get("emergency_contact_2_name") or None,
+            "emergency_contact_2_phone": request.form.get("emergency_contact_2_phone") or None,
         }
         new_password = request.form.get("new_password", "").strip()
         if new_password:
@@ -3040,6 +3046,11 @@ def hr_migrate_schema():
     if "medical_claim_limit" not in emp_cols:
         db.execute("ALTER TABLE employees ADD COLUMN medical_claim_limit REAL DEFAULT 0")
         applied.append("employees.medical_claim_limit")
+    for col in ["emergency_contact_1_name", "emergency_contact_1_phone",
+                "emergency_contact_2_name", "emergency_contact_2_phone"]:
+        if col not in emp_cols:
+            db.execute(f"ALTER TABLE employees ADD COLUMN {col} TEXT")
+            applied.append(f"employees.{col}")
 
     existing_tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
     if "appraisals" not in existing_tables:

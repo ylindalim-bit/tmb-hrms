@@ -39,6 +39,14 @@
     </div>
   </div>
 
+  <h2>Emergency Contacts</h2>
+  <div class="form-grid">
+    <div><label>Contact 1 &mdash; Name</label><input type="text" name="emergency_contact_1_name" value="{{ emp.emergency_contact_1_name or '' }}"></div>
+    <div><label>Contact 1 &mdash; Phone</label><input type="text" name="emergency_contact_1_phone" value="{{ emp.emergency_contact_1_phone or '' }}"></div>
+    <div><label>Contact 2 &mdash; Name</label><input type="text" name="emergency_contact_2_name" value="{{ emp.emergency_contact_2_name or '' }}"></div>
+    <div><label>Contact 2 &mdash; Phone</label><input type="text" name="emergency_contact_2_phone" value="{{ emp.emergency_contact_2_phone or '' }}"></div>
+  </div>
+
   <h2>Change Password</h2>
   <div class="form-grid">
     <div><label>New Password (leave blank to keep current)</label><input type="password" name="new_password" autocomplete="new-password"></div>

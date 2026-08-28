@@ -8,7 +8,7 @@
   <table>
     <thead>
       <tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Position</th>
-          <th class="text">Join Date</th><th class="text">Confirm Due Date</th>
+          <th class="text">Join / Confirm Due</th>
           <th class="text">Last Appraisal</th><th class="text">Result</th><th>Action</th></tr>
     </thead>
     <tbody>
@@ -18,8 +18,7 @@
         <td class="text">{{ e.emp_id }}</td>
         <td class="text">{{ e.full_name }}</td>
         <td class="text">{{ e.position or "" }}</td>
-        <td class="text">{{ e.date_joined or "-" }}</td>
-        <td class="text">{{ e.probation_end_date or "-" }}</td>
+        <td class="text">{{ e.date_joined or "-" }}<br>{{ e.probation_end_date or "-" }}</td>
         <td class="text">{{ latest.appraisal_date if latest else "-" }}</td>
         <td class="text">
           {% if latest %}
@@ -32,7 +31,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="8" class="text" style="color:var(--muted);">No staff assigned to you yet &mdash; ask HR to set this on the employee's Edit page.</td></tr>
+      <tr><td colspan="7" class="text" style="color:var(--muted);">No staff assigned to you yet &mdash; ask HR to set this on the employee's Edit page.</td></tr>
       {% endfor %}
     </tbody>
   </table>

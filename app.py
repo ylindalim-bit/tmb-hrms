@@ -1968,6 +1968,47 @@ def payroll_detail(emp_id, year, month):
     )
 
 
+@app.route("/payroll/<int:year>/<int:month>/<emp_id>/pcb-override", methods=["POST"])
+def set_pcb_override(year, month, emp_id):
+    """Manually corrects PCB for one finalized employee/month, e.g. to match
+    the employee's own official LHDN e-PCB slip when this employer's
+    Computerised Method doesn't exactly reproduce LHDN's figure (edge cases
+    like irregular voluntary EPF elections). Only valid for an already
+    finalized month - the override is stored on its payroll_runs row and
+    picked up by calculate_payroll() from then on, including through future
+    re-Finalizes."""
+    db = get_db()
+    existing = db.execute(
+        "SELECT 1 FROM payroll_runs WHERE emp_id=? AND year=? AND month=?", (emp_id, year, month)
+    ).fetchone()
+    if existing is None:
+        return "This month hasn't been finalized yet - finalize it first.", 400
+
+    raw = request.form.get("pcb_override", "").strip()
+    reason = request.form.get("pcb_override_reason", "").strip() or None
+    override_value = float(raw) if raw else None
+
+    db.execute(
+        "UPDATE payroll_runs SET pcb_override=?, pcb_override_reason=? WHERE emp_id=? AND year=? AND month=?",
+        (override_value, reason, emp_id, year, month),
+    )
+    # Recompute now so the corrected figure shows everywhere immediately,
+    # without waiting for the next Finalize.
+    result = payroll_calc.calculate_payroll(db, emp_id, year, month)
+    db.execute(
+        "UPDATE payroll_runs SET pcb=?, total_deductions=?, net_pay=? WHERE emp_id=? AND year=? AND month=?",
+        (result["pcb"], result["total_deductions"], result["net_pay"], emp_id, year, month),
+    )
+    db.execute(
+        """INSERT INTO pcb_monthly_record (emp_id, year, month, gross_remun, epf_employee, pcb_deducted)
+           VALUES (?,?,?,?,?,?)
+           ON CONFLICT(emp_id, year, month) DO UPDATE SET pcb_deducted=excluded.pcb_deducted""",
+        (emp_id, year, month, result["gross_pay"], result["epf_employee"], result["pcb"]),
+    )
+    db.commit()
+    return redirect(url_for("payroll_detail", year=year, month=month, emp_id=emp_id))
+
+
 # ---------------- Settings ----------------
 
 @app.route("/settings", methods=["GET", "POST"])
@@ -2985,6 +3026,12 @@ def hr_migrate_schema():
             if col not in appraisal_cols:
                 db.execute(f"ALTER TABLE appraisals ADD COLUMN {col} {decl}")
                 applied.append(f"appraisals.{col}")
+    if "payroll_runs" in existing_tables:
+        payroll_runs_cols = [r[1] for r in db.execute("PRAGMA table_info(payroll_runs)").fetchall()]
+        for col, decl in [("pcb_override", "REAL"), ("pcb_override_reason", "TEXT")]:
+            if col not in payroll_runs_cols:
+                db.execute(f"ALTER TABLE payroll_runs ADD COLUMN {col} {decl}")
+                applied.append(f"payroll_runs.{col}")
     if "medical_claims" not in existing_tables:
         db.execute("""CREATE TABLE medical_claims (
             id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),

@@ -462,6 +462,18 @@ def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: i
     )
     pcb = pcb_breakdown["pcb_this_month"]
 
+    # A manual PCB correction (e.g. from the employee's own LHDN e-PCB slip)
+    # sticks across re-Finalizing: once set on a prior run for this
+    # emp/year/month, it keeps overriding the calculated pcb here too.
+    override_row = conn.execute(
+        "SELECT pcb_override, pcb_override_reason FROM payroll_runs WHERE emp_id=? AND year=? AND month=?",
+        (emp_id, year, month),
+    ).fetchone()
+    pcb_override = override_row["pcb_override"] if override_row else None
+    pcb_override_reason = override_row["pcb_override_reason"] if override_row else None
+    if pcb_override is not None:
+        pcb = pcb_override
+
     total_deductions = epf_employee + socso_employee + eis_employee + pcb + skbbk_employee + other_deduction
     net_pay = gross_pay - total_deductions
 
@@ -500,6 +512,9 @@ def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: i
         "eis_employee": round(eis_employee, 2),
         "eis_employer": round(eis_employer, 2),
         "pcb": round(pcb, 2),
+        "pcb_calculated": round(pcb_breakdown["pcb_this_month"], 2),
+        "pcb_override": pcb_override,
+        "pcb_override_reason": pcb_override_reason,
         "skbbk_employee": round(skbbk_employee, 2),
         "hrd_levy_employer": round(hrd_levy, 2),
         "other_deduction": round(other_deduction, 2),

@@ -156,8 +156,31 @@
   <div class="formula-row"><span class="label">Tax Before Rebate</span><span class="val">RM {{ "%.2f"|format(r.pcb_breakdown.tax_before_rebate) }}</span></div>
   <div class="formula-row"><span class="label">Rebate</span><span class="val">RM {{ "%.2f"|format(r.pcb_breakdown.rebate) }}</span></div>
   <div class="formula-row"><span class="expr">Annual Tax = Tax Before Rebate &minus; Rebate</span><span class="val">RM {{ "%.2f"|format(r.pcb_breakdown.annual_tax) }}</span></div>
-  <div class="formula-row"><span class="expr">PCB This Month = (Annual Tax &minus; Zakat YTD &minus; PCB Already Paid YTD) &divide; Months Remaining</span><span class="val">RM {{ "%.2f"|format(r.pcb_breakdown.pcb_this_month) }}</span></div>
+  <div class="formula-row"><span class="expr">PCB This Month = (Annual Tax &minus; Zakat YTD &minus; PCB Already Paid YTD) &divide; Months Remaining</span><span class="val">RM {{ "%.2f"|format(r.pcb_calculated) }}</span></div>
+  {% if r.pcb_override is not none %}
+  <div class="formula-row result" style="color:#b45309;"><span class="label">Manual Override in effect{% if r.pcb_override_reason %} ({{ r.pcb_override_reason }}){% endif %}</span><span class="val">RM {{ "%.2f"|format(r.pcb_override) }}</span></div>
+  {% endif %}
 </div>
+
+{% if is_finalized %}
+<div class="card calc-section no-print">
+  <h3>Manual PCB Correction</h3>
+  <p style="color:var(--muted); font-size:12.5px; margin-top:-4px;">
+    Use this if this employer's calculated PCB doesn't match the employee's own official LHDN e-PCB slip
+    (this can happen for irregular voluntary EPF elections). Setting a value here overrides the calculated
+    PCB above for this employee/month only, and stays in effect even if you re-Finalize this month later.
+  </p>
+  <form method="post" action="{{ url_for('set_pcb_override', year=year, month=month, emp_id=emp.emp_id) }}" style="display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap;">
+    <div><label>Override PCB (RM)</label>
+      <input type="number" step="0.01" name="pcb_override" value="{{ "%.2f"|format(r.pcb_override) if r.pcb_override is not none else "" }}" placeholder="leave blank to clear">
+    </div>
+    <div><label>Reason</label>
+      <input type="text" name="pcb_override_reason" value="{{ r.pcb_override_reason or "" }}" placeholder="e.g. LHDN e-PCB slip 2026-08-27" style="width:280px;">
+    </div>
+    <button class="btn" type="submit">Save</button>
+  </form>
+</div>
+{% endif %}
 
 <div class="card calc-section">
   <h3>Total Deductions &amp; Net Pay</h3>

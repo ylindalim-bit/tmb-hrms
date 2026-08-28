@@ -268,6 +268,14 @@ CREATE TABLE payroll_runs (
     eis_employee        REAL,
     eis_employer        REAL,
     pcb                 REAL,
+    -- Manual correction to the calculated PCB, e.g. from an employee's own
+    -- LHDN e-PCB slip when this employer's Computerised Method doesn't
+    -- exactly reproduce LHDN's figure (edge cases like irregular voluntary
+    -- EPF elections). NULL = use the calculated pcb above; set = pcb,
+    -- total_deductions and net_pay all reflect this value instead, and it
+    -- survives re-Finalizing (finalize_payroll never clears it).
+    pcb_override        REAL,
+    pcb_override_reason TEXT,
     skbbk_employee      REAL,
     hrd_levy_employer   REAL,
     other_deduction     REAL,

@@ -331,6 +331,15 @@ def portal_login_required(view):
     def wrapped(*args, **kwargs):
         if not session.get("portal_emp_id"):
             return redirect(url_for("portal_login", next=request.path))
+        if request.method == "POST" and session.get("hr_username"):
+            # HR is previewing this employee's portal (portal_preview),
+            # not the employee's own real login - block writes so a "just
+            # looking" click can't silently overwrite the employee's real
+            # data (this is exactly how an HR preview session once saved
+            # HR's own email/phone/address onto an employee's record).
+            dest = request.referrer or url_for("portal_dashboard")
+            sep = "&" if "?" in dest else "?"
+            return redirect(f"{dest}{sep}preview_blocked=1")
         return view(*args, **kwargs)
     return wrapped
 

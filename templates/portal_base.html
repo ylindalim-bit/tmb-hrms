@@ -14,6 +14,11 @@
   <a href="{{ url_for('portal_exit_preview') }}" style="color:#fff; text-decoration:underline; margin-left:10px;">Exit Preview</a>
 </div>
 {% endif %}
+{% if request.args.get("preview_blocked") %}
+<div class="no-print" style="background:#fee2e2; color:#991b1b; text-align:center; padding:6px 12px; font-size:13px;">
+  Not saved &mdash; you're in HR Preview mode, which is view-only. To actually change this employee's details, use Employees &rarr; Edit instead.
+</div>
+{% endif %}
 <header class="topbar no-print">
   <div class="brand"><img src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="TMB" class="brand-logo"> TIANMA PRECISION SDN BHD <span>Staff Portal</span></div>
   <nav>

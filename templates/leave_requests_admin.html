@@ -46,7 +46,7 @@
   <div class="table-wrap">
   <table>
     <thead>
-      <tr><th class="text">Employee</th><th class="text">Type</th><th class="text">Dates</th><th>Days</th><th class="text">Reason</th><th class="text">Status</th><th class="text">Document</th><th class="text">Reviewed By</th><th class="text">Reviewed</th></tr>
+      <tr><th class="text">Employee</th><th class="text">Type</th><th class="text">Dates</th><th>Days</th><th class="text">Reason</th><th class="text">Status</th><th class="text">Document</th><th class="text">Reviewed By</th><th class="text">Reviewed</th>{% if hr_role == "admin" %}<th></th>{% endif %}</tr>
     </thead>
     <tbody>
       {% for lr in reviewed %}
@@ -66,9 +66,16 @@
         </td>
         <td class="text">{{ lr.reviewed_by or "" }}</td>
         <td class="text">{{ lr.reviewed_at }}</td>
+        {% if hr_role == "admin" %}
+        <td class="text">
+          <form method="post" action="{{ url_for('delete_leave_request', request_id=lr.id) }}" onsubmit="return confirm('Delete this leave request record permanently?');">
+            <button type="submit" class="btn secondary" style="padding:3px 8px; font-size:11px; color:var(--danger);">Delete</button>
+          </form>
+        </td>
+        {% endif %}
       </tr>
       {% else %}
-      <tr><td colspan="9" class="text" style="color:var(--muted);">None yet.</td></tr>
+      <tr><td colspan="10" class="text" style="color:var(--muted);">None yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

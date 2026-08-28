@@ -2627,6 +2627,20 @@ def leave_requests_admin():
     return render_template("leave_requests_admin.html", pending=pending, reviewed=reviewed)
 
 
+@app.route("/leave-requests/<int:request_id>/delete", methods=["POST"])
+def delete_leave_request(request_id):
+    """HR-only: removes a leave request record entirely (e.g. test/bad
+    data), rather than just changing its status. Does not touch
+    attendance_monthly - HR keys leave days there separately (see the
+    leave_requests table's own comment), so there's nothing else to undo."""
+    if session.get("hr_role") != "admin":
+        abort(403)
+    db = get_db()
+    db.execute("DELETE FROM leave_requests WHERE id=?", (request_id,))
+    db.commit()
+    return redirect(url_for("leave_requests_admin"))
+
+
 @app.route("/leave-requests/<int:request_id>/document")
 def leave_request_document(request_id):
     db = get_db()

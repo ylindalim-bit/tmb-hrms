@@ -2992,16 +2992,20 @@ def appraisal_team():
     sees everyone (no supervisor assignment required)."""
     db = get_db()
     supervisor_username = _require_appraisal_access()
+    # Sorted by Confirm Due Date ascending (soonest due at the top) so it
+    # reads like a to-do list; anyone with no probation_end_date on file
+    # sorts last rather than first.
+    order_by = "ORDER BY (probation_end_date IS NULL OR probation_end_date = ''), probation_end_date, emp_id"
     if supervisor_username:
         staff = db.execute(
-            """SELECT emp_id, full_name, position, date_joined, probation_end_date FROM employees
-               WHERE appraisal_supervisor_username=? ORDER BY emp_id""",
+            f"""SELECT emp_id, full_name, position, date_joined, probation_end_date FROM employees
+               WHERE appraisal_supervisor_username=? {order_by}""",
             (supervisor_username,),
         ).fetchall()
     else:
         staff = db.execute(
-            """SELECT emp_id, full_name, position, date_joined, probation_end_date FROM employees
-               WHERE status != 'Inactive' ORDER BY emp_id"""
+            f"""SELECT emp_id, full_name, position, date_joined, probation_end_date FROM employees
+               WHERE status != 'Inactive' {order_by}"""
         ).fetchall()
 
     latest_by_emp = {}

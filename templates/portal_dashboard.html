@@ -36,12 +36,12 @@
     <p style="color:var(--muted);">Nothing pending for your team right now.</p>
     {% endif %}
     {% if supervisor.pending_leave %}
-    <p>{{ supervisor.pending_leave }} staff leave request{{ "s" if supervisor.pending_leave != 1 }} awaiting your approval<br>
-      <a class="btn secondary" href="{{ url_for('leave_requests_admin') }}">Review Leave Requests</a></p>
+    <p style="color:var(--danger); font-weight:600;">{{ supervisor.pending_leave }} staff leave request{{ "s" if supervisor.pending_leave != 1 }} awaiting your approval</p>
+    <p><a class="btn secondary" href="{{ url_for('leave_requests_admin') }}">Review Leave Requests</a></p>
     {% endif %}
     {% if supervisor.pending_appraisal %}
-    <p>{{ supervisor.pending_appraisal }} team member{{ "s" if supervisor.pending_appraisal != 1 }} still need{{ "s" if supervisor.pending_appraisal == 1 }} an appraisal<br>
-      <a class="btn secondary" href="{{ url_for('appraisal_team') }}">Review Appraisals</a></p>
+    <p style="color:var(--danger); font-weight:600;">{{ supervisor.pending_appraisal }} team member{{ "s" if supervisor.pending_appraisal != 1 }} still need{{ "s" if supervisor.pending_appraisal == 1 }} an appraisal</p>
+    <p><a class="btn secondary" href="{{ url_for('appraisal_team') }}">Review Appraisals</a></p>
     {% endif %}
   </div>
   {% endif %}

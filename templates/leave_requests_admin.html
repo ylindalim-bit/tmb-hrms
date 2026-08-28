@@ -42,7 +42,15 @@
 </div>
 
 <div class="card">
-  <h2 style="margin-top:0;">Recently Reviewed</h2>
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <h2 style="margin-top:0;">Recently Reviewed &mdash; {{ year }}</h2>
+    <div class="month-nav no-print">
+      <span>Year:</span>
+      {% for y in years %}
+      <a href="{{ url_for('leave_requests_admin', year=y.year) }}" style="{% if y.year == year %}font-weight:700;{% endif %}">{{ y.year }}</a>
+      {% endfor %}
+    </div>
+  </div>
   <div class="table-wrap">
   <table>
     <thead>

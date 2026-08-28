@@ -2705,13 +2705,30 @@ def leave_requests_admin():
            WHERE lr.status='Pending' {scope_clause} ORDER BY lr.submitted_at""",
         params,
     ).fetchall()
+
+    # Reviewed (historical) list is filtered to one year at a time - Jan to
+    # Dec of whichever year is selected - by the leave's own start_date
+    # rather than an arbitrary "last 50" cap.
+    year = request.args.get("year", type=int) or datetime.date.today().year
     reviewed = db.execute(
         f"""SELECT lr.*, e.full_name FROM leave_requests lr
            JOIN employees e ON e.emp_id = lr.emp_id
-           WHERE lr.status!='Pending' {scope_clause} ORDER BY lr.reviewed_at DESC LIMIT 50""",
+           WHERE lr.status!='Pending' AND lr.start_date LIKE ? {scope_clause}
+           ORDER BY lr.reviewed_at DESC""",
+        [f"{year}%"] + params,
+    ).fetchall()
+    years = db.execute(
+        f"""SELECT DISTINCT CAST(substr(lr.start_date,1,4) AS INTEGER) AS year
+           FROM leave_requests lr JOIN employees e ON e.emp_id = lr.emp_id
+           WHERE lr.status!='Pending' {scope_clause} ORDER BY year DESC""",
         params,
     ).fetchall()
-    return render_template("leave_requests_admin.html", pending=pending, reviewed=reviewed)
+    if not years or year not in [y["year"] for y in years]:
+        years = list(years) + [{"year": year}]
+        years.sort(key=lambda y: y["year"], reverse=True)
+
+    return render_template("leave_requests_admin.html", pending=pending, reviewed=reviewed,
+                            year=year, years=years)
 
 
 @app.route("/leave-requests/<int:request_id>/delete", methods=["POST"])

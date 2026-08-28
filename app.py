@@ -1878,6 +1878,7 @@ def finalize_payroll(year, month):
 # Numeric fields are amounts in CENTS (no decimal point), right-justified,
 # zero-padded; alphanumeric fields are left-justified, space-padded.
 SOCSO_EIS_EMPLOYER_MYCOID = "202301036641"  # Company's registered no. (see letterhead)
+SOCSO_EIS_EMPLOYER_CODE = "E1102131652V"     # PERKESO Employer Code, from the ASSIST Portal
 
 
 def _pad_left(value, width):
@@ -1904,7 +1905,7 @@ def socso_eis_textfile(year, month):
     lines = []
     for r in rows:
         line = (
-            _pad_left("XXXXXXXXXXXX", 12)          # 1. Employer Code - PLACEHOLDER, fill in before submitting
+            _pad_left(SOCSO_EIS_EMPLOYER_CODE, 12)   # 1. Employer Code
             + _pad_left(SOCSO_EIS_EMPLOYER_MYCOID, 20)  # 2. MyCoID / SSM No.
             + _pad_left(r["ic_passport_no"], 12)     # 3. ID No. / SOCSO Foreign Worker No.
             + _pad_left(r["full_name"], 150)         # 4. Employee Name

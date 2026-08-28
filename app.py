@@ -146,7 +146,7 @@ if not os.path.exists(DB_PATH):
             _bootstrap_conn.executescript(_f.read())
     _bootstrap_conn.commit()
     _bootstrap_conn.close()
-DOCUMENT_TYPES = ["Job Application Form", "Letter of Employment", "Confirmation Letter",
+DOCUMENT_TYPES = ["Job Application Form", "IC / Passport Copy", "Letter of Employment", "Confirmation Letter",
                    "Resignation Letter", "CP22A", "e-Stamping Certificate", "TP3 (Prior Employer Income)", "Other"]
 ALLOWED_DOC_EXTENSIONS = {"pdf", "doc", "docx", "jpg", "jpeg", "png"}
 ALLOWED_PHOTO_EXTENSIONS = {"jpg", "jpeg", "png"}
@@ -2627,6 +2627,53 @@ def portal_photo_upload():
     return redirect(url_for("portal_profile"))
 
 
+@app.route("/portal/ic-upload", methods=["POST"])
+@portal_login_required
+def portal_ic_upload():
+    """Lets an employee submit a photo/scan of their IC or passport from
+    the Staff Portal, stored the same way as an HR-uploaded document
+    (employee_documents, doc_type='IC / Passport Copy') so it shows up in
+    Employee Edit's Documents section too. Always targets the logged-in
+    employee's own record, never a URL-supplied emp_id."""
+    db = get_db()
+    emp = current_portal_employee(db)
+    file = request.files.get("file")
+    if file is None or file.filename == "":
+        return redirect(url_for("portal_profile"))
+
+    original_name = secure_filename(file.filename)
+    ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+    if ext not in ALLOWED_DOC_EXTENSIONS:
+        return "File type not allowed. Use PDF, Word, or an image (JPG/PNG).", 400
+
+    emp_dir = os.path.join(UPLOAD_DIR, emp["emp_id"])
+    os.makedirs(emp_dir, exist_ok=True)
+    stored_name = f"{uuid.uuid4().hex}_{original_name}"
+    file.save(os.path.join(emp_dir, stored_name))
+
+    db.execute(
+        """INSERT INTO employee_documents (emp_id, doc_type, original_name, stored_name, notes, uploaded_at)
+           VALUES (?,?,?,?,?,?)""",
+        (emp["emp_id"], "IC / Passport Copy", original_name, stored_name, None,
+         datetime.datetime.now().isoformat(timespec="seconds")),
+    )
+    db.commit()
+    return redirect(url_for("portal_profile"))
+
+
+@app.route("/portal/documents/<int:doc_id>/download")
+@portal_login_required
+def portal_document_download(doc_id):
+    db = get_db()
+    emp = current_portal_employee(db)
+    doc = db.execute(
+        "SELECT * FROM employee_documents WHERE id=? AND emp_id=?", (doc_id, emp["emp_id"]),
+    ).fetchone()
+    if doc is None:
+        abort(404)
+    return send_from_directory(os.path.join(UPLOAD_DIR, emp["emp_id"]), doc["stored_name"])
+
+
 @app.route("/portal/profile", methods=["GET", "POST"])
 @portal_login_required
 def portal_profile():
@@ -2662,7 +2709,12 @@ def portal_profile():
         db.commit()
         emp = current_portal_employee(db)
         saved = True
-    return render_template("portal_profile.html", emp=emp, saved=saved)
+    ic_documents = db.execute(
+        """SELECT * FROM employee_documents WHERE emp_id=? AND doc_type='IC / Passport Copy'
+           ORDER BY uploaded_at DESC""",
+        (emp["emp_id"],),
+    ).fetchall()
+    return render_template("portal_profile.html", emp=emp, saved=saved, ic_documents=ic_documents)
 
 
 # ---------------- HR: Leave Taken Report ----------------

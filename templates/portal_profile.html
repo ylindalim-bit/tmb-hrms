@@ -23,6 +23,23 @@
 </div>
 
 <div class="card">
+  <h2 style="margin-top:0;">IC / Passport Copy</h2>
+  {% if ic_documents %}
+  <ul style="margin:0 0 12px; padding-left:20px;">
+    {% for d in ic_documents %}
+    <li><a href="{{ url_for('portal_document_download', doc_id=d.id) }}" target="_blank" rel="noopener">{{ d.original_name }}</a> &mdash; {{ d.uploaded_at }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p style="color:var(--muted);">Not yet submitted.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('portal_ic_upload') }}" enctype="multipart/form-data" style="display:flex; gap:8px; align-items:center;">
+    <input type="file" name="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+    <button class="btn secondary" type="submit">Upload</button>
+  </form>
+</div>
+
+<div class="card">
   <h2 style="margin-top:0;">Read-Only (contact HR to change)</h2>
   <div class="form-grid">
     <div><label style="display:block; font-size:12px; color:var(--muted);">Employee ID</label>{{ emp.emp_id }}</div>

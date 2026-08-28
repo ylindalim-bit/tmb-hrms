@@ -2242,6 +2242,22 @@ def portal_attendance():
         (emp["emp_id"], year),
     ).fetchall()
 
+    # A row can exist for a month before someone actually joined (or after
+    # they left) from a bulk-seeded/imported attendance table - exclude
+    # those from what the employee sees and from their leave-balance sums.
+    date_joined = payroll_calc._parse_date(emp["date_joined"])
+    last_working_day = payroll_calc._parse_date(emp["last_working_day"])
+    def _was_employed(month):
+        days_in_month = calendar.monthrange(year, month)[1]
+        month_start = datetime.date(year, month, 1)
+        month_end = datetime.date(year, month, days_in_month)
+        if date_joined and date_joined > month_end:
+            return False
+        if last_working_day and last_working_day < month_start:
+            return False
+        return True
+    rows = [r for r in rows if _was_employed(r["month"])]
+
     al_used = sum(r["al_days"] or 0 for r in rows)
     mc_used = sum(r["mc_days"] or 0 for r in rows)
     hl_used = sum(r["hl_days"] or 0 for r in rows)

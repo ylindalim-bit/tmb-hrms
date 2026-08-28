@@ -1523,8 +1523,10 @@ def leave_application_form():
                FROM attendance_monthly WHERE emp_id=? AND year=?""",
             (emp_id, year),
         ).fetchone()
+        prorated_al, _al_note = _prorated_al_note(emp, year)
+        al_entitlement = prorated_al if prorated_al is not None else (emp["annual_leave_entitlement"] or 0)
         balances = {
-            "al": (emp["annual_leave_entitlement"] or 0) - totals["al"],
+            "al": al_entitlement - totals["al"],
             "mc": (emp["mc_entitlement"] or 0) - totals["mc"],
             "hl": (emp["hospitalisation_leave_entitlement"] or 0) - totals["hl"],
         }
@@ -2189,7 +2191,9 @@ def portal_dashboard():
            WHERE emp_id=? AND year=?""",
         (emp["emp_id"], today.year),
     ).fetchone()["used"]
-    al_balance = (emp["annual_leave_entitlement"] or 0) - al_used
+    prorated_al, _al_note = _prorated_al_note(emp, today.year)
+    al_entitlement = prorated_al if prorated_al is not None else (emp["annual_leave_entitlement"] or 0)
+    al_balance = al_entitlement - al_used
 
     pending_leave = db.execute(
         """SELECT COUNT(*) AS n FROM leave_requests WHERE emp_id=? AND status='Pending'""",
@@ -2285,7 +2289,9 @@ def portal_attendance():
     al_used = sum(r["al_days"] or 0 for r in rows)
     mc_used = sum(r["mc_days"] or 0 for r in rows)
     hl_used = sum(r["hl_days"] or 0 for r in rows)
-    al_balance = (emp["annual_leave_entitlement"] or 0) - al_used
+    prorated_al, _al_note = _prorated_al_note(emp, year)
+    al_entitlement = prorated_al if prorated_al is not None else (emp["annual_leave_entitlement"] or 0)
+    al_balance = al_entitlement - al_used
     mc_balance = (emp["mc_entitlement"] or 0) - mc_used
     hl_balance = (emp["hospitalisation_leave_entitlement"] or 0) - hl_used
 
@@ -2359,7 +2365,9 @@ def portal_leave():
     al_used = sum(r["al_days"] or 0 for r in year_rows)
     mc_used = sum(r["mc_days"] or 0 for r in year_rows)
     hl_used = sum(r["hl_days"] or 0 for r in year_rows)
-    al_balance = (emp["annual_leave_entitlement"] or 0) - al_used
+    prorated_al, _al_note = _prorated_al_note(emp, cur_year)
+    al_entitlement = prorated_al if prorated_al is not None else (emp["annual_leave_entitlement"] or 0)
+    al_balance = al_entitlement - al_used
     mc_balance = (emp["mc_entitlement"] or 0) - mc_used
     hl_balance = (emp["hospitalisation_leave_entitlement"] or 0) - hl_used
 
@@ -2526,37 +2534,45 @@ def portal_profile():
 # ---------------- HR: Leave Taken Report ----------------
 
 def _prorated_al_note(e, year):
-    """For someone who resigned during `year`, Malaysian practice (EA1955) is
-    to prorate that year's Annual Leave entitlement by completed months of
-    service in that year, not give the full year's amount. Returns
-    (prorated_entitlement, note) or (None, note) if there isn't enough data
-    on file (Date Joined / Last Working Day) to prorate reliably - in that
-    case we refuse to guess rather than show a made-up number.
+    """Malaysian practice (EA1955) is to prorate a calendar year's Annual
+    Leave entitlement by days of service in that year - both for someone
+    who resigned partway through the year, and for someone who joined
+    partway through the year (whether they're still active or have since
+    resigned). Prorated by calendar days (not completed months) so someone
+    employed the whole year - e.g. joined 1 Jan, still active - always
+    comes out to the full entitlement. Returns (prorated_entitlement,
+    note), or (None, note) if there isn't enough data on file (Date Joined
+    / Last Working Day) to prorate reliably - in that case we refuse to
+    guess rather than show a made-up number. Returns (None, None) if the
+    person was employed for the whole of `year`, so no proration is
+    needed at all.
     """
-    lwd = e["last_working_day"]
-    if not lwd:
-        resignation_date = e["resignation_date"]
-        if resignation_date and resignation_date.startswith(str(year)):
-            return None, "resignation on file ({}) but no Last Working Day - can't prorate".format(resignation_date)
-        return None, None  # didn't resign in this year - no proration needed
-    if not lwd.startswith(str(year)):
-        return None, None
     dj = e["date_joined"]
-    if not dj:
+    lwd = e["last_working_day"]
+    joined_this_year = bool(dj) and dj.startswith(str(year))
+    resigned_this_year = bool(lwd) and lwd.startswith(str(year))
+
+    if not joined_this_year and not resigned_this_year:
+        resignation_date = e["resignation_date"]
+        if not lwd and resignation_date and resignation_date.startswith(str(year)):
+            return None, "resignation on file ({}) but no Last Working Day - can't prorate".format(resignation_date)
+        return None, None  # employed for the whole year - no proration needed
+    if resigned_this_year and not dj:
         return None, "resigned {} - missing Date Joined, can't prorate".format(lwd)
+
     start_of_year = datetime.date(year, 1, 1)
-    start = max(datetime.date.fromisoformat(dj), start_of_year)
-    end = datetime.date.fromisoformat(lwd)
-    # Completed month-cycles from `start`, not just calendar months touched -
-    # e.g. joining 4 May and leaving 31 Aug is 3 completed months (4 May-3
-    # Jun, 4 Jun-3 Jul, 4 Jul-3 Aug), not 4.
-    months = (end.year - start.year) * 12 + (end.month - start.month)
-    if end.day < start.day:
-        months -= 1
-    months = max(months, 0)
+    end_of_year = datetime.date(year, 12, 31)
+    start = max(datetime.date.fromisoformat(dj), start_of_year) if dj else start_of_year
+    end = datetime.date.fromisoformat(lwd) if resigned_this_year else end_of_year
+    days_employed = max((end - start).days + 1, 0)
+    days_in_year = (end_of_year - start_of_year).days + 1  # 365 or 366
     full = e["annual_leave_entitlement"] or 0
-    prorated = round(full / 12 * max(months, 0), 2)
-    return prorated, "resigned {} - prorated for {} month(s) worked".format(lwd, months)
+    prorated = round(full * days_employed / days_in_year, 2)
+    if resigned_this_year:
+        note = "resigned {} - prorated for {} of {} days in {}".format(lwd, days_employed, days_in_year, year)
+    else:
+        note = "joined {} - prorated for {} of {} days in {}".format(dj, days_employed, days_in_year, year)
+    return prorated, note
 
 
 @app.route("/leave-report")

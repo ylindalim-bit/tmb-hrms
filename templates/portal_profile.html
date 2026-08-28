@@ -7,6 +7,22 @@
 {% endif %}
 
 <div class="card">
+  <h2 style="margin-top:0;">Photo</h2>
+  <div style="display:flex; align-items:center; gap:16px;">
+    {% if emp.photo_path %}
+    <img src="{{ url_for('portal_photo') }}" alt="Photo"
+         style="width:96px; height:96px; object-fit:cover; border-radius:8px; border:1px solid var(--border);">
+    {% else %}
+    <div style="width:96px; height:96px; border-radius:8px; border:1px dashed var(--border); display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:11px;">No Photo</div>
+    {% endif %}
+    <form method="post" action="{{ url_for('portal_photo_upload') }}" enctype="multipart/form-data" style="display:flex; flex-direction:column; gap:6px; align-items:flex-start;">
+      <input type="file" name="photo" accept=".jpg,.jpeg,.png">
+      <button class="btn secondary" type="submit">Upload Photo</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
   <h2 style="margin-top:0;">Read-Only (contact HR to change)</h2>
   <div class="form-grid">
     <div><label style="display:block; font-size:12px; color:var(--muted);">Employee ID</label>{{ emp.emp_id }}</div>

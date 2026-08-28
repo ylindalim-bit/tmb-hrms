@@ -2562,6 +2562,50 @@ def portal_business_trip():
     return render_template("portal_business_trip.html", emp=emp, trips=my_trips, error=error)
 
 
+@app.route("/portal/photo")
+@portal_login_required
+def portal_photo():
+    """Serves the logged-in employee's own photo. Always resolves the
+    employee from the portal session (never a URL-supplied emp_id), so an
+    employee can only ever fetch their own photo, not anyone else's."""
+    db = get_db()
+    emp = current_portal_employee(db)
+    if not emp["photo_path"]:
+        abort(404)
+    return send_from_directory(os.path.join(UPLOAD_DIR, emp["emp_id"]), emp["photo_path"])
+
+
+@app.route("/portal/photo/upload", methods=["POST"])
+@portal_login_required
+def portal_photo_upload():
+    """Lets an employee upload their own profile photo from the Staff
+    Portal. Same storage/validation as the HR-side upload_photo route, but
+    always targets the logged-in employee's own record."""
+    db = get_db()
+    emp = current_portal_employee(db)
+    file = request.files.get("photo")
+    if file is None or file.filename == "":
+        return redirect(url_for("portal_profile"))
+
+    original_name = secure_filename(file.filename)
+    ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+    if ext not in ALLOWED_PHOTO_EXTENSIONS:
+        return "File type not allowed. Use JPG or PNG.", 400
+
+    emp_dir = os.path.join(UPLOAD_DIR, emp["emp_id"])
+    os.makedirs(emp_dir, exist_ok=True)
+    if emp["photo_path"]:
+        old_path = os.path.join(emp_dir, emp["photo_path"])
+        if os.path.exists(old_path):
+            os.remove(old_path)
+
+    stored_name = f"photo_{uuid.uuid4().hex}.{ext}"
+    file.save(os.path.join(emp_dir, stored_name))
+    db.execute("UPDATE employees SET photo_path=? WHERE emp_id=?", (stored_name, emp["emp_id"]))
+    db.commit()
+    return redirect(url_for("portal_profile"))
+
+
 @app.route("/portal/profile", methods=["GET", "POST"])
 @portal_login_required
 def portal_profile():

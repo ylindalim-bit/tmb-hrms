@@ -1897,7 +1897,7 @@ def socso_eis_textfile(year, month):
     rows = db.execute(
         """SELECT pr.*, e.ic_passport_no, e.full_name
            FROM payroll_runs pr JOIN employees e ON e.emp_id = pr.emp_id
-           WHERE pr.year=? AND pr.month=? ORDER BY pr.emp_id""",
+           WHERE pr.year=? AND pr.month=? AND pr.gross_pay > 0 ORDER BY pr.emp_id""",
         (year, month),
     ).fetchall()
 

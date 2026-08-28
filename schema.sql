@@ -34,10 +34,12 @@ CREATE TABLE employees (
     hp_no                   TEXT,          -- handphone/mobile number, distinct from Phone Number (office/home line)
     email                   TEXT,
     address                 TEXT,
-    emergency_contact_1_name  TEXT,
-    emergency_contact_1_phone TEXT,
-    emergency_contact_2_name  TEXT,
-    emergency_contact_2_phone TEXT,
+    emergency_contact_1_name         TEXT,
+    emergency_contact_1_phone        TEXT,
+    emergency_contact_1_relationship TEXT,
+    emergency_contact_2_name         TEXT,
+    emergency_contact_2_phone        TEXT,
+    emergency_contact_2_relationship TEXT,
     -- Staff self-service portal login. NULL = portal account not yet
     -- activated for this employee (set by HR via Employees > Edit).
     portal_password_hash    TEXT,

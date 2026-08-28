@@ -273,6 +273,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/restore-uploads",   # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/migrate-schema",    # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/import-historical-payroll",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/bulk-set-medical-claim-limit",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -3469,6 +3470,23 @@ def hr_import_historical_payroll():
         written.append(f"{r['emp_id']} {r['year']}-{r['month']:02d}")
     db.commit()
     return f"OK - imported {len(written)} records: " + ", ".join(written), 200
+
+
+@app.route("/hr/bulk-set-medical-claim-limit", methods=["POST"])
+def hr_bulk_set_medical_claim_limit():
+    """One-time fix: sets the company-standard RM500/year medical claim
+    limit for every employee who doesn't already have a custom (nonzero)
+    limit set. Same RESTORE_TOKEN gate as the other one-time routes above;
+    safe to re-run since it only ever touches rows still at 0/NULL."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    cur = db.execute(
+        "UPDATE employees SET medical_claim_limit=500 WHERE medical_claim_limit IS NULL OR medical_claim_limit=0"
+    )
+    db.commit()
+    return f"OK - updated {cur.rowcount} employee(s) to RM500/year", 200
 
 
 if __name__ == "__main__":

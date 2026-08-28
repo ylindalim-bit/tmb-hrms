@@ -339,7 +339,7 @@
       <input type="number" step="1" form="employee-form" name="hospitalisation_leave_entitlement" value="{{ emp.hospitalisation_leave_entitlement or 0 }}" style="color:var(--accent); border-color:var(--accent); font-weight:600;">
     </div>
     <div><label>Medical Claim Limit (RM/year)</label>
-      <input type="number" step="0.01" form="employee-form" name="medical_claim_limit" value="{{ "%.2f"|format(emp.medical_claim_limit or 0) }}" style="color:var(--accent); border-color:var(--accent); font-weight:600;">
+      <input type="number" step="0.01" form="employee-form" name="medical_claim_limit" value="{{ "%.2f"|format(500 if is_new else (emp.medical_claim_limit or 0)) }}" style="color:var(--accent); border-color:var(--accent); font-weight:600;">
     </div>
   </div>
   <p style="color:var(--muted); font-size:12px; margin-top:6px;">

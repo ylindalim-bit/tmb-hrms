@@ -314,14 +314,19 @@ def employed_this_month(db, year, month, select_cols="emp_id"):
     start of this month - so someone who resigns mid-month still shows up
     for attendance/payroll for the month they actually worked part of.
     Someone with no last_working_day recorded is only included via Active
-    status, since there's nothing to say they were still here this month."""
+    status, since there's nothing to say they were still here this month.
+    Excludes anyone whose Date Joined is after the end of this month, so a
+    new hire doesn't show up on attendance/payroll for months before they
+    actually started (mirrors the Staff Portal's own _was_employed check)."""
     first_of_month = f"{year:04d}-{month:02d}-01"
+    last_of_month = f"{year:04d}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"
     return db.execute(
         f"""SELECT {select_cols} FROM employees
-            WHERE status='Active'
-               OR (last_working_day IS NOT NULL AND last_working_day != '' AND last_working_day >= ?)
+            WHERE (status='Active'
+                   OR (last_working_day IS NOT NULL AND last_working_day != '' AND last_working_day >= ?))
+              AND (date_joined IS NULL OR date_joined = '' OR date_joined <= ?)
             ORDER BY emp_id""",
-        (first_of_month,),
+        (first_of_month, last_of_month),
     ).fetchall()
 
 

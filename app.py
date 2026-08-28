@@ -567,7 +567,7 @@ TEXT_FIELDS = ["full_name", "ic_passport_no", "date_of_birth", "marital_status",
                "date_joined", "last_working_day", "probation_end_date",
                "passport_expiry", "work_permit_expiry", "termination_notice_period",
                "confirmation_date", "resignation_date", "appraisal_supervisor_username",
-               "leave_approver_username"]
+               "leave_approver_username", "hr_username"]
 NUM_FIELDS = ["basic_salary", "working_days_week", "working_hours_day",
               "additional_epf_employee", "annual_leave_entitlement", "mc_entitlement",
               "hospitalisation_leave_entitlement", "medical_claim_limit"]
@@ -762,6 +762,7 @@ def edit_employee(emp_id):
     leave_approvers = db.execute(
         "SELECT username, full_name FROM hr_users WHERE can_approve_leave='Y' ORDER BY full_name"
     ).fetchall()
+    hr_accounts = db.execute("SELECT username, full_name FROM hr_users ORDER BY full_name").fetchall()
 
     return render_template("employee_edit.html", emp=emp, is_new=False, extensions=extensions,
                             salary_history=salary_history, eis_applies=eis_applies,
@@ -771,6 +772,7 @@ def edit_employee(emp_id):
                             race_options=RACE_OPTIONS, religion_options=RELIGION_OPTIONS,
                             holiday_state_options=HOLIDAY_STATE_OPTIONS,
                             appraisal_supervisors=appraisal_supervisors, leave_approvers=leave_approvers,
+                            hr_accounts=hr_accounts,
                             tax_profile=tax_profile)
 
 
@@ -2217,9 +2219,38 @@ def portal_dashboard():
         (emp["emp_id"],),
     ).fetchone()["n"]
 
+    # If this employee is also an HR/approver user (e.g. Mr Kee = K003 and
+    # hr_users 'kee'), surface their own supervisor reminders here too, so
+    # they don't need a separate HR login just to see them.
+    supervisor = None
+    if emp["hr_username"]:
+        hr_user = db.execute(
+            "SELECT username, can_approve_leave, can_approve_appraisal FROM hr_users WHERE username=?",
+            (emp["hr_username"],),
+        ).fetchone()
+        if hr_user:
+            team_pending_leave = 0
+            if hr_user["can_approve_leave"] == "Y":
+                team_pending_leave = db.execute(
+                    """SELECT COUNT(*) AS c FROM leave_requests lr
+                       JOIN employees e ON e.emp_id = lr.emp_id
+                       WHERE lr.status='Pending' AND e.leave_approver_username=?""",
+                    (hr_user["username"],),
+                ).fetchone()["c"]
+            team_pending_appraisal = 0
+            if hr_user["can_approve_appraisal"] == "Y":
+                team_pending_appraisal = db.execute(
+                    """SELECT COUNT(*) AS c FROM employees e
+                       WHERE e.appraisal_supervisor_username=? AND e.status != 'Inactive'
+                         AND NOT EXISTS (SELECT 1 FROM appraisals a WHERE a.emp_id = e.emp_id)""",
+                    (hr_user["username"],),
+                ).fetchone()["c"]
+            if hr_user["can_approve_leave"] == "Y" or hr_user["can_approve_appraisal"] == "Y":
+                supervisor = {"pending_leave": team_pending_leave, "pending_appraisal": team_pending_appraisal}
+
     return render_template(
         "portal_dashboard.html", emp=emp, latest_run=latest_run,
-        al_balance=al_balance, pending_leave=pending_leave,
+        al_balance=al_balance, pending_leave=pending_leave, supervisor=supervisor,
     )
 
 
@@ -3127,7 +3158,8 @@ def hr_migrate_schema():
         db.execute("ALTER TABLE employees ADD COLUMN medical_claim_limit REAL DEFAULT 0")
         applied.append("employees.medical_claim_limit")
     for col in ["emergency_contact_1_name", "emergency_contact_1_phone", "emergency_contact_1_relationship",
-                "emergency_contact_2_name", "emergency_contact_2_phone", "emergency_contact_2_relationship"]:
+                "emergency_contact_2_name", "emergency_contact_2_phone", "emergency_contact_2_relationship",
+                "hr_username"]:
         if col not in emp_cols:
             db.execute(f"ALTER TABLE employees ADD COLUMN {col} TEXT")
             applied.append(f"employees.{col}")

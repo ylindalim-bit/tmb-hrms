@@ -144,6 +144,15 @@
         {% endfor %}
       </select>
     </div>
+    <div><label>Linked HR/Approver Account</label>
+      <select name="hr_username">
+        <option value="">-- None --</option>
+        {% for s in hr_accounts %}
+        <option value="{{ s.username }}" {% if emp.hr_username == s.username %}selected{% endif %}>{{ s.full_name }} ({{ s.username }})</option>
+        {% endfor %}
+      </select>
+      <p style="color:var(--muted); font-size:12px; margin-top:4px;">If this employee is also an HR/approver user (e.g. Mr Kee = employee K003 and hr_users 'kee'), link it here so their Staff Portal shows their own supervisor reminders (pending leave approvals, appraisals due).</p>
+    </div>
     {% endif %}
     <div><label>Basic Salary (RM)</label><input type="number" step="0.01" name="basic_salary" value="{{ "%.2f"|format(emp.basic_salary or 0) }}"></div>
     <div><label>Working Days/Week</label><input type="number" step="0.5" name="working_days_week" value="{{ emp.working_days_week or 6 }}"></div>

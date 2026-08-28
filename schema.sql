@@ -105,7 +105,13 @@ CREATE TABLE employees (
     -- can_approve_appraisal='Y') who appraises this employee - e.g. 'kee'
     -- or 'yang'. NULL = no supervisor assigned yet (won't show up under
     -- anyone's Appraisal team list until set).
-    appraisal_supervisor_username TEXT
+    appraisal_supervisor_username TEXT,
+    -- Links this employee to their own hr_users account, if they have one
+    -- (e.g. Mr Kee is both employee K003 and hr_users 'kee') - lets the
+    -- Staff Portal show them their own supervisor reminders (pending leave
+    -- approvals / appraisals due) without a second login. NULL = no HR
+    -- account, or not linked.
+    hr_username TEXT
 );
 
 CREATE TABLE public_holidays (

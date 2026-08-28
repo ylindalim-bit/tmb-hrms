@@ -8,7 +8,7 @@
 {% block extra_style %}{% endblock %}
 </head>
 <body>
-{% if hr_username and session.get("portal_emp_id") %}
+{% if hr_username and session.get("portal_emp_id") and not session.get("portal_self_login") %}
 <div class="no-print" style="background:#1D4ED8; color:#fff; text-align:center; padding:6px 12px; font-size:13px;">
   HR Preview &mdash; viewing as {{ session.get("portal_emp_id") }}
   <a href="{{ url_for('portal_exit_preview') }}" style="color:#fff; text-decoration:underline; margin-left:10px;">Exit Preview</a>
@@ -29,6 +29,18 @@
     <a href="{{ url_for('portal_medical_claim') }}">Medical Claim</a>
     <a href="{{ url_for('portal_business_trip') }}">Business Trip</a>
     <a href="{{ url_for('portal_profile') }}">My Profile</a>
+    {% if session.get("portal_self_login") %}
+    {% if can_approve_leave == "Y" %}
+    <a href="{{ url_for('leave_requests_admin') }}" style="color:var(--accent);">Approve Leave
+      {% if pending_leave_count %}<span class="pill draft" style="margin-left:3px;">{{ pending_leave_count }}</span>{% endif %}
+    </a>
+    {% endif %}
+    {% if can_approve_appraisal == "Y" %}
+    <a href="{{ url_for('appraisal_team') }}" style="color:var(--accent);">Appraisals
+      {% if pending_appraisal_count %}<span class="pill draft" style="margin-left:3px;">{{ pending_appraisal_count }}</span>{% endif %}
+    </a>
+    {% endif %}
+    {% endif %}
     <a href="{{ url_for('portal_logout') }}">Logout</a>
   </nav>
 </header>

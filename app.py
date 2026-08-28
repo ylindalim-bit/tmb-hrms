@@ -350,12 +350,15 @@ def portal_login_required(view):
     def wrapped(*args, **kwargs):
         if not session.get("portal_emp_id"):
             return redirect(url_for("portal_login", next=request.path))
-        if request.method == "POST" and session.get("hr_username"):
+        if request.method == "POST" and session.get("hr_username") and not session.get("portal_self_login"):
             # HR is previewing this employee's portal (portal_preview),
             # not the employee's own real login - block writes so a "just
             # looking" click can't silently overwrite the employee's real
             # data (this is exactly how an HR preview session once saved
             # HR's own email/phone/address onto an employee's record).
+            # portal_self_login (set only by portal_login() itself) means
+            # this employee's own login legitimately also carries HR access
+            # (e.g. Mr Kee), so their own writes are not blocked.
             dest = request.referrer or url_for("portal_dashboard")
             sep = "&" if "?" in dest else "?"
             return redirect(f"{dest}{sep}preview_blocked=1")
@@ -378,6 +381,20 @@ def portal_login():
         else:
             session.clear()
             session["portal_emp_id"] = emp_id
+            # If this employee is also linked to an HR/approver account (e.g.
+            # Mr Kee = K003 + hr_users 'kee'), one login now grants both -
+            # they never need the separate /hr/login. portal_self_login marks
+            # this as a genuine self-login (not an HR admin previewing via
+            # portal_preview()), so portal_login_required knows not to block
+            # their own writes below.
+            if emp["hr_username"]:
+                hr_user = db.execute("SELECT * FROM hr_users WHERE username=?", (emp["hr_username"],)).fetchone()
+                if hr_user:
+                    session["hr_username"] = hr_user["username"]
+                    session["hr_role"] = hr_user["role"]
+                    session["can_approve_leave"] = hr_user["can_approve_leave"]
+                    session["can_approve_appraisal"] = hr_user["can_approve_appraisal"]
+                    session["portal_self_login"] = True
             next_url = request.form.get("next") or url_for("portal_dashboard")
             return redirect(next_url)
     return render_template("portal_login.html", error=error, next=request.args.get("next", ""))

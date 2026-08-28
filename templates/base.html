@@ -22,6 +22,9 @@
       {% if pending_appraisal_count %}<span class="pill draft" style="margin-left:3px;">{{ pending_appraisal_count }}</span>{% endif %}
     </a>
     {% endif %}
+    {% if session.get("portal_self_login") %}
+    <a href="{{ url_for('portal_dashboard') }}" style="color:var(--muted);">&larr; My Portal</a>
+    {% endif %}
     {% else %}
     <a href="{{ url_for('run_payroll', year=cur_year, month=cur_month) }}">Run Payroll</a>
     <a href="{{ url_for('attendance', year=cur_year, month=cur_month) }}">Attendance</a>

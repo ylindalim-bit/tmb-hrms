@@ -435,7 +435,8 @@ CREATE TABLE appraisals (
     new_salary               REAL,
     status                  TEXT NOT NULL DEFAULT 'Draft',  -- Draft (supervisor still editing) / Submitted (final)
     supervisor_username     TEXT NOT NULL,   -- hr_users.username who filled this in
-    submitted_at            TEXT
+    submitted_at            TEXT,
+    hr_viewed_at             TEXT  -- set the first time an HR admin (not the submitting approver) opens it - drives the "new appraisal" nav badge
 );
 
 -- Audit trail of probation extensions, separate from just editing

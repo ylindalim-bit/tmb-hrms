@@ -26,7 +26,9 @@
         <td {% if r.increment_amount %}style="color:var(--accent); font-weight:600;"{% endif %}>{{ "%.2f"|format(r.increment_amount or 0) }}</td>
         <td>{{ "%.2f"|format(r.new_salary or r.current_salary or 0) }}</td>
         <td class="text">{{ r.supervisor_username }}</td>
-        <td class="text">{{ r.submitted_at }}</td>
+        <td class="text">{{ r.submitted_at }}
+          {% if not r.hr_viewed_at %}<span class="pill draft">New</span>{% endif %}
+        </td>
         <td class="text"><a class="emp-link" href="{{ url_for('appraisal_view', appraisal_id=r.id) }}">View</a></td>
       </tr>
       {% else %}

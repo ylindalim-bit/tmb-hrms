@@ -211,6 +211,15 @@ def inject_pending_counts():
             ).fetchone()["c"]
             pending_trip_count = 0  # Business Trips is outside an approver's restricted access
             pending_medical_claim_count = 0  # Medical Claims is outside an approver's restricted access
+            # For an approver (e.g. Mr Kee), the reminder is "how many of my
+            # team have never had an appraisal at all" - there's no due-date
+            # field to compare against, so "never appraised" is the signal.
+            pending_appraisal_count = db.execute(
+                """SELECT COUNT(*) AS c FROM employees e
+                   WHERE e.appraisal_supervisor_username=? AND e.status != 'Inactive'
+                     AND NOT EXISTS (SELECT 1 FROM appraisals a WHERE a.emp_id = e.emp_id)""",
+                (session["hr_username"],),
+            ).fetchone()["c"]
         else:
             pending_leave_count = db.execute(
                 "SELECT COUNT(*) AS c FROM leave_requests WHERE status='Pending'"
@@ -221,10 +230,14 @@ def inject_pending_counts():
             pending_medical_claim_count = db.execute(
                 "SELECT COUNT(*) AS c FROM medical_claims WHERE status='Pending'"
             ).fetchone()["c"]
+            pending_appraisal_count = db.execute(
+                "SELECT COUNT(*) AS c FROM appraisals WHERE status='Submitted' AND hr_viewed_at IS NULL"
+            ).fetchone()["c"]
     except sqlite3.OperationalError:
         return {}
     return {"pending_leave_count": pending_leave_count, "pending_trip_count": pending_trip_count,
-            "pending_medical_claim_count": pending_medical_claim_count}
+            "pending_medical_claim_count": pending_medical_claim_count,
+            "pending_appraisal_count": pending_appraisal_count}
 
 
 def get_db():
@@ -3023,6 +3036,17 @@ def appraisal_view(appraisal_id):
     supervisor_username = _require_appraisal_access()
     if supervisor_username and row["supervisor_username"] != supervisor_username:
         abort(403)
+    if not supervisor_username and row["status"] == "Submitted" and not row["hr_viewed_at"]:
+        # An HR admin (not the submitting approver) just looked at this -
+        # clears it from the "new appraisal" nav badge.
+        db.execute("UPDATE appraisals SET hr_viewed_at=? WHERE id=?",
+                   (datetime.datetime.now().isoformat(timespec="seconds"), appraisal_id))
+        db.commit()
+        row = db.execute(
+            """SELECT a.*, e.full_name, e.position, e.department FROM appraisals a
+               JOIN employees e ON e.emp_id = a.emp_id WHERE a.id=?""",
+            (appraisal_id,),
+        ).fetchone()
     ratings = json.loads(row["ratings_json"])
     return render_template(
         "appraisal_view.html", a=row, ratings=ratings, categories=APPRAISAL_CATEGORIES,
@@ -3118,7 +3142,8 @@ def hr_migrate_schema():
         applied.append("table: appraisals")
     if "appraisals" in existing_tables:
         appraisal_cols = [r[1] for r in db.execute("PRAGMA table_info(appraisals)").fetchall()]
-        for col, decl in [("current_salary", "REAL"), ("increment_amount", "REAL DEFAULT 0"), ("new_salary", "REAL")]:
+        for col, decl in [("current_salary", "REAL"), ("increment_amount", "REAL DEFAULT 0"), ("new_salary", "REAL"),
+                           ("hr_viewed_at", "TEXT")]:
             if col not in appraisal_cols:
                 db.execute(f"ALTER TABLE appraisals ADD COLUMN {col} {decl}")
                 applied.append(f"appraisals.{col}")

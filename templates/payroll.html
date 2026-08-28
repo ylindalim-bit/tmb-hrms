@@ -31,9 +31,9 @@
   <td>{{ "%.2f"|format(r.basic_salary + (r.unpaid_deduction or 0)) }}</td>
   <td>{{ "%.2f"|format(r.fixed_allowance) }}</td>
   <td>{{ "%.2f"|format(r.variable_allowance) }}</td>
-  <td>{{ r.ot_hours_1_5 }}</td>
-  <td>{{ r.ot_hours_2_0 }}</td>
-  <td>{{ r.ot_hours_3_0 }}</td>
+  <td>{{ "%.2f"|format(r.ot_hours_1_5) }}</td>
+  <td>{{ "%.2f"|format(r.ot_hours_2_0) }}</td>
+  <td>{{ "%.2f"|format(r.ot_hours_3_0) }}</td>
   <td>{{ "%.4f"|format(r.ot_hourly_rate) }}</td>
   <td>{{ "%.2f"|format(r.ot_pay) }}</td>
   <td>{{ "%.2f"|format(r.transport_allowance) }}</td>

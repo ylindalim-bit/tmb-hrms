@@ -255,6 +255,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/restore-database",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/restore-uploads",   # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/migrate-schema",    # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/import-historical-payroll",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -3128,6 +3129,94 @@ def hr_migrate_schema():
         applied.append("hr_users: yang (password reset)")
     db.commit()
     return "OK - applied: " + (", ".join(applied) if applied else "(nothing new, already up to date)"), 200
+
+
+@app.route("/hr/import-historical-payroll", methods=["POST"])
+def hr_import_historical_payroll():
+    """One-time replacement of Jan-Jul 2026 payroll_runs figures with the
+    real numbers from the user's own source Excel files, for months that
+    were finalized before the PCB year-to-date history fix existed and so
+    had systematically wrong PCB (and, for some employees, EPF/SKBBK) -
+    see the "just follow my excel" decision. Refuses anything August 2026
+    or later so the accurate live-engine months can never be touched.
+    Same RESTORE_TOKEN gate as the other one-time migration routes above;
+    safe to re-run (upserts on the emp_id/year/month key)."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    file = request.files.get("file")
+    if file is None or file.filename == "":
+        return "No file uploaded", 400
+    records = json.load(file)
+    db = get_db()
+    known_emp_ids = {r["emp_id"] for r in db.execute("SELECT emp_id FROM employees").fetchall()}
+    for r in records:
+        if (r["year"], r["month"]) >= (2026, 8):
+            return f"Refused: record for {r['emp_id']} {r['year']}-{r['month']:02d} is Aug 2026 or later - this import is Jan-Jul 2026 only", 400
+        if r["emp_id"] not in known_emp_ids:
+            return f"Refused: unknown emp_id {r['emp_id']}", 400
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    written = []
+    for r in records:
+        db.execute(
+            """INSERT INTO payroll_runs (
+                emp_id, year, month, basic_salary, fixed_allowance, variable_allowance,
+                working_days_in_month, days_worked, paid_leave_days, unpaid_days, unpaid_deduction,
+                ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, ot_pay_1_5, ot_pay_2_0, ot_pay_3_0,
+                ot_hourly_rate, ot_pay, days_employed, prorate_factor, transport_allowance,
+                meal_allowance, cewi_allowance, gross_pay, epf_employee, additional_epf_employee,
+                epf_employer, socso_employee, socso_employer, eis_employee, eis_employer, pcb,
+                skbbk_employee, hrd_levy_employer, other_deduction, other_deduction_desc,
+                total_deductions, net_pay, finalized_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(emp_id, year, month) DO UPDATE SET
+                basic_salary=excluded.basic_salary, fixed_allowance=excluded.fixed_allowance,
+                variable_allowance=excluded.variable_allowance,
+                working_days_in_month=excluded.working_days_in_month,
+                days_worked=excluded.days_worked, paid_leave_days=excluded.paid_leave_days,
+                unpaid_days=excluded.unpaid_days, unpaid_deduction=excluded.unpaid_deduction,
+                ot_hours_1_5=excluded.ot_hours_1_5, ot_hours_2_0=excluded.ot_hours_2_0,
+                ot_hours_3_0=excluded.ot_hours_3_0, ot_pay_1_5=excluded.ot_pay_1_5,
+                ot_pay_2_0=excluded.ot_pay_2_0, ot_pay_3_0=excluded.ot_pay_3_0,
+                ot_hourly_rate=excluded.ot_hourly_rate, ot_pay=excluded.ot_pay,
+                days_employed=excluded.days_employed, prorate_factor=excluded.prorate_factor,
+                transport_allowance=excluded.transport_allowance,
+                meal_allowance=excluded.meal_allowance, cewi_allowance=excluded.cewi_allowance,
+                gross_pay=excluded.gross_pay, epf_employee=excluded.epf_employee,
+                additional_epf_employee=excluded.additional_epf_employee,
+                epf_employer=excluded.epf_employer, socso_employee=excluded.socso_employee,
+                socso_employer=excluded.socso_employer, eis_employee=excluded.eis_employee,
+                eis_employer=excluded.eis_employer, pcb=excluded.pcb,
+                skbbk_employee=excluded.skbbk_employee, hrd_levy_employer=excluded.hrd_levy_employer,
+                other_deduction=excluded.other_deduction, other_deduction_desc=excluded.other_deduction_desc,
+                total_deductions=excluded.total_deductions, net_pay=excluded.net_pay,
+                finalized_at=excluded.finalized_at""",
+            (
+                r["emp_id"], r["year"], r["month"], r["basic_salary"], r["fixed_allowance"],
+                r["variable_allowance"], r["working_days_in_month"], r["days_worked"],
+                r["paid_leave_days"], r["unpaid_days"], r["unpaid_deduction"],
+                r["ot_hours_1_5"], r["ot_hours_2_0"], r["ot_hours_3_0"],
+                r["ot_pay_1_5"], r["ot_pay_2_0"], r["ot_pay_3_0"],
+                r["ot_hourly_rate"], r["ot_pay"], r["days_employed"], r["prorate_factor"],
+                r["transport_allowance"], r["meal_allowance"], r["cewi_allowance"],
+                r["gross_pay"], r["epf_employee"], r["additional_epf_employee"],
+                r["epf_employer"], r["socso_employee"], r["socso_employer"],
+                r["eis_employee"], r["eis_employer"], r["pcb"],
+                r["skbbk_employee"], r["hrd_levy_employer"], r["other_deduction"], r["other_deduction_desc"],
+                r["total_deductions"], r["net_pay"], now,
+            ),
+        )
+        db.execute(
+            """INSERT INTO pcb_monthly_record (emp_id, year, month, gross_remun, epf_employee, pcb_deducted)
+               VALUES (?,?,?,?,?,?)
+               ON CONFLICT(emp_id, year, month) DO UPDATE SET
+                 gross_remun=excluded.gross_remun, epf_employee=excluded.epf_employee,
+                 pcb_deducted=excluded.pcb_deducted""",
+            (r["emp_id"], r["year"], r["month"], r["gross_pay"], r["epf_employee"], r["pcb"]),
+        )
+        written.append(f"{r['emp_id']} {r['year']}-{r['month']:02d}")
+    db.commit()
+    return f"OK - imported {len(written)} records: " + ", ".join(written), 200
 
 
 if __name__ == "__main__":

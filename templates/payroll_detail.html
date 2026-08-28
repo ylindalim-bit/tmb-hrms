@@ -49,7 +49,7 @@
   <div class="formula-row"><span class="label">Paid Leave Days (AL + MC + HL + Other)</span><span class="val">{{ r.paid_leave_days }}</span></div>
   <div class="formula-row"><span class="label">Unpaid Days (UL + Absent)</span><span class="val">{{ r.unpaid_days }}</span></div>
   <div class="formula-row"><span class="label">Meal Eligible Days</span><span class="val">{{ r.meal_eligible_days }}</span></div>
-  <div class="formula-row"><span class="label">OT Hours (1.5x / 2.0x / 3.0x)</span><span class="val">{{ r.ot_hours_1_5 }} / {{ r.ot_hours_2_0 }} / {{ r.ot_hours_3_0 }}</span></div>
+  <div class="formula-row"><span class="label">OT Hours (1.5x / 2.0x / 3.0x)</span><span class="val">{{ "%.2f"|format(r.ot_hours_1_5) }} / {{ "%.2f"|format(r.ot_hours_2_0) }} / {{ "%.2f"|format(r.ot_hours_3_0) }}</span></div>
 </div>
 
 <div class="card calc-section">
@@ -74,9 +74,9 @@
 <div class="card calc-section">
   <h3>Overtime</h3>
   <div class="formula-row"><span class="expr">Hourly Rate = (Basic + Fixed Allowance) &divide; 26 &divide; Working Hours/Day</span><span class="val">RM {{ "%.4f"|format(r.ot_hourly_rate) }}/hr</span></div>
-  <div class="formula-row"><span class="expr">OT 1.5x = {{ r.ot_hours_1_5 }} hrs &times; 1.5 &times; {{ "%.4f"|format(r.ot_hourly_rate) }}</span><span class="val">RM {{ "%.2f"|format(r.ot_pay_1_5) }}</span></div>
-  <div class="formula-row"><span class="expr">OT 2.0x = {{ r.ot_hours_2_0 }} hrs &times; 2.0 &times; {{ "%.4f"|format(r.ot_hourly_rate) }}</span><span class="val">RM {{ "%.2f"|format(r.ot_pay_2_0) }}</span></div>
-  <div class="formula-row"><span class="expr">OT 3.0x = {{ r.ot_hours_3_0 }} hrs &times; 3.0 &times; {{ "%.4f"|format(r.ot_hourly_rate) }}</span><span class="val">RM {{ "%.2f"|format(r.ot_pay_3_0) }}</span></div>
+  <div class="formula-row"><span class="expr">OT 1.5x = {{ "%.2f"|format(r.ot_hours_1_5) }} hrs &times; 1.5 &times; {{ "%.4f"|format(r.ot_hourly_rate) }}</span><span class="val">RM {{ "%.2f"|format(r.ot_pay_1_5) }}</span></div>
+  <div class="formula-row"><span class="expr">OT 2.0x = {{ "%.2f"|format(r.ot_hours_2_0) }} hrs &times; 2.0 &times; {{ "%.4f"|format(r.ot_hourly_rate) }}</span><span class="val">RM {{ "%.2f"|format(r.ot_pay_2_0) }}</span></div>
+  <div class="formula-row"><span class="expr">OT 3.0x = {{ "%.2f"|format(r.ot_hours_3_0) }} hrs &times; 3.0 &times; {{ "%.4f"|format(r.ot_hourly_rate) }}</span><span class="val">RM {{ "%.2f"|format(r.ot_pay_3_0) }}</span></div>
   <div class="formula-row result"><span class="label">Total OT Pay</span><span class="val">RM {{ "%.2f"|format(r.ot_pay) }}</span></div>
 </div>
 

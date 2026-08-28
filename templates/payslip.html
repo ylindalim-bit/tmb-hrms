@@ -30,9 +30,9 @@
   <div class="row"><span>Basic Salary</span><span>RM {{ "%.2f"|format(r.basic_salary) }}</span></div>
   <div class="row"><span>Fixed Allowance</span><span>RM {{ "%.2f"|format(r.fixed_allowance) }}</span></div>
   <div class="row"><span>Variable Allowance</span><span>RM {{ "%.2f"|format(r.variable_allowance) }}</span></div>
-  <div class="row"><span>OT 1.5x ({{ r.ot_hours_1_5 }} hrs @ RM {{ "%.4f"|format(r.ot_hourly_rate * 1.5) }}/hr)</span><span>RM {{ "%.2f"|format(r.ot_pay_1_5) }}</span></div>
-  <div class="row"><span>OT 2.0x ({{ r.ot_hours_2_0 }} hrs @ RM {{ "%.4f"|format(r.ot_hourly_rate * 2.0) }}/hr)</span><span>RM {{ "%.2f"|format(r.ot_pay_2_0) }}</span></div>
-  <div class="row"><span>OT 3.0x ({{ r.ot_hours_3_0 }} hrs @ RM {{ "%.4f"|format(r.ot_hourly_rate * 3.0) }}/hr)</span><span>RM {{ "%.2f"|format(r.ot_pay_3_0) }}</span></div>
+  <div class="row"><span>OT 1.5x ({{ "%.2f"|format(r.ot_hours_1_5) }} hrs @ RM {{ "%.4f"|format(r.ot_hourly_rate * 1.5) }}/hr)</span><span>RM {{ "%.2f"|format(r.ot_pay_1_5) }}</span></div>
+  <div class="row"><span>OT 2.0x ({{ "%.2f"|format(r.ot_hours_2_0) }} hrs @ RM {{ "%.4f"|format(r.ot_hourly_rate * 2.0) }}/hr)</span><span>RM {{ "%.2f"|format(r.ot_pay_2_0) }}</span></div>
+  <div class="row"><span>OT 3.0x ({{ "%.2f"|format(r.ot_hours_3_0) }} hrs @ RM {{ "%.4f"|format(r.ot_hourly_rate * 3.0) }}/hr)</span><span>RM {{ "%.2f"|format(r.ot_pay_3_0) }}</span></div>
   <div class="row"><span>Transport Allowance</span><span>RM {{ "%.2f"|format(r.transport_allowance) }}</span></div>
   <div class="row"><span>Meal Allowance</span><span>RM {{ "%.2f"|format(r.meal_allowance) }}</span></div>
   <div class="row"><span>CEWI</span><span>RM {{ "%.2f"|format(r.cewi_allowance) }}</span></div>

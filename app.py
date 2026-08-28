@@ -8,6 +8,7 @@ import os
 import secrets
 import sqlite3
 import uuid
+import zipfile
 
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -274,6 +275,8 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/migrate-schema",    # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/import-historical-payroll",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/bulk-set-medical-claim-limit",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/backup-database",   # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/backup-uploads",    # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -3299,7 +3302,6 @@ def hr_restore_uploads():
     file = request.files.get("file")
     if file is None or file.filename == "":
         return "No file uploaded", 400
-    import zipfile
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     zip_path = os.path.join(DATA_DIR, "_uploads_restore.zip")
     file.save(zip_path)
@@ -3483,6 +3485,43 @@ def hr_import_historical_payroll():
         written.append(f"{r['emp_id']} {r['year']}-{r['month']:02d}")
     db.commit()
     return f"OK - imported {len(written)} records: " + ", ".join(written), 200
+
+
+@app.route("/hr/backup-database")
+def hr_backup_database():
+    """Downloads the live payroll.db as-is - a manual safety copy, since
+    the current Railway plan doesn't include automatic backups. Same
+    RESTORE_TOKEN gate as the other one-time routes; read-only, makes no
+    changes."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.args.get("token") != token:
+        abort(404)
+    return send_from_directory(
+        DATA_DIR, "payroll.db", as_attachment=True,
+        download_name=f"payroll_backup_{datetime.date.today().isoformat()}.db",
+    )
+
+
+@app.route("/hr/backup-uploads")
+def hr_backup_uploads():
+    """Downloads the uploads/ folder (photos, IC copies, receipts, other
+    employee documents) as a single zip. Same RESTORE_TOKEN gate; read-only."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.args.get("token") != token:
+        abort(404)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, _dirs, files in os.walk(UPLOAD_DIR):
+            for fname in files:
+                full_path = os.path.join(root, fname)
+                zf.write(full_path, os.path.relpath(full_path, UPLOAD_DIR))
+    buf.seek(0)
+    filename = f"uploads_backup_{datetime.date.today().isoformat()}.zip"
+    return Response(
+        buf.getvalue(),
+        mimetype="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @app.route("/hr/bulk-set-medical-claim-limit", methods=["POST"])

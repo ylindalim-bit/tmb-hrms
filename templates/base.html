@@ -51,7 +51,7 @@
       {% if pending_appraisal_count %}<span class="pill draft" style="margin-left:3px;">{{ pending_appraisal_count }}</span>{% endif %}
     </a>
     <a href="{{ url_for('payroll_settings_page') }}">Settings</a>
-    <a href="{{ url_for('portal_login') }}" style="color:var(--muted);">Staff Portal &rarr;</a>
+    <a href="{{ url_for('hr_go_to_portal') }}" style="color:var(--muted);">Staff Portal &rarr;</a>
     {% endif %}
     {% if hr_username %}
       <span style="color:var(--muted); font-size:12px; margin-left:8px;">{{ hr_username }}</span>

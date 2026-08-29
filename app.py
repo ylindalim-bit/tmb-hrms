@@ -384,6 +384,25 @@ def portal_login_required(view):
     return wrapped
 
 
+@app.route("/hr/go-to-portal")
+def hr_go_to_portal():
+    """The reverse of the Staff Portal's own merged login: an HR/approver
+    user whose account is linked to an employee record (via that
+    employee's hr_username, e.g. Linda = L002) jumps straight into their
+    own Staff Portal without a second login. Does NOT clear the session
+    (hr_username stays), and sets portal_self_login so the write-block
+    that protects HR "view as employee" previews doesn't wrongly apply to
+    this genuine self-access. Falls back to the normal portal login page
+    if this HR account isn't linked to any employee."""
+    db = get_db()
+    emp = db.execute("SELECT emp_id FROM employees WHERE hr_username=?", (session.get("hr_username"),)).fetchone()
+    if emp is None:
+        return redirect(url_for("portal_login"))
+    session["portal_emp_id"] = emp["emp_id"]
+    session["portal_self_login"] = True
+    return redirect(url_for("portal_dashboard"))
+
+
 @app.route("/portal/login", methods=["GET", "POST"])
 def portal_login():
     db = get_db()

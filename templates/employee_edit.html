@@ -145,11 +145,11 @@
       </select>
     </div>
     <div><label>OT Needs Approval</label>
-      <select name="ot_approval_required">
+      <select name="ot_approval_required" id="ot_approval_required">
         <option value="N" {% if not emp.ot_approval_required or emp.ot_approval_required=="N" %}selected{% endif %}>No</option>
         <option value="Y" {% if emp.ot_approval_required=="Y" %}selected{% endif %}>Yes</option>
       </select>
-      <p style="color:var(--muted); font-size:12px; margin-top:4px;">If Yes, this employee's OT hours must be submitted as an OT Claim and approved online before counting in payroll, instead of being entered directly on Daily Attendance.</p>
+      <p style="color:var(--muted); font-size:12px; margin-top:4px;">If Yes, this employee's OT hours must be submitted as an OT Claim and approved online before counting in payroll, instead of being entered directly on Daily Attendance. Auto-suggested Yes above Basic Salary RM4,000/month (Employment Act OT-entitlement cap for non-manual staff) - override if this employee is a manual worker (covered regardless of wage) or otherwise exempt.</p>
     </div>
     <div><label>Linked HR/Approver Account</label>
       <select name="hr_username">
@@ -161,7 +161,7 @@
       <p style="color:var(--muted); font-size:12px; margin-top:4px;">If this employee is also an HR/approver user (e.g. Mr Kee = employee K003 and hr_users 'kee'), link it here so their Staff Portal shows their own supervisor reminders (pending leave approvals, appraisals due).</p>
     </div>
     {% endif %}
-    <div><label>Basic Salary (RM)</label><input type="number" step="0.01" name="basic_salary" value="{{ "%.2f"|format(emp.basic_salary or 0) }}"></div>
+    <div><label>Basic Salary (RM)</label><input type="number" step="0.01" name="basic_salary" id="basic_salary" value="{{ "%.2f"|format(emp.basic_salary or 0) }}" oninput="suggestOtApproval()"></div>
     <div><label>Working Days/Week</label><input type="number" step="0.5" name="working_days_week" value="{{ emp.working_days_week or 6 }}"></div>
     <div><label>Working Hours/Day</label><input type="number" step="0.5" name="working_hours_day" value="{{ emp.working_hours_day or 8 }}"></div>
     <div><label>Work Pattern</label>
@@ -710,6 +710,18 @@ function calcProbationEnd() {
   d.setMonth(d.getMonth() + parseInt(months, 10));
   var iso = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   document.getElementById('probation_end_date').value = iso;
+}
+
+var OT_APPROVAL_WAGE_CAP = 4000;
+
+function suggestOtApproval() {
+  var basicField = document.getElementById('basic_salary');
+  var otSelect = document.getElementById('ot_approval_required');
+  if (!basicField || !otSelect) return;
+  var basic = parseFloat(basicField.value) || 0;
+  if (basic > OT_APPROVAL_WAGE_CAP) {
+    otSelect.value = 'Y';
+  }
 }
 
 function togglePortalPw() {

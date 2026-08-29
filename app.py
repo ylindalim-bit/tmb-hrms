@@ -3358,8 +3358,12 @@ def ot_claims_admin():
            WHERE ot_approval_required='Y' AND (status IS NULL OR status != 'Inactive')
            ORDER BY full_name"""
     ).fetchall()
+    approvers = db.execute(
+        "SELECT full_name FROM hr_users WHERE can_approve_ot='Y' ORDER BY full_name"
+    ).fetchall()
+    approver_names = ", ".join(r["full_name"] for r in approvers) or "no one yet - see Settings"
     return render_template("ot_claims_admin.html", pending=pending, reviewed=reviewed,
-                            flagged_employees=flagged_employees)
+                            flagged_employees=flagged_employees, approver_names=approver_names)
 
 
 @app.route("/ot-claims/new", methods=["POST"])

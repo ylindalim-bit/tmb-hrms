@@ -49,7 +49,7 @@
   <h2 style="margin-top:0;">My Business Trips</h2>
   <div class="table-wrap">
   <table>
-    <thead><tr><th class="text">Type</th><th class="text">Destination</th><th class="text">Dates</th><th class="text">Purpose</th><th class="text">Document</th><th class="text">Status</th><th class="text">Notes</th></tr></thead>
+    <thead><tr><th class="text">Type</th><th class="text">Destination</th><th class="text">Dates</th><th class="text">Purpose</th><th class="text">Document</th><th class="text">Status</th><th class="text">Notes</th><th></th></tr></thead>
     <tbody>
       {% for t in trips %}
       <tr>
@@ -66,9 +66,16 @@
           <span class="pill {% if t.status == 'Approved' %}finalized{% elif t.status == 'Pending' %}draft{% else %}rejected{% endif %}">{{ t.status }}</span>
         </td>
         <td class="text">{{ t.review_notes or "" }}</td>
+        <td class="text">
+          {% if t.status == 'Pending' %}
+          <form method="post" action="{{ url_for('portal_business_trip_delete', trip_id=t.id) }}" onsubmit="return confirm('Delete this notice?');">
+            <button class="btn secondary" type="submit" style="padding:4px 10px;">Delete</button>
+          </form>
+          {% endif %}
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="7" class="text" style="color:var(--muted);">No business trips submitted yet.</td></tr>
+      <tr><td colspan="8" class="text" style="color:var(--muted);">No business trips submitted yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

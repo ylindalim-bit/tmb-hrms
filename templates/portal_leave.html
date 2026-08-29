@@ -52,7 +52,7 @@
   <h2 style="margin-top:0;">My Leave Requests</h2>
   <div class="table-wrap">
   <table>
-    <thead><tr><th class="text">Type</th><th class="text">Dates</th><th>Days</th><th class="text">Status</th><th class="text">Notes</th><th class="text">Document</th></tr></thead>
+    <thead><tr><th class="text">Type</th><th class="text">Dates</th><th>Days</th><th class="text">Status</th><th class="text">Notes</th><th class="text">Document</th><th></th></tr></thead>
     <tbody>
       {% for lr in requests %}
       <tr>
@@ -68,9 +68,16 @@
           <a href="{{ url_for('portal_leave_document', request_id=lr.id) }}" target="_blank" rel="noopener">View</a>
           {% else %}<span style="color:var(--muted);">-</span>{% endif %}
         </td>
+        <td class="text">
+          {% if lr.status == 'Pending' %}
+          <form method="post" action="{{ url_for('portal_leave_delete', request_id=lr.id) }}" onsubmit="return confirm('Delete this leave request?');">
+            <button class="btn secondary" type="submit" style="padding:4px 10px;">Delete</button>
+          </form>
+          {% endif %}
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="text" style="color:var(--muted);">No leave requests yet.</td></tr>
+      <tr><td colspan="7" class="text" style="color:var(--muted);">No leave requests yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -532,6 +532,17 @@ def current_portal_employee(db):
     return db.execute("SELECT * FROM employees WHERE emp_id=?", (session["portal_emp_id"],)).fetchone()
 
 
+def _portal_delete_own_pending(db, table, record_id, emp_id):
+    """Lets an employee withdraw their own still-Pending request from any
+    of the Staff Portal 'apply' features (Apply Leave, Medical Claim,
+    Movement Notice, OT Claim) - never once it's been reviewed, since an
+    Approved request may already have side effects elsewhere (attendance,
+    leave balance) that deleting the record wouldn't undo. `table` is
+    always one of a fixed set of internal literals, never user input."""
+    db.execute(f"DELETE FROM {table} WHERE id=? AND emp_id=? AND status='Pending'", (record_id, emp_id))
+    db.commit()
+
+
 @app.route("/")
 def index():
     if session.get("hr_role") == "approver":
@@ -2656,6 +2667,15 @@ def portal_leave():
                             al_balance=al_balance, mc_balance=mc_balance, hl_balance=hl_balance)
 
 
+@app.route("/portal/leave/<int:request_id>/delete", methods=["POST"])
+@portal_login_required
+def portal_leave_delete(request_id):
+    db = get_db()
+    emp = current_portal_employee(db)
+    _portal_delete_own_pending(db, "leave_requests", request_id, emp["emp_id"])
+    return redirect(url_for("portal_leave"))
+
+
 @app.route("/portal/leave/<int:request_id>/document")
 @portal_login_required
 def portal_leave_document(request_id):
@@ -2733,6 +2753,15 @@ def portal_medical_claim():
                             claim_limit=claim_limit)
 
 
+@app.route("/portal/medical-claim/<int:claim_id>/delete", methods=["POST"])
+@portal_login_required
+def portal_medical_claim_delete(claim_id):
+    db = get_db()
+    emp = current_portal_employee(db)
+    _portal_delete_own_pending(db, "medical_claims", claim_id, emp["emp_id"])
+    return redirect(url_for("portal_medical_claim"))
+
+
 @app.route("/portal/medical-claim/<int:claim_id>/document")
 @portal_login_required
 def portal_medical_claim_document(claim_id):
@@ -2747,6 +2776,15 @@ def portal_medical_claim_document(claim_id):
         os.path.join(UPLOAD_DIR, emp["emp_id"]), mc["supporting_doc_stored"],
         as_attachment=False, download_name=mc["supporting_doc_original"],
     )
+
+
+@app.route("/portal/business-trip/<int:trip_id>/delete", methods=["POST"])
+@portal_login_required
+def portal_business_trip_delete(trip_id):
+    db = get_db()
+    emp = current_portal_employee(db)
+    _portal_delete_own_pending(db, "business_trips", trip_id, emp["emp_id"])
+    return redirect(url_for("portal_business_trip"))
 
 
 @app.route("/portal/business-trip/<int:trip_id>/document")
@@ -2848,6 +2886,15 @@ def portal_ot_claim():
         "SELECT * FROM ot_claims WHERE emp_id=? ORDER BY submitted_at DESC", (emp["emp_id"],)
     ).fetchall()
     return render_template("portal_ot_claim.html", emp=emp, claims=my_claims, error=error)
+
+
+@app.route("/portal/ot-claim/<int:claim_id>/delete", methods=["POST"])
+@portal_login_required
+def portal_ot_claim_delete(claim_id):
+    db = get_db()
+    emp = current_portal_employee(db)
+    _portal_delete_own_pending(db, "ot_claims", claim_id, emp["emp_id"])
+    return redirect(url_for("portal_ot_claim"))
 
 
 @app.route("/portal/photo")

@@ -41,7 +41,7 @@
   <h2 style="margin-top:0;">My Medical Claims</h2>
   <div class="table-wrap">
   <table>
-    <thead><tr><th class="text">Date</th><th class="text">Clinic</th><th>Amount (RM)</th><th class="text">Status</th><th class="text">Notes</th><th class="text">Receipt</th></tr></thead>
+    <thead><tr><th class="text">Date</th><th class="text">Clinic</th><th>Amount (RM)</th><th class="text">Status</th><th class="text">Notes</th><th class="text">Receipt</th><th></th></tr></thead>
     <tbody>
       {% for c in claims %}
       <tr>
@@ -57,9 +57,16 @@
           <a href="{{ url_for('portal_medical_claim_document', claim_id=c.id) }}" target="_blank" rel="noopener">View</a>
           {% else %}<span style="color:var(--muted);">-</span>{% endif %}
         </td>
+        <td class="text">
+          {% if c.status == 'Pending' %}
+          <form method="post" action="{{ url_for('portal_medical_claim_delete', claim_id=c.id) }}" onsubmit="return confirm('Delete this medical claim?');">
+            <button class="btn secondary" type="submit" style="padding:4px 10px;">Delete</button>
+          </form>
+          {% endif %}
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="text" style="color:var(--muted);">No medical claims yet.</td></tr>
+      <tr><td colspan="7" class="text" style="color:var(--muted);">No medical claims yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

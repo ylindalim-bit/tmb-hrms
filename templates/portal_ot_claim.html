@@ -31,7 +31,7 @@
   <h2 style="margin-top:0;">My OT Claims</h2>
   <div class="table-wrap">
   <table>
-    <thead><tr><th class="text">Date</th><th>1.5x</th><th>2.0x</th><th>3.0x</th><th class="text">Reason</th><th class="text">Status</th><th class="text">Notes</th></tr></thead>
+    <thead><tr><th class="text">Date</th><th>1.5x</th><th>2.0x</th><th>3.0x</th><th class="text">Reason</th><th class="text">Status</th><th class="text">Notes</th><th></th></tr></thead>
     <tbody>
       {% for c in claims %}
       <tr>
@@ -44,9 +44,16 @@
           <span class="pill {% if c.status == 'Approved' %}finalized{% elif c.status == 'Pending' %}draft{% else %}rejected{% endif %}">{{ c.status }}</span>
         </td>
         <td class="text">{{ c.review_notes or "" }}</td>
+        <td class="text">
+          {% if c.status == 'Pending' %}
+          <form method="post" action="{{ url_for('portal_ot_claim_delete', claim_id=c.id) }}" onsubmit="return confirm('Delete this OT claim?');">
+            <button class="btn secondary" type="submit" style="padding:4px 10px;">Delete</button>
+          </form>
+          {% endif %}
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="7" class="text" style="color:var(--muted);">No OT claims submitted yet.</td></tr>
+      <tr><td colspan="8" class="text" style="color:var(--muted);">No OT claims submitted yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

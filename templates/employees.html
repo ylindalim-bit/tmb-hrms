@@ -108,7 +108,12 @@
     <td class="text" data-key="{{ col.key }}">{{ e[col.key] or "-" }}</td>
     {% endif %}
   {% endfor %}
-  <td class="sticky-col sticky-col-right"><a class="emp-link" href="{{ url_for('edit_employee', emp_id=e.emp_id) }}">Edit</a></td>
+  <td class="sticky-col sticky-col-right" style="white-space:nowrap;">
+    <a class="emp-link" href="{{ url_for('edit_employee', emp_id=e.emp_id) }}">Edit</a>
+    {% if e.portal_password_hash %}
+    &nbsp;<a class="emp-link" href="{{ url_for('portal_preview', emp_id=e.emp_id) }}" title="View as this employee">View</a>
+    {% endif %}
+  </td>
 </tr>
 {% endfor %}
 </tbody>

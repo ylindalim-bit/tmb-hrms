@@ -1962,10 +1962,12 @@ def payroll_summary_view(year, month):
 PAYROLL_SUMMARY_EXPORT_COLUMNS = [
     ("Emp ID", "emp_id"), ("Name", "full_name"), ("Basic", "basic"),
     ("Total Allowance", "total_allowance"),
-    ("Total OT", "ot_pay"), ("Gross Pay", "gross_pay"), ("EPF (Emp)", "epf_employee"),
-    ("EPF (Er)", "epf_employer"), ("SOCSO (Emp)", "socso_employee"), ("SOCSO (Er)", "socso_employer"),
-    ("EIS (Emp)", "eis_employee"), ("EIS (Er)", "eis_employer"), ("SKBBK", "skbbk_employee"),
-    ("PCB", "pcb"), ("HRD Levy", "hrd_levy_employer"), ("Total Ded.", "total_deductions"),
+    ("Total OT", "ot_pay"), ("Gross Pay", "gross_pay"),
+    ("EPF (Emp)", "epf_employee"), ("SOCSO (Emp)", "socso_employee"),
+    ("EIS (Emp)", "eis_employee"), ("SKBBK", "skbbk_employee"), ("PCB", "pcb"),
+    ("EPF (Er)", "epf_employer"), ("SOCSO (Er)", "socso_employer"),
+    ("EIS (Er)", "eis_employer"), ("HRD Levy", "hrd_levy_employer"),
+    ("Total Ded.", "total_deductions"),
     ("NET PAY", "net_pay"), ("Bank", "bank_name"), ("Acct No.", "bank_account_no"),
 ]
 

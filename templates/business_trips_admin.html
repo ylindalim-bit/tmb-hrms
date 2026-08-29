@@ -8,7 +8,7 @@
   <div class="table-wrap">
   <table>
     <thead>
-      <tr><th class="text">Employee</th><th class="text">Type</th><th class="text">Destination</th><th class="text">Dates</th><th class="text">Purpose</th><th class="text">Submitted</th><th>Action</th></tr>
+      <tr><th class="text">Employee</th><th class="text">Type</th><th class="text">Destination</th><th class="text">Dates</th><th class="text">Purpose</th><th class="text">Document</th><th class="text">Submitted</th><th>Action</th></tr>
     </thead>
     <tbody>
       {% for t in pending %}
@@ -18,20 +18,22 @@
         <td class="text">{{ t.destination }}</td>
         <td class="text">{{ t.start_date }} &ndash; {{ t.end_date }}</td>
         <td class="text">{{ t.purpose or "" }}</td>
+        <td class="text">
+          {% if t.supporting_doc_stored %}
+          <a href="{{ url_for('business_trip_document', trip_id=t.id) }}" target="_blank" rel="noopener">View</a>
+          {% elif t.notice_type == 'Unrecorded Leave' %}<span style="color:var(--danger);">Missing</span>
+          {% else %}<span style="color:var(--muted);">-</span>{% endif %}
+        </td>
         <td class="text">{{ t.submitted_at }}</td>
         <td class="text" style="white-space:nowrap;">
           <form method="post" action="{{ url_for('review_business_trip', trip_id=t.id) }}">
-            <input type="text" name="reviewed_by" placeholder="Your name" required
-                   style="width:110px; font-size:12px; padding:4px 6px; margin-bottom:4px;">
-            <div>
-              <button class="btn" type="submit" name="decision" value="Approved" style="padding:4px 10px;">Approve</button>
-              <button class="btn secondary" type="submit" name="decision" value="Rejected" style="padding:4px 10px;">Reject</button>
-            </div>
+            <button class="btn" type="submit" name="decision" value="Approved" style="padding:4px 10px;">Approve</button>
+            <button class="btn secondary" type="submit" name="decision" value="Rejected" style="padding:4px 10px;">Reject</button>
           </form>
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="7" class="text" style="color:var(--muted);">No pending notices.</td></tr>
+      <tr><td colspan="8" class="text" style="color:var(--muted);">No pending notices.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -43,7 +45,7 @@
   <div class="table-wrap">
   <table>
     <thead>
-      <tr><th class="text">Employee</th><th class="text">Type</th><th class="text">Destination</th><th class="text">Dates</th><th class="text">Status</th><th class="text">Reviewed By</th><th class="text">Reviewed</th></tr>
+      <tr><th class="text">Employee</th><th class="text">Type</th><th class="text">Destination</th><th class="text">Dates</th><th class="text">Document</th><th class="text">Status</th><th class="text">Reviewed By</th><th class="text">Reviewed</th></tr>
     </thead>
     <tbody>
       {% for t in reviewed %}
@@ -53,13 +55,18 @@
         <td class="text">{{ t.destination }}</td>
         <td class="text">{{ t.start_date }} &ndash; {{ t.end_date }}</td>
         <td class="text">
+          {% if t.supporting_doc_stored %}
+          <a href="{{ url_for('business_trip_document', trip_id=t.id) }}" target="_blank" rel="noopener">View</a>
+          {% else %}<span style="color:var(--muted);">-</span>{% endif %}
+        </td>
+        <td class="text">
           <span class="pill {% if t.status == 'Approved' %}finalized{% else %}rejected{% endif %}">{{ t.status }}</span>
         </td>
         <td class="text">{{ t.reviewed_by or "" }}</td>
         <td class="text">{{ t.reviewed_at }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="7" class="text" style="color:var(--muted);">None yet.</td></tr>
+      <tr><td colspan="8" class="text" style="color:var(--muted);">None yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

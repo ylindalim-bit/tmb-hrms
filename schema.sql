@@ -382,6 +382,8 @@ CREATE TABLE business_trips (
     start_date     TEXT NOT NULL,
     end_date       TEXT NOT NULL,
     purpose        TEXT,
+    supporting_doc_original TEXT,  -- required for notice_type='Unrecorded Leave'
+    supporting_doc_stored   TEXT,
     status         TEXT NOT NULL DEFAULT 'Pending',  -- Pending / Approved / Rejected
     submitted_at   TEXT NOT NULL,
     reviewed_by    TEXT,

@@ -14,10 +14,10 @@
 <div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger);">{{ error }}</div>
 {% endif %}
 <div class="card">
-<form method="post">
+<form method="post" enctype="multipart/form-data">
   <div class="form-grid">
     <div><label>Type</label>
-      <select name="notice_type">
+      <select id="notice_type" name="notice_type" onchange="updateTripDocRequirement()">
         {% for t in notice_types %}
         <option value="{{ t }}">{{ t }}</option>
         {% endfor %}
@@ -32,6 +32,13 @@
     <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">Purpose (optional)</label>
     <input type="text" name="purpose" style="width:100%;" placeholder="e.g. client meeting, factory audit, or attend [Course Name] training">
   </div>
+  <div id="trip_doc_upload_row" style="margin-top:12px; display:none;">
+    <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">
+      Supporting Document <span id="trip_doc_required_mark" style="color:var(--danger);">*</span>
+      <span style="font-weight:400;">(PDF, Word, or image)</span>
+    </label>
+    <input type="file" id="trip_supporting_doc" name="supporting_doc" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+  </div>
   <div class="form-actions">
     <button class="btn" type="submit">Submit Notice</button>
   </div>
@@ -42,7 +49,7 @@
   <h2 style="margin-top:0;">My Business Trips</h2>
   <div class="table-wrap">
   <table>
-    <thead><tr><th class="text">Type</th><th class="text">Destination</th><th class="text">Dates</th><th class="text">Purpose</th><th class="text">Status</th><th class="text">Notes</th></tr></thead>
+    <thead><tr><th class="text">Type</th><th class="text">Destination</th><th class="text">Dates</th><th class="text">Purpose</th><th class="text">Document</th><th class="text">Status</th><th class="text">Notes</th></tr></thead>
     <tbody>
       {% for t in trips %}
       <tr>
@@ -51,12 +58,17 @@
         <td class="text">{{ t.start_date }} &ndash; {{ t.end_date }}</td>
         <td class="text">{{ t.purpose or "" }}</td>
         <td class="text">
+          {% if t.supporting_doc_stored %}
+          <a href="{{ url_for('portal_business_trip_document', trip_id=t.id) }}" target="_blank" rel="noopener">View</a>
+          {% else %}<span style="color:var(--muted);">-</span>{% endif %}
+        </td>
+        <td class="text">
           <span class="pill {% if t.status == 'Approved' %}finalized{% elif t.status == 'Pending' %}draft{% else %}rejected{% endif %}">{{ t.status }}</span>
         </td>
         <td class="text">{{ t.review_notes or "" }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="text" style="color:var(--muted);">No business trips submitted yet.</td></tr>
+      <tr><td colspan="7" class="text" style="color:var(--muted);">No business trips submitted yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -79,5 +91,18 @@ function updateTripDays() {
     display.style.color = '';
   }
 }
+
+function updateTripDocRequirement() {
+  var noticeType = document.getElementById('notice_type').value;
+  var row = document.getElementById('trip_doc_upload_row');
+  var input = document.getElementById('trip_supporting_doc');
+  var requiredMark = document.getElementById('trip_doc_required_mark');
+  var required = noticeType === 'Unrecorded Leave';
+  row.style.display = required ? 'block' : 'none';
+  input.required = required;
+  requiredMark.style.display = required ? 'inline' : 'none';
+}
+
+updateTripDocRequirement();
 </script>
 {% endblock %}

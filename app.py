@@ -211,7 +211,12 @@ def inject_pending_counts():
                    WHERE lr.status='Pending' AND e.leave_approver_username=?""",
                 (session["hr_username"],),
             ).fetchone()["c"]
-            pending_trip_count = 0  # Business Trips is outside an approver's restricted access
+            pending_trip_count = db.execute(
+                """SELECT COUNT(*) AS c FROM business_trips bt
+                   JOIN employees e ON e.emp_id = bt.emp_id
+                   WHERE bt.status='Pending' AND e.leave_approver_username=?""",
+                (session["hr_username"],),
+            ).fetchone()["c"]
             pending_medical_claim_count = 0  # Medical Claims is outside an approver's restricted access
             # For an approver (e.g. Mr Kee), the reminder is "how many of my
             # team have never had an appraisal at all" - there's no due-date
@@ -292,7 +297,9 @@ APPROVER_ALWAYS_ALLOWED_PREFIXES = ("/hr/logout", "/hr/change-password")
 # Capability flag (session key) -> path prefixes it unlocks for a
 # role='approver' account. Mr Kee has both; Mr Yang has only appraisal.
 APPROVER_CAPABILITY_PREFIXES = {
-    "can_approve_leave": ("/leave-requests",),
+    # Business Trips reuses the same Leave Approver assignment - it's the
+    # same "who's this person's supervisor" relationship, not a separate one.
+    "can_approve_leave": ("/leave-requests", "/business-trips"),
     "can_approve_appraisal": ("/appraisals",),
 }
 
@@ -2378,11 +2385,18 @@ def portal_dashboard():
         ).fetchone()
         if hr_user:
             team_pending_leave = 0
+            team_pending_trip = 0
             if hr_user["can_approve_leave"] == "Y":
                 team_pending_leave = db.execute(
                     """SELECT COUNT(*) AS c FROM leave_requests lr
                        JOIN employees e ON e.emp_id = lr.emp_id
                        WHERE lr.status='Pending' AND e.leave_approver_username=?""",
+                    (hr_user["username"],),
+                ).fetchone()["c"]
+                team_pending_trip = db.execute(
+                    """SELECT COUNT(*) AS c FROM business_trips bt
+                       JOIN employees e ON e.emp_id = bt.emp_id
+                       WHERE bt.status='Pending' AND e.leave_approver_username=?""",
                     (hr_user["username"],),
                 ).fetchone()["c"]
             team_pending_appraisal = 0
@@ -2394,7 +2408,8 @@ def portal_dashboard():
                     (hr_user["username"],),
                 ).fetchone()["c"]
             if hr_user["can_approve_leave"] == "Y" or hr_user["can_approve_appraisal"] == "Y":
-                supervisor = {"pending_leave": team_pending_leave, "pending_appraisal": team_pending_appraisal}
+                supervisor = {"pending_leave": team_pending_leave, "pending_trip": team_pending_trip,
+                              "pending_appraisal": team_pending_appraisal}
 
     return render_template(
         "portal_dashboard.html", emp=emp, latest_run=latest_run,
@@ -2667,6 +2682,22 @@ def portal_medical_claim_document(claim_id):
     )
 
 
+@app.route("/portal/business-trip/<int:trip_id>/document")
+@portal_login_required
+def portal_business_trip_document(trip_id):
+    db = get_db()
+    emp = current_portal_employee(db)
+    trip = db.execute(
+        "SELECT * FROM business_trips WHERE id=? AND emp_id=?", (trip_id, emp["emp_id"])
+    ).fetchone()
+    if trip is None or not trip["supporting_doc_stored"]:
+        abort(404)
+    return send_from_directory(
+        os.path.join(UPLOAD_DIR, emp["emp_id"]), trip["supporting_doc_stored"],
+        as_attachment=False, download_name=trip["supporting_doc_original"],
+    )
+
+
 @app.route("/portal/business-trip", methods=["GET", "POST"])
 @portal_login_required
 def portal_business_trip():
@@ -2681,15 +2712,33 @@ def portal_business_trip():
         start_date = request.form.get("start_date", "")
         end_date = request.form.get("end_date", "")
         purpose = request.form.get("purpose", "").strip() or None
+        file = request.files.get("supporting_doc")
+        has_file = file is not None and file.filename != ""
+        original_name = stored_name = None
         if not destination or not start_date or not end_date:
             error = "Destination, start date, and end date are required."
         elif end_date < start_date:
             error = "End date cannot be before start date."
-        else:
+        elif notice_type == "Unrecorded Leave" and not has_file:
+            error = "Please attach a supporting document for Unrecorded Leave."
+        elif has_file:
+            original_name = secure_filename(file.filename)
+            ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+            if ext not in ALLOWED_DOC_EXTENSIONS:
+                error = "Supporting document must be a PDF, Word file, or an image (JPG/PNG)."
+        if error is None:
+            if has_file:
+                emp_dir = os.path.join(UPLOAD_DIR, emp["emp_id"])
+                os.makedirs(emp_dir, exist_ok=True)
+                stored_name = f"{uuid.uuid4().hex}_{original_name}"
+                file.save(os.path.join(emp_dir, stored_name))
             db.execute(
-                """INSERT INTO business_trips (emp_id, notice_type, destination, start_date, end_date, purpose, status, submitted_at)
-                   VALUES (?,?,?,?,?,?,'Pending',?)""",
+                """INSERT INTO business_trips (
+                       emp_id, notice_type, destination, start_date, end_date, purpose,
+                       supporting_doc_original, supporting_doc_stored, status, submitted_at
+                   ) VALUES (?,?,?,?,?,?,?,?,'Pending',?)""",
                 (emp["emp_id"], notice_type, destination, start_date, end_date, purpose,
+                 original_name, stored_name,
                  datetime.datetime.now().isoformat(timespec="seconds")),
             )
             db.commit()
@@ -3115,17 +3164,40 @@ def review_leave_request(request_id):
 @app.route("/business-trips")
 def business_trips_admin():
     db = get_db()
+    # An approver (e.g. Mr Kee) only sees notices for employees assigned to
+    # them as Leave Approver - reuses that same assignment rather than a
+    # separate one, since it's the same "who's this person's supervisor"
+    # relationship. HR (role='admin') sees everyone.
+    scope_clause = ""
+    params = []
+    if session.get("hr_role") == "approver":
+        scope_clause = "AND e.leave_approver_username=?"
+        params.append(session["hr_username"])
     pending = db.execute(
-        """SELECT bt.*, e.full_name FROM business_trips bt
+        f"""SELECT bt.*, e.full_name FROM business_trips bt
            JOIN employees e ON e.emp_id = bt.emp_id
-           WHERE bt.status='Pending' ORDER BY bt.submitted_at"""
+           WHERE bt.status='Pending' {scope_clause} ORDER BY bt.submitted_at""",
+        params,
     ).fetchall()
     reviewed = db.execute(
-        """SELECT bt.*, e.full_name FROM business_trips bt
+        f"""SELECT bt.*, e.full_name FROM business_trips bt
            JOIN employees e ON e.emp_id = bt.emp_id
-           WHERE bt.status!='Pending' ORDER BY bt.reviewed_at DESC LIMIT 50"""
+           WHERE bt.status!='Pending' {scope_clause} ORDER BY bt.reviewed_at DESC LIMIT 50""",
+        params,
     ).fetchall()
     return render_template("business_trips_admin.html", pending=pending, reviewed=reviewed)
+
+
+@app.route("/business-trips/<int:trip_id>/document")
+def business_trip_document(trip_id):
+    db = get_db()
+    trip = db.execute("SELECT * FROM business_trips WHERE id=?", (trip_id,)).fetchone()
+    if trip is None or not trip["supporting_doc_stored"]:
+        abort(404)
+    return send_from_directory(
+        os.path.join(UPLOAD_DIR, trip["emp_id"]), trip["supporting_doc_stored"],
+        as_attachment=False, download_name=trip["supporting_doc_original"],
+    )
 
 
 @app.route("/business-trips/<int:trip_id>/review", methods=["POST"])
@@ -3134,11 +3206,18 @@ def review_business_trip(trip_id):
     decision = request.form.get("decision")
     if decision not in ("Approved", "Rejected"):
         return "Invalid decision", 400
-    reviewer = request.form.get("reviewed_by", "").strip() or "HR"
     notes = request.form.get("review_notes") or None
-    trip = db.execute("SELECT * FROM business_trips WHERE id=?", (trip_id,)).fetchone()
+    trip = db.execute(
+        """SELECT bt.*, e.leave_approver_username FROM business_trips bt
+           JOIN employees e ON e.emp_id = bt.emp_id WHERE bt.id=?""",
+        (trip_id,),
+    ).fetchone()
     if trip is None:
         return "Business trip not found", 404
+    if session.get("hr_role") == "approver" and trip["leave_approver_username"] != session["hr_username"]:
+        abort(403)
+    hr_user = db.execute("SELECT full_name FROM hr_users WHERE username=?", (session["hr_username"],)).fetchone()
+    reviewer = hr_user["full_name"] if hr_user else session["hr_username"]
     db.execute(
         """UPDATE business_trips SET status=?, reviewed_by=?, reviewed_at=?, review_notes=?
            WHERE id=?""",
@@ -3500,6 +3579,10 @@ def hr_migrate_schema():
         if "notice_type" not in bt_cols:
             db.execute("ALTER TABLE business_trips ADD COLUMN notice_type TEXT NOT NULL DEFAULT 'Business Trip'")
             applied.append("business_trips.notice_type")
+        for col in ("supporting_doc_original", "supporting_doc_stored"):
+            if col not in bt_cols:
+                db.execute(f"ALTER TABLE business_trips ADD COLUMN {col} TEXT")
+                applied.append(f"business_trips.{col}")
     if "attendance_daily" not in existing_tables:
         db.execute("""CREATE TABLE attendance_daily (
             id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),

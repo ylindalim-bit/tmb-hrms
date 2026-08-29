@@ -16,11 +16,13 @@
 <table>
 <thead>
 <tr>
-  <th class="text sticky-col sticky-col-1">Emp ID</th><th class="text sticky-col sticky-col-2">Name</th><th>Basic</th><th>Fixed Allow.</th>
+  <th class="text sticky-col sticky-col-1">Emp ID</th><th class="text sticky-col sticky-col-2">Name</th>
+  <th class="text sticky-col sticky-col-3"></th>
+  <th>Basic</th><th>Fixed Allow.</th>
   <th>Var. Allow.</th><th>OT 1.5h</th><th>OT 2.0h</th><th>OT 3.0h</th><th>OT Rate</th><th>Total OT</th><th>Transport</th><th>Meal</th><th>CEWI</th>
   <th>Gross</th><th>EPF (Emp)</th><th>EPF (Er)</th><th>SOCSO (Emp)</th><th>SOCSO (Er)</th>
   <th>EIS (Emp)</th><th>EIS (Er)</th><th>PCB</th><th>SKBBK</th><th>HRD Levy</th><th>UL Deduction</th><th>Other Ded.</th>
-  <th>Total Ded.</th><th>NET PAY</th><th class="text">Status</th><th class="text">Bank</th><th class="text">Acct No.</th><th></th>
+  <th>Total Ded.</th><th>NET PAY</th><th class="text">Status</th><th class="text">Bank</th><th class="text">Acct No.</th>
 </tr>
 </thead>
 <tbody>
@@ -28,6 +30,10 @@
 <tr>
   <td class="text sticky-col sticky-col-1">{{ r.emp_id }}</td>
   <td class="text sticky-col sticky-col-2">{{ r.full_name }}</td>
+  <td class="text sticky-col sticky-col-3">
+    <a class="emp-link" href="{{ url_for('payslip', emp_id=r.emp_id, year=year, month=month) }}">Payslip</a>
+    &nbsp;<a class="emp-link" href="{{ url_for('payroll_detail', emp_id=r.emp_id, year=year, month=month) }}">Details</a>
+  </td>
   <td>{{ "%.2f"|format(r.basic_salary + (r.unpaid_deduction or 0)) }}</td>
   <td>{{ "%.2f"|format(r.fixed_allowance) }}</td>
   <td>{{ "%.2f"|format(r.variable_allowance) }}</td>
@@ -62,12 +68,10 @@
   </td>
   <td class="text">{{ bank_info.get(r.emp_id, {}).get("bank_name") or "-" }}</td>
   <td class="text">{{ bank_info.get(r.emp_id, {}).get("bank_account_no") or "-" }}</td>
-  <td><a class="emp-link" href="{{ url_for('payslip', emp_id=r.emp_id, year=year, month=month) }}">Payslip</a>
-      &nbsp;<a class="emp-link" href="{{ url_for('payroll_detail', emp_id=r.emp_id, year=year, month=month) }}">Details</a></td>
 </tr>
 {% endfor %}
 <tr class="totals-row">
-  <td class="text sticky-col" style="left:0" colspan="13">TOTAL</td>
+  <td class="text sticky-col" style="left:0" colspan="14">TOTAL</td>
   <td>{{ "%.2f"|format(totals.gross_pay + totals.unpaid_deduction) }}</td>
   <td>{{ "%.2f"|format(totals.epf_employee) }}</td>
   <td>{{ "%.2f"|format(totals.epf_employer) }}</td>
@@ -82,7 +86,7 @@
   <td>{{ "%.2f"|format(totals.other_deduction) }}</td>
   <td>{{ "%.2f"|format(totals.total_deductions + totals.unpaid_deduction) }}</td>
   <td>{{ "%.2f"|format(totals.net_pay) }}</td>
-  <td colspan="4"></td>
+  <td colspan="3"></td>
 </tr>
 </tbody>
 </table>

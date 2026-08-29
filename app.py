@@ -292,6 +292,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/backup-uploads",    # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/seed-attendance-daily",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/adjust-attendance",      # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/seed-ot-claims",         # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -3804,6 +3805,46 @@ def hr_migrate_schema():
         applied.append("hr_users: yang (can_approve_ot)")
     db.commit()
     return "OK - applied: " + (", ".join(applied) if applied else "(nothing new, already up to date)"), 200
+
+
+@app.route("/hr/seed-ot-claims", methods=["POST"])
+def hr_seed_ot_claims():
+    """One-time helper: flags an employee ot_approval_required='Y' and
+    inserts one or more Pending OT claims on their behalf, so OT that
+    predates the OT Claim approval flow can be re-recorded properly
+    through it (for review/approval by the employee's OT approver)
+    without a live HR session. Does not touch attendance/payroll itself -
+    that only happens once a claim is actually approved, same as any
+    other OT claim. Same RESTORE_TOKEN gate as the other one-time routes;
+    safe to re-run (each call just inserts more Pending claims).
+
+    Expected JSON body: {"emp_id": "I001", "claims": [
+        {"claim_date": "2026-08-17", "ot_hours_1_5": 1.5, "ot_hours_2_0": 0,
+         "ot_hours_3_0": 0, "reason": "..."}, ...]}
+    """
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    payload = json.loads(request.files["data"].read())
+    db = get_db()
+    emp_id = payload["emp_id"]
+    if db.execute("SELECT 1 FROM employees WHERE emp_id=?", (emp_id,)).fetchone() is None:
+        return f"Refused: unknown emp_id {emp_id}", 400
+    db.execute("UPDATE employees SET ot_approval_required='Y' WHERE emp_id=?", (emp_id,))
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    written = 0
+    for claim in payload.get("claims", []):
+        db.execute(
+            """INSERT INTO ot_claims (emp_id, claim_date, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0,
+                   reason, status, submitted_by, submitted_at)
+               VALUES (?,?,?,?,?,?,'Pending','HR',?)""",
+            (emp_id, claim["claim_date"], claim.get("ot_hours_1_5", 0) or 0,
+             claim.get("ot_hours_2_0", 0) or 0, claim.get("ot_hours_3_0", 0) or 0,
+             claim.get("reason"), now),
+        )
+        written += 1
+    db.commit()
+    return f"OK - flagged {emp_id} ot_approval_required=Y, wrote {written} pending OT claim(s)", 200
 
 
 @app.route("/hr/import-historical-payroll", methods=["POST"])

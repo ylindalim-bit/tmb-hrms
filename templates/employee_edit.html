@@ -583,7 +583,7 @@
   <p style="color:var(--muted); font-size:12px; margin-top:6px;">
     Sets/resets this employee's login for the Staff Portal ({{ url_for('portal_login') }}) &mdash; they sign in
     with their Employee ID ({{ emp.emp_id or "e.g. A001" }}) and this password. Leave blank to make no change.
-    {% if not is_new and emp.portal_password_hash %}
+    {% if not is_new %}
     <br><a href="{{ url_for('portal_preview', emp_id=emp.emp_id) }}">View as this employee &rarr;</a>
     &mdash; see exactly what they see on the Staff Portal, without needing their password.
     {% endif %}

@@ -25,7 +25,9 @@
 {% set a = att.get(e.emp_id) %}
 {% set adj_row = adj.get(e.emp_id) %}
 <tr>
-  <td class="text sticky-col sticky-col-wide">{{ e.emp_id }} &mdash; {{ e.full_name }}</td>
+  <td class="text sticky-col sticky-col-wide">{{ e.emp_id }} &mdash; {{ e.full_name }}
+    <a href="{{ url_for('attendance_daily', emp_id=e.emp_id, year=year, month=month) }}" style="font-size:11px; margin-left:4px;">(Daily)</a>
+  </td>
   <td><input type="number" step="0.5" name="days_worked__{{ e.emp_id }}" value="{{ a.days_worked if a else 0 }}"></td>
   <td><input type="number" step="0.5" name="al_days__{{ e.emp_id }}" value="{{ a.al_days if a else 0 }}"></td>
   <td><input type="number" step="0.5" name="mc_days__{{ e.emp_id }}" value="{{ a.mc_days if a else 0 }}"></td>

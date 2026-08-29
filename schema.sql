@@ -156,6 +156,28 @@ CREATE TABLE attendance_monthly (
     PRIMARY KEY (emp_id, year, month)
 );
 
+-- Day-by-day attendance log, entered by HR (not a self-service punch
+-- clock) - mirrors the paper/Excel daily attendance sheets (Time In/Out,
+-- Meal Allowance, OT hours + reason) so HR can enter a real day-by-day
+-- record instead of typing straight-to-monthly totals. Saving a month's
+-- daily rows recomputes and overwrites that employee/month's
+-- attendance_monthly aggregate row, so payroll keeps reading from the
+-- same place either way.
+CREATE TABLE attendance_daily (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    emp_id          TEXT NOT NULL REFERENCES employees(emp_id),
+    date            TEXT NOT NULL,   -- YYYY-MM-DD
+    day_type        TEXT NOT NULL DEFAULT 'WORKED',  -- WORKED/OFF/REST/PH/AL/MC/HL/UL/OTHER_PAID
+    time_in         TEXT,   -- HH:MM, only meaningful when day_type='WORKED'
+    time_out        TEXT,
+    meal_allowance_flag TEXT NOT NULL DEFAULT 'N',  -- Y/N - meal allowance applies this day
+    ot_hours_1_5    REAL DEFAULT 0,
+    ot_hours_2_0    REAL DEFAULT 0,
+    ot_hours_3_0    REAL DEFAULT 0,
+    ot_reason       TEXT,
+    UNIQUE (emp_id, date)
+);
+
 CREATE TABLE leave_types (
     code        TEXT PRIMARY KEY,
     description TEXT,

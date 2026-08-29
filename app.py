@@ -1201,6 +1201,112 @@ def attendance(year, month):
                             suggested_ph_days=suggested_ph_days)
 
 
+DAY_TYPES = ["WORKED", "OFF", "REST", "PH", "AL", "MC", "HL", "UL", "OTHER_PAID"]
+
+
+def _sync_daily_to_monthly(db, emp_id, year, month):
+    """Recomputes attendance_monthly's aggregate columns from this
+    employee/month's attendance_daily rows and upserts them - the same
+    row payroll already reads, so a daily-entered month feeds payroll
+    exactly like a directly-typed monthly total would."""
+    rows = db.execute(
+        "SELECT * FROM attendance_daily WHERE emp_id=? AND date LIKE ?",
+        (emp_id, f"{year:04d}-{month:02d}-%"),
+    ).fetchall()
+    counts = {t: 0 for t in DAY_TYPES}
+    for r in rows:
+        counts[r["day_type"]] = counts.get(r["day_type"], 0) + 1
+    ot_1_5 = sum(r["ot_hours_1_5"] or 0 for r in rows)
+    ot_2_0 = sum(r["ot_hours_2_0"] or 0 for r in rows)
+    ot_3_0 = sum(r["ot_hours_3_0"] or 0 for r in rows)
+    meal_days = sum(1 for r in rows if r["meal_allowance_flag"] == "Y")
+    working_days_in_month = counts["WORKED"] + counts["AL"] + counts["MC"] + counts["HL"] + counts["OTHER_PAID"] + counts["PH"]
+
+    db.execute(
+        """INSERT INTO attendance_monthly (
+               emp_id, year, month, days_worked, al_days, mc_days, hl_days, ul_days,
+               other_paid_leave, ph_days, off_days, rest_days, working_days_in_month,
+               ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, meal_eligible_days
+           ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(emp_id, year, month) DO UPDATE SET
+             days_worked=excluded.days_worked, al_days=excluded.al_days, mc_days=excluded.mc_days,
+             hl_days=excluded.hl_days, ul_days=excluded.ul_days, other_paid_leave=excluded.other_paid_leave,
+             ph_days=excluded.ph_days, off_days=excluded.off_days, rest_days=excluded.rest_days,
+             working_days_in_month=excluded.working_days_in_month,
+             ot_hours_1_5=excluded.ot_hours_1_5, ot_hours_2_0=excluded.ot_hours_2_0,
+             ot_hours_3_0=excluded.ot_hours_3_0, meal_eligible_days=excluded.meal_eligible_days""",
+        (emp_id, year, month, counts["WORKED"], counts["AL"], counts["MC"], counts["HL"], counts["UL"],
+         counts["OTHER_PAID"], counts["PH"], counts["OFF"], counts["REST"], working_days_in_month,
+         ot_1_5, ot_2_0, ot_3_0, meal_days),
+    )
+
+
+@app.route("/attendance-daily/<emp_id>/<int:year>/<int:month>", methods=["GET", "POST"])
+def attendance_daily(emp_id, year, month):
+    """Day-by-day attendance entry for one employee - HR fills in each
+    day's Time In/Out, meal allowance, and OT hours, matching the layout
+    of a real daily attendance sheet, instead of typing straight-to-
+    monthly totals. Saving recomputes this month's attendance_monthly row
+    from the daily entries (see _sync_daily_to_monthly), so it feeds
+    payroll exactly like the bulk Attendance page would."""
+    db = get_db()
+    emp = db.execute("SELECT * FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+    if emp is None:
+        return "Employee not found", 404
+    days_in_month = calendar.monthrange(year, month)[1]
+
+    if request.method == "POST":
+        for day in range(1, days_in_month + 1):
+            date_str = f"{year:04d}-{month:02d}-{day:02d}"
+            day_type = request.form.get(f"day_type__{day}") or "WORKED"
+            if day_type not in DAY_TYPES:
+                day_type = "WORKED"
+            time_in = request.form.get(f"time_in__{day}") or None
+            time_out = request.form.get(f"time_out__{day}") or None
+            meal_flag = "Y" if request.form.get(f"meal__{day}") else "N"
+            ot_1_5 = float(request.form.get(f"ot_1_5__{day}", 0) or 0)
+            ot_2_0 = float(request.form.get(f"ot_2_0__{day}", 0) or 0)
+            ot_3_0 = float(request.form.get(f"ot_3_0__{day}", 0) or 0)
+            ot_reason = request.form.get(f"ot_reason__{day}") or None
+            db.execute(
+                """INSERT INTO attendance_daily (
+                       emp_id, date, day_type, time_in, time_out, meal_allowance_flag,
+                       ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, ot_reason
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(emp_id, date) DO UPDATE SET
+                     day_type=excluded.day_type, time_in=excluded.time_in, time_out=excluded.time_out,
+                     meal_allowance_flag=excluded.meal_allowance_flag,
+                     ot_hours_1_5=excluded.ot_hours_1_5, ot_hours_2_0=excluded.ot_hours_2_0,
+                     ot_hours_3_0=excluded.ot_hours_3_0, ot_reason=excluded.ot_reason""",
+                (emp_id, date_str, day_type, time_in, time_out, meal_flag,
+                 ot_1_5, ot_2_0, ot_3_0, ot_reason),
+            )
+        _sync_daily_to_monthly(db, emp_id, year, month)
+        db.commit()
+        return redirect(url_for("attendance_daily", emp_id=emp_id, year=year, month=month))
+
+    saved = {
+        r["date"]: r for r in db.execute(
+            "SELECT * FROM attendance_daily WHERE emp_id=? AND date LIKE ? ORDER BY date",
+            (emp_id, f"{year:04d}-{month:02d}-%"),
+        ).fetchall()
+    }
+    days = []
+    for day in range(1, days_in_month + 1):
+        date_obj = datetime.date(year, month, day)
+        days.append({
+            "day": day, "date": date_obj.isoformat(), "weekday": date_obj.strftime("%a"),
+            "row": saved.get(date_obj.isoformat()),
+        })
+    monthly = db.execute(
+        "SELECT * FROM attendance_monthly WHERE emp_id=? AND year=? AND month=?",
+        (emp_id, year, month),
+    ).fetchone()
+
+    return render_template("attendance_daily.html", emp=emp, year=year, month=month,
+                            days=days, day_types=DAY_TYPES, monthly=monthly)
+
+
 # ---------------- Payroll History ----------------
 
 @app.route("/history")
@@ -3382,6 +3488,14 @@ def hr_migrate_schema():
             id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),
             updated_at TEXT NOT NULL, hr_viewed_at TEXT)""")
         applied.append("table: profile_update_log")
+    if "attendance_daily" not in existing_tables:
+        db.execute("""CREATE TABLE attendance_daily (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),
+            date TEXT NOT NULL, day_type TEXT NOT NULL DEFAULT 'WORKED',
+            time_in TEXT, time_out TEXT, meal_allowance_flag TEXT NOT NULL DEFAULT 'N',
+            ot_hours_1_5 REAL DEFAULT 0, ot_hours_2_0 REAL DEFAULT 0, ot_hours_3_0 REAL DEFAULT 0,
+            ot_reason TEXT, UNIQUE (emp_id, date))""")
+        applied.append("table: attendance_daily")
 
     db.execute("UPDATE hr_users SET can_approve_leave='Y', can_approve_appraisal='Y' WHERE username='kee'")
     yang_password = request.form.get("yang_password", "")

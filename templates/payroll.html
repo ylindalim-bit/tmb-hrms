@@ -20,8 +20,8 @@
   <th class="text sticky-col sticky-col-3"></th>
   <th>Basic</th><th>Fixed Allow.</th>
   <th>Var. Allow.</th><th>OT 1.5h</th><th>OT 2.0h</th><th>OT 3.0h</th><th>OT Rate</th><th>Total OT</th><th>Transport</th><th>Meal</th><th>CEWI</th>
-  <th>Gross</th><th>EPF (Emp)</th><th>EPF (Er)</th><th>SOCSO (Emp)</th><th>SOCSO (Er)</th>
-  <th>EIS (Emp)</th><th>EIS (Er)</th><th>PCB</th><th>SKBBK</th><th>HRD Levy</th><th>UL Deduction</th><th>Other Ded.</th>
+  <th>Gross</th><th>EPF (Emp)</th><th>SOCSO (Emp)</th><th>EIS (Emp)</th><th>SKBBK</th><th>PCB</th>
+  <th>EPF (Er)</th><th>SOCSO (Er)</th><th>EIS (Er)</th><th>HRD Levy</th><th>UL Deduction</th><th>Other Ded.</th>
   <th>Total Ded.</th><th>NET PAY</th><th class="text">Status</th><th class="text">Bank</th><th class="text">Acct No.</th>
 </tr>
 </thead>
@@ -47,13 +47,13 @@
   <td>{{ "%.2f"|format(r.cewi_allowance) }}</td>
   <td><strong>{{ "%.2f"|format(r.gross_pay + (r.unpaid_deduction or 0)) }}</strong></td>
   <td>{{ "%.2f"|format(r.epf_employee) }}</td>
-  <td>{{ "%.2f"|format(r.epf_employer) }}</td>
   <td>{{ "%.2f"|format(r.socso_employee) }}</td>
-  <td>{{ "%.2f"|format(r.socso_employer) }}</td>
   <td>{{ "%.2f"|format(r.eis_employee) }}</td>
-  <td>{{ "%.2f"|format(r.eis_employer) }}</td>
-  <td>{{ "%.2f"|format(r.pcb) }}</td>
   <td>{{ "%.2f"|format(r.skbbk_employee) }}</td>
+  <td>{{ "%.2f"|format(r.pcb) }}</td>
+  <td>{{ "%.2f"|format(r.epf_employer) }}</td>
+  <td>{{ "%.2f"|format(r.socso_employer) }}</td>
+  <td>{{ "%.2f"|format(r.eis_employer) }}</td>
   <td>{{ "%.2f"|format(r.hrd_levy_employer) }}</td>
   <td{% if r.unpaid_deduction %} style="color:var(--danger); font-weight:600;" title="{{ r.unpaid_days|default(0)|round(1) }} day(s) unpaid leave/absence"{% endif %}>{{ "%.2f"|format(r.unpaid_deduction or 0) }}</td>
   <td {% if r.other_deduction %}title="{{ r.other_deduction_desc or '' }}"{% endif %}>{{ "%.2f"|format(r.other_deduction) }}</td>
@@ -74,13 +74,13 @@
   <td class="text sticky-col" style="left:0" colspan="14">TOTAL</td>
   <td>{{ "%.2f"|format(totals.gross_pay + totals.unpaid_deduction) }}</td>
   <td>{{ "%.2f"|format(totals.epf_employee) }}</td>
-  <td>{{ "%.2f"|format(totals.epf_employer) }}</td>
   <td>{{ "%.2f"|format(totals.socso_employee) }}</td>
-  <td>{{ "%.2f"|format(totals.socso_employer) }}</td>
   <td>{{ "%.2f"|format(totals.eis_employee) }}</td>
-  <td>{{ "%.2f"|format(totals.eis_employer) }}</td>
-  <td>{{ "%.2f"|format(totals.pcb) }}</td>
   <td>{{ "%.2f"|format(totals.skbbk_employee) }}</td>
+  <td>{{ "%.2f"|format(totals.pcb) }}</td>
+  <td>{{ "%.2f"|format(totals.epf_employer) }}</td>
+  <td>{{ "%.2f"|format(totals.socso_employer) }}</td>
+  <td>{{ "%.2f"|format(totals.eis_employer) }}</td>
   <td>{{ "%.2f"|format(totals.hrd_levy_employer) }}</td>
   <td>{{ "%.2f"|format(totals.unpaid_deduction) }}</td>
   <td>{{ "%.2f"|format(totals.other_deduction) }}</td>

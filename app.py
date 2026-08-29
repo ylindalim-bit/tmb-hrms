@@ -2392,6 +2392,10 @@ def portal_dashboard():
         """SELECT COUNT(*) AS n FROM leave_requests WHERE emp_id=? AND status='Pending'""",
         (emp["emp_id"],),
     ).fetchone()["n"]
+    pending_trip = db.execute(
+        """SELECT COUNT(*) AS n FROM business_trips WHERE emp_id=? AND status='Pending'""",
+        (emp["emp_id"],),
+    ).fetchone()["n"]
 
     # If this employee is also an HR/approver user (e.g. Mr Kee = K003 and
     # hr_users 'kee'), surface their own supervisor reminders here too, so
@@ -2432,7 +2436,7 @@ def portal_dashboard():
 
     return render_template(
         "portal_dashboard.html", emp=emp, latest_run=latest_run,
-        al_balance=al_balance, pending_leave=pending_leave, supervisor=supervisor,
+        al_balance=al_balance, pending_leave=pending_leave, pending_trip=pending_trip, supervisor=supervisor,
     )
 
 

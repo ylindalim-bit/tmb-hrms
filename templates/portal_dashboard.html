@@ -39,6 +39,12 @@
   </div>
 
   <div class="card">
+    <h2 style="margin-top:0;">Movement Notices</h2>
+    <p>{{ pending_trip }} pending</p>
+    <a class="btn secondary" href="{{ url_for('portal_business_trip') }}">Apply / View</a>
+  </div>
+
+  <div class="card">
     <h2 style="margin-top:0;">My Profile</h2>
     <p style="color:var(--muted);">Contact details, bank &amp; emergency contacts</p>
     <a class="btn secondary" href="{{ url_for('portal_profile') }}">View / Edit</a>

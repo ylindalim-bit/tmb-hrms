@@ -293,6 +293,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/seed-attendance-daily",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/adjust-attendance",      # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/seed-ot-claims",         # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/ot-claims-cleanup",      # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -3845,6 +3846,32 @@ def hr_seed_ot_claims():
         written += 1
     db.commit()
     return f"OK - flagged {emp_id} ot_approval_required=Y, wrote {written} pending OT claim(s)", 200
+
+
+@app.route("/hr/ot-claims-cleanup", methods=["POST"])
+def hr_ot_claims_cleanup():
+    """One-time helper to reject specific OT claim IDs directly (e.g. to
+    remove accidental duplicates from a scripted seed) without a live HR
+    session. Only touches rows still Pending, so it can't undo a decision
+    someone already made through the normal approval UI. Same
+    RESTORE_TOKEN gate as the other one-time routes."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    ids = [int(x) for x in request.form.get("ids", "").split(",") if x.strip()]
+    notes = request.form.get("review_notes") or None
+    db = get_db()
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    updated = 0
+    for claim_id in ids:
+        cur = db.execute(
+            """UPDATE ot_claims SET status='Rejected', reviewed_by='HR', reviewed_at=?, review_notes=?
+               WHERE id=? AND status='Pending'""",
+            (now, notes, claim_id),
+        )
+        updated += cur.rowcount
+    db.commit()
+    return f"OK - rejected {updated} claim(s)", 200
 
 
 @app.route("/hr/import-historical-payroll", methods=["POST"])

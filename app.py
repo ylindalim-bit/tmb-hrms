@@ -278,6 +278,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/backup-database",   # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/backup-uploads",    # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/seed-attendance-daily",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/adjust-attendance",      # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -3637,6 +3638,46 @@ def hr_backup_uploads():
         mimetype="application/zip",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+ADJUSTABLE_ATTENDANCE_FIELDS = {
+    "days_worked", "al_days", "mc_days", "hl_days", "ul_days", "other_paid_leave",
+    "ph_days", "off_days", "rest_days", "absent_days", "working_days_in_month",
+}
+
+
+@app.route("/hr/adjust-attendance", methods=["POST"])
+def hr_adjust_attendance():
+    """One-off correction to a single attendance_monthly field for one
+    employee/month (e.g. adding MC days from a paper leave slip), without
+    disturbing the rest of that month's figures the way a full
+    daily-attendance resync would if only some days were known. Adds
+    `delta` to whatever the field currently holds (0 if no row exists
+    yet). Same RESTORE_TOKEN gate as the other one-time routes."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    emp_id = request.form.get("emp_id")
+    year = request.form.get("year", type=int)
+    month = request.form.get("month", type=int)
+    field = request.form.get("field")
+    delta = request.form.get("delta", type=float)
+    if field not in ADJUSTABLE_ATTENDANCE_FIELDS:
+        return f"Refused: field must be one of {sorted(ADJUSTABLE_ATTENDANCE_FIELDS)}", 400
+    db = get_db()
+    if db.execute("SELECT 1 FROM employees WHERE emp_id=?", (emp_id,)).fetchone() is None:
+        return f"Refused: unknown emp_id {emp_id}", 400
+    db.execute(
+        f"""INSERT INTO attendance_monthly (emp_id, year, month, {field}) VALUES (?,?,?,?)
+           ON CONFLICT(emp_id, year, month) DO UPDATE SET {field} = COALESCE({field}, 0) + ?""",
+        (emp_id, year, month, delta, delta),
+    )
+    db.commit()
+    new_val = db.execute(
+        f"SELECT {field} FROM attendance_monthly WHERE emp_id=? AND year=? AND month=?",
+        (emp_id, year, month),
+    ).fetchone()[0]
+    return f"OK - {emp_id} {year}-{month:02d} {field} adjusted by {delta:+g}, now {new_val}", 200
 
 
 @app.route("/hr/seed-attendance-daily", methods=["POST"])

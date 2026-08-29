@@ -77,7 +77,7 @@
   <div class="table-wrap">
   <table>
     <thead>
-      <tr><th class="text">Employee</th><th class="text">Date</th><th>1.5x</th><th>2.0x</th><th>3.0x</th><th class="text">Status</th><th class="text">Reviewed By</th><th class="text">Reviewed</th></tr>
+      <tr><th class="text">Employee</th><th class="text">Date</th><th>1.5x</th><th>2.0x</th><th>3.0x</th><th class="text">Status</th><th class="text">Reviewed By</th><th class="text">Reviewed</th><th>Action</th></tr>
     </thead>
     <tbody>
       {% for c in reviewed %}
@@ -92,9 +92,16 @@
         </td>
         <td class="text">{{ c.reviewed_by or "" }}</td>
         <td class="text">{{ c.reviewed_at }}</td>
+        <td class="text" style="white-space:nowrap;">
+          {% if c.status != 'Approved' %}
+          <form method="post" action="{{ url_for('delete_ot_claim', claim_id=c.id) }}" onsubmit="return confirm('Delete this OT claim record permanently?');">
+            <button class="btn secondary" type="submit" style="padding:4px 10px;">Delete</button>
+          </form>
+          {% endif %}
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="8" class="text" style="color:var(--muted);">None yet.</td></tr>
+      <tr><td colspan="9" class="text" style="color:var(--muted);">None yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

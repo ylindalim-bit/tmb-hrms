@@ -3412,6 +3412,22 @@ def review_ot_claim(claim_id):
     return redirect(url_for("ot_claims_admin"))
 
 
+@app.route("/ot-claims/<int:claim_id>/delete", methods=["POST"])
+def delete_ot_claim(claim_id):
+    """Permanently removes an OT claim record - refused for an Approved
+    claim, since its hours are already reflected in attendance/payroll
+    and deleting the record would leave that with no audit trail."""
+    db = get_db()
+    claim = db.execute("SELECT status FROM ot_claims WHERE id=?", (claim_id,)).fetchone()
+    if claim is None:
+        return "OT claim not found", 404
+    if claim["status"] == "Approved":
+        return "Refused: cannot delete an Approved claim - its hours are already reflected in attendance/payroll", 400
+    db.execute("DELETE FROM ot_claims WHERE id=?", (claim_id,))
+    db.commit()
+    return redirect(url_for("ot_claims_admin"))
+
+
 # ---------------- HR: Medical Claims Admin ----------------
 
 @app.route("/medical-claims")

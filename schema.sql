@@ -377,6 +377,7 @@ CREATE TABLE leave_requests (
 CREATE TABLE business_trips (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     emp_id         TEXT NOT NULL REFERENCES employees(emp_id),
+    notice_type    TEXT NOT NULL DEFAULT 'Business Trip',  -- Business Trip / Out-Duty / Training / Unrecorded Leave
     destination    TEXT NOT NULL,
     start_date     TEXT NOT NULL,
     end_date       TEXT NOT NULL,

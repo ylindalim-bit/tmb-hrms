@@ -149,6 +149,7 @@ if not os.path.exists(DB_PATH):
     _bootstrap_conn.close()
 DOCUMENT_TYPES = ["Job Application Form", "IC / Passport Copy", "Letter of Employment", "Confirmation Letter",
                    "Resignation Letter", "CP22A", "e-Stamping Certificate", "TP3 (Prior Employer Income)", "Other"]
+BUSINESS_TRIP_TYPES = ["Business Trip", "Out-Duty", "Training", "Unrecorded Leave"]
 ALLOWED_DOC_EXTENSIONS = {"pdf", "doc", "docx", "jpg", "jpeg", "png"}
 ALLOWED_PHOTO_EXTENSIONS = {"jpg", "jpeg", "png"}
 RACE_OPTIONS = ["Malay", "Chinese", "Iban", "Kadazan", "Other"]
@@ -2673,6 +2674,9 @@ def portal_business_trip():
     emp = current_portal_employee(db)
     error = None
     if request.method == "POST":
+        notice_type = request.form.get("notice_type") or "Business Trip"
+        if notice_type not in BUSINESS_TRIP_TYPES:
+            notice_type = "Business Trip"
         destination = request.form.get("destination", "").strip()
         start_date = request.form.get("start_date", "")
         end_date = request.form.get("end_date", "")
@@ -2683,9 +2687,9 @@ def portal_business_trip():
             error = "End date cannot be before start date."
         else:
             db.execute(
-                """INSERT INTO business_trips (emp_id, destination, start_date, end_date, purpose, status, submitted_at)
-                   VALUES (?,?,?,?,?,'Pending',?)""",
-                (emp["emp_id"], destination, start_date, end_date, purpose,
+                """INSERT INTO business_trips (emp_id, notice_type, destination, start_date, end_date, purpose, status, submitted_at)
+                   VALUES (?,?,?,?,?,?,'Pending',?)""",
+                (emp["emp_id"], notice_type, destination, start_date, end_date, purpose,
                  datetime.datetime.now().isoformat(timespec="seconds")),
             )
             db.commit()
@@ -2694,7 +2698,8 @@ def portal_business_trip():
     my_trips = db.execute(
         "SELECT * FROM business_trips WHERE emp_id=? ORDER BY submitted_at DESC", (emp["emp_id"],)
     ).fetchall()
-    return render_template("portal_business_trip.html", emp=emp, trips=my_trips, error=error)
+    return render_template("portal_business_trip.html", emp=emp, trips=my_trips, error=error,
+                            notice_types=BUSINESS_TRIP_TYPES)
 
 
 @app.route("/portal/photo")
@@ -3490,6 +3495,11 @@ def hr_migrate_schema():
             id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),
             updated_at TEXT NOT NULL, hr_viewed_at TEXT)""")
         applied.append("table: profile_update_log")
+    if "business_trips" in existing_tables:
+        bt_cols = [r[1] for r in db.execute("PRAGMA table_info(business_trips)").fetchall()]
+        if "notice_type" not in bt_cols:
+            db.execute("ALTER TABLE business_trips ADD COLUMN notice_type TEXT NOT NULL DEFAULT 'Business Trip'")
+            applied.append("business_trips.notice_type")
     if "attendance_daily" not in existing_tables:
         db.execute("""CREATE TABLE attendance_daily (
             id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),

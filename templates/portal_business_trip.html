@@ -16,6 +16,13 @@
 <div class="card">
 <form method="post">
   <div class="form-grid">
+    <div><label>Type</label>
+      <select name="notice_type">
+        {% for t in notice_types %}
+        <option value="{{ t }}">{{ t }}</option>
+        {% endfor %}
+      </select>
+    </div>
     <div><label>Destination</label><input type="text" name="destination" placeholder="e.g. Shanghai, China / or Pasir Gudang (local)" required></div>
     <div><label>Start Date</label><input type="date" id="trip_start_date" name="start_date" onchange="updateTripDays()" required></div>
     <div><label>End Date</label><input type="date" id="trip_end_date" name="end_date" onchange="updateTripDays()" required></div>
@@ -35,10 +42,11 @@
   <h2 style="margin-top:0;">My Business Trips</h2>
   <div class="table-wrap">
   <table>
-    <thead><tr><th class="text">Destination</th><th class="text">Dates</th><th class="text">Purpose</th><th class="text">Status</th><th class="text">Notes</th></tr></thead>
+    <thead><tr><th class="text">Type</th><th class="text">Destination</th><th class="text">Dates</th><th class="text">Purpose</th><th class="text">Status</th><th class="text">Notes</th></tr></thead>
     <tbody>
       {% for t in trips %}
       <tr>
+        <td class="text">{{ t.notice_type }}</td>
         <td class="text">{{ t.destination }}</td>
         <td class="text">{{ t.start_date }} &ndash; {{ t.end_date }}</td>
         <td class="text">{{ t.purpose or "" }}</td>
@@ -48,7 +56,7 @@
         <td class="text">{{ t.review_notes or "" }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="text" style="color:var(--muted);">No business trips submitted yet.</td></tr>
+      <tr><td colspan="6" class="text" style="color:var(--muted);">No business trips submitted yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -8,12 +8,13 @@
   <div class="table-wrap">
   <table>
     <thead>
-      <tr><th class="text">Employee</th><th class="text">Destination</th><th class="text">Dates</th><th class="text">Purpose</th><th class="text">Submitted</th><th>Action</th></tr>
+      <tr><th class="text">Employee</th><th class="text">Type</th><th class="text">Destination</th><th class="text">Dates</th><th class="text">Purpose</th><th class="text">Submitted</th><th>Action</th></tr>
     </thead>
     <tbody>
       {% for t in pending %}
       <tr>
         <td class="text">{{ t.emp_id }} &mdash; {{ t.full_name }}</td>
+        <td class="text">{{ t.notice_type }}</td>
         <td class="text">{{ t.destination }}</td>
         <td class="text">{{ t.start_date }} &ndash; {{ t.end_date }}</td>
         <td class="text">{{ t.purpose or "" }}</td>
@@ -30,7 +31,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="text" style="color:var(--muted);">No pending notices.</td></tr>
+      <tr><td colspan="7" class="text" style="color:var(--muted);">No pending notices.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -42,12 +43,13 @@
   <div class="table-wrap">
   <table>
     <thead>
-      <tr><th class="text">Employee</th><th class="text">Destination</th><th class="text">Dates</th><th class="text">Status</th><th class="text">Reviewed By</th><th class="text">Reviewed</th></tr>
+      <tr><th class="text">Employee</th><th class="text">Type</th><th class="text">Destination</th><th class="text">Dates</th><th class="text">Status</th><th class="text">Reviewed By</th><th class="text">Reviewed</th></tr>
     </thead>
     <tbody>
       {% for t in reviewed %}
       <tr>
         <td class="text">{{ t.emp_id }} &mdash; {{ t.full_name }}</td>
+        <td class="text">{{ t.notice_type }}</td>
         <td class="text">{{ t.destination }}</td>
         <td class="text">{{ t.start_date }} &ndash; {{ t.end_date }}</td>
         <td class="text">
@@ -57,7 +59,7 @@
         <td class="text">{{ t.reviewed_at }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="text" style="color:var(--muted);">None yet.</td></tr>
+      <tr><td colspan="7" class="text" style="color:var(--muted);">None yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

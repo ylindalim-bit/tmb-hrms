@@ -277,6 +277,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/bulk-set-medical-claim-limit",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/backup-database",   # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/backup-uploads",    # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/seed-attendance-daily",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -3636,6 +3637,56 @@ def hr_backup_uploads():
         mimetype="application/zip",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+@app.route("/hr/seed-attendance-daily", methods=["POST"])
+def hr_seed_attendance_daily():
+    """One-time helper: accepts a JSON payload of daily attendance rows for
+    one or more employees and writes them via the same path the Daily
+    Attendance page itself uses (upsert into attendance_daily, then
+    recompute attendance_monthly), so a real attendance sheet can be keyed
+    in directly without an HR session. Same RESTORE_TOKEN gate as the
+    other one-time routes; safe to re-run (upserts on emp_id/date).
+
+    Expected JSON body: {"EMP_ID": {"YYYY-MM-DD": {"day_type": "WORKED",
+    "time_in": "08:30", "time_out": "17:30", "meal": "Y",
+    "ot_hours_1_5": 0, "ot_hours_2_0": 0, "ot_hours_3_0": 0,
+    "ot_reason": null}, ...}, ...}
+    """
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    payload = json.loads(request.files["data"].read())
+    db = get_db()
+    known_emp_ids = {r["emp_id"] for r in db.execute("SELECT emp_id FROM employees").fetchall()}
+    months_touched = set()
+    written = 0
+    for emp_id, day_rows in payload.items():
+        if emp_id not in known_emp_ids:
+            return f"Refused: unknown emp_id {emp_id}", 400
+        for date_str, d in day_rows.items():
+            year, month, _day = (int(p) for p in date_str.split("-"))
+            db.execute(
+                """INSERT INTO attendance_daily (
+                       emp_id, date, day_type, time_in, time_out, meal_allowance_flag,
+                       ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, ot_reason
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(emp_id, date) DO UPDATE SET
+                     day_type=excluded.day_type, time_in=excluded.time_in, time_out=excluded.time_out,
+                     meal_allowance_flag=excluded.meal_allowance_flag,
+                     ot_hours_1_5=excluded.ot_hours_1_5, ot_hours_2_0=excluded.ot_hours_2_0,
+                     ot_hours_3_0=excluded.ot_hours_3_0, ot_reason=excluded.ot_reason""",
+                (emp_id, date_str, d.get("day_type", "WORKED"), d.get("time_in") or None,
+                 d.get("time_out") or None, d.get("meal", "N"),
+                 d.get("ot_hours_1_5", 0) or 0, d.get("ot_hours_2_0", 0) or 0,
+                 d.get("ot_hours_3_0", 0) or 0, d.get("ot_reason") or None),
+            )
+            written += 1
+            months_touched.add((emp_id, year, month))
+    for emp_id, year, month in months_touched:
+        _sync_daily_to_monthly(db, emp_id, year, month)
+    db.commit()
+    return f"OK - wrote {written} daily rows across {len(months_touched)} employee-month(s)", 200
 
 
 @app.route("/hr/bulk-set-medical-claim-limit", methods=["POST"])

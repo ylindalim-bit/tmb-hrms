@@ -35,7 +35,7 @@
     <tbody>
       {% for c in claims %}
       <tr>
-        <td class="text">{{ c.claim_date }}</td>
+        <td class="text">{{ c.claim_date }} ({{ c.claim_date|weekday }})</td>
         <td>{{ c.ot_hours_1_5 }}</td>
         <td>{{ c.ot_hours_2_0 }}</td>
         <td>{{ c.ot_hours_3_0 }}</td>

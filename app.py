@@ -194,6 +194,17 @@ else:
         f.write(app.secret_key)
 
 
+@app.template_filter("weekday")
+def weekday_filter(date_str):
+    """Renders an ISO date string's day of week (e.g. 'Sat') - used
+    wherever a bare date is shown so it's clear which day it falls on
+    without needing to check a calendar."""
+    try:
+        return datetime.date.fromisoformat(date_str).strftime("%a")
+    except (TypeError, ValueError):
+        return ""
+
+
 @app.context_processor
 def inject_pending_counts():
     # Available on every HR-side page via base.html's nav, so a pending Leave

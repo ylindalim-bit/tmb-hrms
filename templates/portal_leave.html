@@ -2,6 +2,14 @@
 {% block title %}Apply Leave - Staff Portal{% endblock %}
 {% block content %}
 <h1>Apply Leave</h1>
+<div class="card">
+  <h2 style="margin-top:0;">Balance ({{ cur_year }})</h2>
+  <div class="form-grid">
+    <div><label style="display:block; font-size:12px; color:var(--muted);">Annual Leave</label>{{ al_balance }} days</div>
+    <div><label style="display:block; font-size:12px; color:var(--muted);">Medical Leave</label>{{ mc_balance }} days</div>
+    <div><label style="display:block; font-size:12px; color:var(--muted);">Hospitalisation Leave</label>{{ hl_balance }} days</div>
+  </div>
+</div>
 {% if error %}
 <div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger);">{{ error }}</div>
 {% endif %}

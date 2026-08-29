@@ -243,12 +243,19 @@ def inject_pending_counts():
         pending_profile_update_count = db.execute(
             "SELECT COUNT(*) AS c FROM profile_update_log WHERE hr_viewed_at IS NULL"
         ).fetchone()["c"] if session.get("hr_role") != "approver" else 0
+        # can_approve_ot is a single company-wide approver (not a
+        # per-employee assignment), so this is the same total for both an
+        # approver and full HR admin - no scoping needed.
+        pending_ot_claim_count = db.execute(
+            "SELECT COUNT(*) AS c FROM ot_claims WHERE status='Pending'"
+        ).fetchone()["c"]
     except sqlite3.OperationalError:
         return {}
     return {"pending_leave_count": pending_leave_count, "pending_trip_count": pending_trip_count,
             "pending_medical_claim_count": pending_medical_claim_count,
             "pending_appraisal_count": pending_appraisal_count,
-            "pending_profile_update_count": pending_profile_update_count}
+            "pending_profile_update_count": pending_profile_update_count,
+            "pending_ot_claim_count": pending_ot_claim_count}
 
 
 def get_db():
@@ -295,23 +302,27 @@ HR_LOGIN_EXEMPT_PREFIXES = (
 # flags they have.
 APPROVER_ALWAYS_ALLOWED_PREFIXES = ("/hr/logout", "/hr/change-password")
 # Capability flag (session key) -> path prefixes it unlocks for a
-# role='approver' account. Mr Kee has both; Mr Yang has only appraisal.
+# role='approver' account. Mr Kee has both leave and appraisal; Mr Yang has
+# appraisal and (now) OT claims.
 APPROVER_CAPABILITY_PREFIXES = {
     # Business Trips reuses the same Leave Approver assignment - it's the
     # same "who's this person's supervisor" relationship, not a separate one.
     "can_approve_leave": ("/leave-requests", "/business-trips"),
     "can_approve_appraisal": ("/appraisals",),
+    "can_approve_ot": ("/ot-claims",),
 }
 
 
 def _approver_home():
     """Where to send a role='approver' account after login or when they hit
     a page outside their capabilities - whichever section their flags grant,
-    preferring Leave Requests if they have both."""
+    preferring Leave Requests if they have several."""
     if session.get("can_approve_leave") == "Y":
         return url_for("leave_requests_admin")
     if session.get("can_approve_appraisal") == "Y":
         return url_for("appraisal_team")
+    if session.get("can_approve_ot") == "Y":
+        return url_for("ot_claims_admin")
     return url_for("hr_change_password")
 
 
@@ -337,7 +348,8 @@ def inject_globals():
     return {"month_names": MONTH_NAMES, "cur_year": today.year, "cur_month": today.month,
             "hr_username": session.get("hr_username"), "hr_role": session.get("hr_role"),
             "can_approve_leave": session.get("can_approve_leave"),
-            "can_approve_appraisal": session.get("can_approve_appraisal")}
+            "can_approve_appraisal": session.get("can_approve_appraisal"),
+            "can_approve_ot": session.get("can_approve_ot")}
 
 
 def employed_this_month(db, year, month, select_cols="emp_id"):
@@ -431,6 +443,7 @@ def portal_login():
                     session["hr_role"] = hr_user["role"]
                     session["can_approve_leave"] = hr_user["can_approve_leave"]
                     session["can_approve_appraisal"] = hr_user["can_approve_appraisal"]
+                    session["can_approve_ot"] = hr_user["can_approve_ot"]
                     session["portal_self_login"] = True
             next_url = request.form.get("next") or url_for("portal_dashboard")
             return redirect(next_url)
@@ -535,6 +548,7 @@ def hr_login():
             session["hr_role"] = user["role"]
             session["can_approve_leave"] = user["can_approve_leave"]
             session["can_approve_appraisal"] = user["can_approve_appraisal"]
+            session["can_approve_ot"] = user["can_approve_ot"]
             next_url = request.form.get("next") or url_for("index")
             # Never redirect off-site or back into the login route itself.
             if not next_url.startswith("/") or next_url.startswith("/hr/login"):
@@ -621,7 +635,7 @@ TEXT_FIELDS = ["full_name", "ic_passport_no", "date_of_birth", "marital_status",
                "date_joined", "last_working_day", "probation_end_date",
                "passport_expiry", "work_permit_expiry", "termination_notice_period",
                "confirmation_date", "resignation_date", "appraisal_supervisor_username",
-               "leave_approver_username", "hr_username"]
+               "leave_approver_username", "hr_username", "ot_approval_required"]
 NUM_FIELDS = ["basic_salary", "working_days_week", "working_hours_day",
               "additional_epf_employee", "annual_leave_entitlement", "mc_entitlement",
               "hospitalisation_leave_entitlement", "medical_claim_limit"]
@@ -2396,6 +2410,12 @@ def portal_dashboard():
         """SELECT COUNT(*) AS n FROM business_trips WHERE emp_id=? AND status='Pending'""",
         (emp["emp_id"],),
     ).fetchone()["n"]
+    pending_own_ot = 0
+    if emp["ot_approval_required"] == "Y":
+        pending_own_ot = db.execute(
+            """SELECT COUNT(*) AS n FROM ot_claims WHERE emp_id=? AND status='Pending'""",
+            (emp["emp_id"],),
+        ).fetchone()["n"]
 
     # If this employee is also an HR/approver user (e.g. Mr Kee = K003 and
     # hr_users 'kee'), surface their own supervisor reminders here too, so
@@ -2403,7 +2423,7 @@ def portal_dashboard():
     supervisor = None
     if emp["hr_username"]:
         hr_user = db.execute(
-            "SELECT username, can_approve_leave, can_approve_appraisal FROM hr_users WHERE username=?",
+            "SELECT username, can_approve_leave, can_approve_appraisal, can_approve_ot FROM hr_users WHERE username=?",
             (emp["hr_username"],),
         ).fetchone()
         if hr_user:
@@ -2430,13 +2450,22 @@ def portal_dashboard():
                          AND NOT EXISTS (SELECT 1 FROM appraisals a WHERE a.emp_id = e.emp_id)""",
                     (hr_user["username"],),
                 ).fetchone()["c"]
-            if hr_user["can_approve_leave"] == "Y" or hr_user["can_approve_appraisal"] == "Y":
+            # can_approve_ot is a single company-wide approver (not a per-
+            # employee assignment like Leave Approver), so this counts every
+            # pending OT claim, not just this supervisor's own team.
+            team_pending_ot = 0
+            if hr_user["can_approve_ot"] == "Y":
+                team_pending_ot = db.execute(
+                    "SELECT COUNT(*) AS c FROM ot_claims WHERE status='Pending'"
+                ).fetchone()["c"]
+            if hr_user["can_approve_leave"] == "Y" or hr_user["can_approve_appraisal"] == "Y" or hr_user["can_approve_ot"] == "Y":
                 supervisor = {"pending_leave": team_pending_leave, "pending_trip": team_pending_trip,
-                              "pending_appraisal": team_pending_appraisal}
+                              "pending_appraisal": team_pending_appraisal, "pending_ot": team_pending_ot}
 
     return render_template(
         "portal_dashboard.html", emp=emp, latest_run=latest_run,
-        al_balance=al_balance, pending_leave=pending_leave, pending_trip=pending_trip, supervisor=supervisor,
+        al_balance=al_balance, pending_leave=pending_leave, pending_trip=pending_trip,
+        pending_own_ot=pending_own_ot, supervisor=supervisor,
     )
 
 
@@ -2772,6 +2801,38 @@ def portal_business_trip():
     ).fetchall()
     return render_template("portal_business_trip.html", emp=emp, trips=my_trips, error=error,
                             notice_types=BUSINESS_TRIP_TYPES)
+
+
+@app.route("/portal/ot-claim", methods=["GET", "POST"])
+@portal_login_required
+def portal_ot_claim():
+    db = get_db()
+    emp = current_portal_employee(db)
+    error = None
+    if request.method == "POST":
+        claim_date = request.form.get("claim_date", "")
+        ot_1_5 = request.form.get("ot_hours_1_5", type=float) or 0
+        ot_2_0 = request.form.get("ot_hours_2_0", type=float) or 0
+        ot_3_0 = request.form.get("ot_hours_3_0", type=float) or 0
+        reason = request.form.get("reason", "").strip() or None
+        if not claim_date:
+            error = "Date is required."
+        elif ot_1_5 <= 0 and ot_2_0 <= 0 and ot_3_0 <= 0:
+            error = "Enter at least one OT hours amount."
+        else:
+            db.execute(
+                """INSERT INTO ot_claims (emp_id, claim_date, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0,
+                       reason, status, submitted_by, submitted_at)
+                   VALUES (?,?,?,?,?,?,'Pending','Employee',?)""",
+                (emp["emp_id"], claim_date, ot_1_5, ot_2_0, ot_3_0, reason,
+                 datetime.datetime.now().isoformat(timespec="seconds")),
+            )
+            db.commit()
+            return redirect(url_for("portal_ot_claim"))
+    my_claims = db.execute(
+        "SELECT * FROM ot_claims WHERE emp_id=? ORDER BY submitted_at DESC", (emp["emp_id"],)
+    ).fetchall()
+    return render_template("portal_ot_claim.html", emp=emp, claims=my_claims, error=error)
 
 
 @app.route("/portal/photo")
@@ -3252,6 +3313,103 @@ def review_business_trip(trip_id):
     return redirect(url_for("business_trips_admin"))
 
 
+# ---------------- HR: OT Claims Admin ----------------
+# For employees.ot_approval_required='Y' (e.g. executives who normally
+# aren't OT-eligible but can claim OT with Director approval) - unlike
+# Leave Approver/Business Trips, this has a single company-wide approver
+# (Mr Yang Hui, hr_users.can_approve_ot='Y'), not a per-employee assignment.
+
+def _apply_ot_claim_to_attendance(db, emp_id, claim_date, ot_1_5, ot_2_0, ot_3_0):
+    """Adds an approved OT claim's hours into that date's attendance_daily
+    row (creating one as WORKED if it doesn't exist yet), then recomputes
+    that month's attendance_monthly aggregate - the same path Daily
+    Attendance itself feeds payroll through, so an approved claim counts
+    exactly like HR having typed those hours in directly."""
+    db.execute(
+        """INSERT INTO attendance_daily (emp_id, date, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0)
+           VALUES (?,?,?,?,?)
+           ON CONFLICT(emp_id, date) DO UPDATE SET
+             ot_hours_1_5 = COALESCE(ot_hours_1_5,0) + excluded.ot_hours_1_5,
+             ot_hours_2_0 = COALESCE(ot_hours_2_0,0) + excluded.ot_hours_2_0,
+             ot_hours_3_0 = COALESCE(ot_hours_3_0,0) + excluded.ot_hours_3_0""",
+        (emp_id, claim_date, ot_1_5, ot_2_0, ot_3_0),
+    )
+    year, month, _day = (int(p) for p in claim_date.split("-"))
+    _sync_daily_to_monthly(db, emp_id, year, month)
+
+
+@app.route("/ot-claims")
+def ot_claims_admin():
+    db = get_db()
+    pending = db.execute(
+        """SELECT oc.*, e.full_name FROM ot_claims oc
+           JOIN employees e ON e.emp_id = oc.emp_id
+           WHERE oc.status='Pending' ORDER BY oc.submitted_at"""
+    ).fetchall()
+    reviewed = db.execute(
+        """SELECT oc.*, e.full_name FROM ot_claims oc
+           JOIN employees e ON e.emp_id = oc.emp_id
+           WHERE oc.status!='Pending' ORDER BY oc.reviewed_at DESC LIMIT 50"""
+    ).fetchall()
+    flagged_employees = db.execute(
+        """SELECT emp_id, full_name FROM employees
+           WHERE ot_approval_required='Y' AND (status IS NULL OR status != 'Inactive')
+           ORDER BY full_name"""
+    ).fetchall()
+    return render_template("ot_claims_admin.html", pending=pending, reviewed=reviewed,
+                            flagged_employees=flagged_employees)
+
+
+@app.route("/ot-claims/new", methods=["POST"])
+def ot_claim_new():
+    """HR keying in an OT claim from a paper attendance sheet on an
+    employee's behalf - same Pending status and approval flow as one the
+    employee submits themselves via the Staff Portal."""
+    db = get_db()
+    emp_id = request.form.get("emp_id")
+    claim_date = request.form.get("claim_date", "")
+    if db.execute("SELECT 1 FROM employees WHERE emp_id=?", (emp_id,)).fetchone() is None or not claim_date:
+        return "Employee and claim date are required", 400
+    ot_1_5 = request.form.get("ot_hours_1_5", type=float) or 0
+    ot_2_0 = request.form.get("ot_hours_2_0", type=float) or 0
+    ot_3_0 = request.form.get("ot_hours_3_0", type=float) or 0
+    reason = request.form.get("reason", "").strip() or None
+    db.execute(
+        """INSERT INTO ot_claims (emp_id, claim_date, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0,
+               reason, status, submitted_by, submitted_at)
+           VALUES (?,?,?,?,?,?,'Pending',?,?)""",
+        (emp_id, claim_date, ot_1_5, ot_2_0, ot_3_0, reason,
+         session["hr_username"], datetime.datetime.now().isoformat(timespec="seconds")),
+    )
+    db.commit()
+    return redirect(url_for("ot_claims_admin"))
+
+
+@app.route("/ot-claims/<int:claim_id>/review", methods=["POST"])
+def review_ot_claim(claim_id):
+    db = get_db()
+    decision = request.form.get("decision")
+    if decision not in ("Approved", "Rejected"):
+        return "Invalid decision", 400
+    notes = request.form.get("review_notes") or None
+    claim = db.execute("SELECT * FROM ot_claims WHERE id=?", (claim_id,)).fetchone()
+    if claim is None:
+        return "OT claim not found", 404
+    hr_user = db.execute("SELECT full_name FROM hr_users WHERE username=?", (session["hr_username"],)).fetchone()
+    reviewer = hr_user["full_name"] if hr_user else session["hr_username"]
+    db.execute(
+        """UPDATE ot_claims SET status=?, reviewed_by=?, reviewed_at=?, review_notes=? WHERE id=?""",
+        (decision, reviewer, datetime.datetime.now().isoformat(timespec="seconds"), notes, claim_id),
+    )
+    if decision == "Approved":
+        _apply_ot_claim_to_attendance(
+            db, claim["emp_id"], claim["claim_date"],
+            claim["ot_hours_1_5"], claim["ot_hours_2_0"], claim["ot_hours_3_0"],
+        )
+    db.commit()
+    return redirect(url_for("ot_claims_admin"))
+
+
 # ---------------- HR: Medical Claims Admin ----------------
 
 @app.route("/medical-claims")
@@ -3543,7 +3701,8 @@ def hr_migrate_schema():
 
     hr_cols = [r[1] for r in db.execute("PRAGMA table_info(hr_users)").fetchall()]
     for col, decl in [("can_approve_leave", "TEXT NOT NULL DEFAULT 'N'"),
-                       ("can_approve_appraisal", "TEXT NOT NULL DEFAULT 'N'")]:
+                       ("can_approve_appraisal", "TEXT NOT NULL DEFAULT 'N'"),
+                       ("can_approve_ot", "TEXT NOT NULL DEFAULT 'N'")]:
         if col not in hr_cols:
             db.execute(f"ALTER TABLE hr_users ADD COLUMN {col} {decl}")
             applied.append(f"hr_users.{col}")
@@ -3555,6 +3714,9 @@ def hr_migrate_schema():
     if "medical_claim_limit" not in emp_cols:
         db.execute("ALTER TABLE employees ADD COLUMN medical_claim_limit REAL DEFAULT 0")
         applied.append("employees.medical_claim_limit")
+    if "ot_approval_required" not in emp_cols:
+        db.execute("ALTER TABLE employees ADD COLUMN ot_approval_required TEXT NOT NULL DEFAULT 'N'")
+        applied.append("employees.ot_approval_required")
     for col in ["emergency_contact_1_name", "emergency_contact_1_phone", "emergency_contact_1_relationship",
                 "emergency_contact_2_name", "emergency_contact_2_phone", "emergency_contact_2_relationship",
                 "hr_username"]:
@@ -3616,19 +3778,30 @@ def hr_migrate_schema():
             ot_hours_1_5 REAL DEFAULT 0, ot_hours_2_0 REAL DEFAULT 0, ot_hours_3_0 REAL DEFAULT 0,
             ot_reason TEXT, UNIQUE (emp_id, date))""")
         applied.append("table: attendance_daily")
+    if "ot_claims" not in existing_tables:
+        db.execute("""CREATE TABLE ot_claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),
+            claim_date TEXT NOT NULL, ot_hours_1_5 REAL NOT NULL DEFAULT 0,
+            ot_hours_2_0 REAL NOT NULL DEFAULT 0, ot_hours_3_0 REAL NOT NULL DEFAULT 0,
+            reason TEXT, status TEXT NOT NULL DEFAULT 'Pending', submitted_by TEXT NOT NULL,
+            submitted_at TEXT NOT NULL, reviewed_by TEXT, reviewed_at TEXT, review_notes TEXT)""")
+        applied.append("table: ot_claims")
 
     db.execute("UPDATE hr_users SET can_approve_leave='Y', can_approve_appraisal='Y' WHERE username='kee'")
     yang_password = request.form.get("yang_password", "")
     if not db.execute("SELECT 1 FROM hr_users WHERE username='yang'").fetchone():
         db.execute(
-            "INSERT INTO hr_users (username, password_hash, full_name, created_at, role, can_approve_leave, can_approve_appraisal) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO hr_users (username, password_hash, full_name, created_at, role, can_approve_leave, can_approve_appraisal, can_approve_ot) VALUES (?,?,?,?,?,?,?,?)",
             ("yang", generate_password_hash(yang_password), "Yang Hui",
-             datetime.datetime.now().isoformat(timespec="seconds"), "approver", "N", "Y"),
+             datetime.datetime.now().isoformat(timespec="seconds"), "approver", "N", "Y", "Y"),
         )
         applied.append("hr_users: yang (created)")
     elif yang_password and request.form.get("reset_yang_password") == "1":
         db.execute("UPDATE hr_users SET password_hash=? WHERE username='yang'", (generate_password_hash(yang_password),))
         applied.append("hr_users: yang (password reset)")
+    if db.execute("SELECT 1 FROM hr_users WHERE username='yang' AND can_approve_ot != 'Y'").fetchone():
+        db.execute("UPDATE hr_users SET can_approve_ot='Y' WHERE username='yang'")
+        applied.append("hr_users: yang (can_approve_ot)")
     db.commit()
     return "OK - applied: " + (", ".join(applied) if applied else "(nothing new, already up to date)"), 200
 

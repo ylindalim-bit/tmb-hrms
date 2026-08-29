@@ -14,6 +14,13 @@
   totals (Days Worked, AL/MC/HL/UL, PH, Meal Eligible Days, OT hours) automatically - the same figures
   the bulk Attendance page and payroll read.
 </p>
+{% if emp.ot_approval_required == "Y" %}
+<div class="card" style="background:#fef9c3; border-color:#eab308;">
+  This employee's OT needs approval before it counts in payroll, so the OT columns below are read-only.
+  Submit their hours via <a href="{{ url_for('ot_claims_admin') }}">OT Claims</a> instead - approved
+  claims show up here automatically.
+</div>
+{% endif %}
 
 <form method="post">
 <div class="card table-wrap">
@@ -41,9 +48,9 @@
   <td class="text"><input type="time" name="time_in__{{ d.day }}" value="{{ r.time_in if r else '' }}" style="width:110px;"></td>
   <td class="text"><input type="time" name="time_out__{{ d.day }}" value="{{ r.time_out if r else '' }}" style="width:110px;"></td>
   <td><input type="checkbox" name="meal__{{ d.day }}" {% if r and r.meal_allowance_flag == 'Y' %}checked{% endif %}></td>
-  <td><input type="number" step="0.5" name="ot_1_5__{{ d.day }}" value="{{ r.ot_hours_1_5 if r else 0 }}" style="width:64px;"></td>
-  <td><input type="number" step="0.5" name="ot_2_0__{{ d.day }}" value="{{ r.ot_hours_2_0 if r else 0 }}" style="width:64px;"></td>
-  <td><input type="number" step="0.5" name="ot_3_0__{{ d.day }}" value="{{ r.ot_hours_3_0 if r else 0 }}" style="width:64px;"></td>
+  <td><input type="number" step="0.5" name="ot_1_5__{{ d.day }}" value="{{ r.ot_hours_1_5 if r else 0 }}" style="width:64px;" {% if emp.ot_approval_required == "Y" %}readonly{% endif %}></td>
+  <td><input type="number" step="0.5" name="ot_2_0__{{ d.day }}" value="{{ r.ot_hours_2_0 if r else 0 }}" style="width:64px;" {% if emp.ot_approval_required == "Y" %}readonly{% endif %}></td>
+  <td><input type="number" step="0.5" name="ot_3_0__{{ d.day }}" value="{{ r.ot_hours_3_0 if r else 0 }}" style="width:64px;" {% if emp.ot_approval_required == "Y" %}readonly{% endif %}></td>
   <td class="text"><input type="text" name="ot_reason__{{ d.day }}" value="{{ r.ot_reason if r and r.ot_reason else '' }}" style="width:100%;"></td>
 </tr>
 {% endfor %}

@@ -28,6 +28,9 @@
     <a href="{{ url_for('portal_leave') }}">Apply Leave</a>
     <a href="{{ url_for('portal_medical_claim') }}">Medical Claim</a>
     <a href="{{ url_for('portal_business_trip') }}">Movement Notice</a>
+    {% if emp and emp.ot_approval_required == "Y" %}
+    <a href="{{ url_for('portal_ot_claim') }}">OT Claim</a>
+    {% endif %}
     <a href="{{ url_for('portal_profile') }}">My Profile</a>
     {% if session.get("portal_self_login") %}
     {% if hr_role == "admin" %}
@@ -44,6 +47,11 @@
     {% if can_approve_appraisal == "Y" %}
     <a href="{{ url_for('appraisal_team') }}" style="color:var(--accent);">Appraisals
       {% if pending_appraisal_count %}<span class="pill rejected" style="margin-left:3px;">{{ pending_appraisal_count }}</span>{% endif %}
+    </a>
+    {% endif %}
+    {% if can_approve_ot == "Y" %}
+    <a href="{{ url_for('ot_claims_admin') }}" style="color:var(--accent);">OT Claims
+      {% if pending_ot_claim_count %}<span class="pill rejected" style="margin-left:3px;">{{ pending_ot_claim_count }}</span>{% endif %}
     </a>
     {% endif %}
     {% endif %}

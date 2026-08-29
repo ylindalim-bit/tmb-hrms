@@ -144,6 +144,13 @@
         {% endfor %}
       </select>
     </div>
+    <div><label>OT Needs Approval</label>
+      <select name="ot_approval_required">
+        <option value="N" {% if not emp.ot_approval_required or emp.ot_approval_required=="N" %}selected{% endif %}>No</option>
+        <option value="Y" {% if emp.ot_approval_required=="Y" %}selected{% endif %}>Yes</option>
+      </select>
+      <p style="color:var(--muted); font-size:12px; margin-top:4px;">If Yes, this employee's OT hours must be submitted as an OT Claim and approved online before counting in payroll, instead of being entered directly on Daily Attendance.</p>
+    </div>
     <div><label>Linked HR/Approver Account</label>
       <select name="hr_username">
         <option value="">-- None --</option>

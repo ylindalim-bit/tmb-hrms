@@ -44,6 +44,14 @@
     <a class="btn secondary" href="{{ url_for('portal_business_trip') }}">Apply / View</a>
   </div>
 
+  {% if emp.ot_approval_required == "Y" %}
+  <div class="card">
+    <h2 style="margin-top:0;">OT Claims</h2>
+    <p>{{ pending_own_ot }} pending</p>
+    <a class="btn secondary" href="{{ url_for('portal_ot_claim') }}">Apply / View</a>
+  </div>
+  {% endif %}
+
   <div class="card">
     <h2 style="margin-top:0;">My Profile</h2>
     <p style="color:var(--muted);">Contact details, bank &amp; emergency contacts</p>
@@ -53,7 +61,7 @@
   {% if supervisor %}
   <div class="card">
     <h2 style="margin-top:0;">Team Reminders</h2>
-    {% if not supervisor.pending_leave and not supervisor.pending_trip and not supervisor.pending_appraisal %}
+    {% if not supervisor.pending_leave and not supervisor.pending_trip and not supervisor.pending_appraisal and not supervisor.pending_ot %}
     <p style="color:var(--muted);">Nothing pending for your team right now.</p>
     {% endif %}
     {% if supervisor.pending_leave %}
@@ -67,6 +75,10 @@
     {% if supervisor.pending_appraisal %}
     <p style="color:var(--danger); font-weight:600;">{{ supervisor.pending_appraisal }} team member{{ "s" if supervisor.pending_appraisal != 1 }} still need{{ "s" if supervisor.pending_appraisal == 1 }} an appraisal</p>
     <p><a class="btn secondary" href="{{ url_for('appraisal_team') }}">Review Appraisals</a></p>
+    {% endif %}
+    {% if supervisor.pending_ot %}
+    <p style="color:var(--danger); font-weight:600;">{{ supervisor.pending_ot }} OT claim{{ "s" if supervisor.pending_ot != 1 }} awaiting your approval</p>
+    <p><a class="btn secondary" href="{{ url_for('ot_claims_admin') }}">Review OT Claims</a></p>
     {% endif %}
   </div>
   {% endif %}

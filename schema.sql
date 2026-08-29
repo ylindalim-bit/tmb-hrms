@@ -111,7 +111,13 @@ CREATE TABLE employees (
     -- Staff Portal show them their own supervisor reminders (pending leave
     -- approvals / appraisals due) without a second login. NULL = no HR
     -- account, or not linked.
-    hr_username TEXT
+    hr_username TEXT,
+    -- 'Y' means this employee's OT hours must go through the ot_claims
+    -- submit-and-approve flow (see below) instead of being entered
+    -- directly on Daily Attendance - for staff who aren't normally
+    -- OT-eligible (e.g. executives) but can claim OT with Director
+    -- approval. NULL/'N' = OT entered directly as today.
+    ot_approval_required TEXT NOT NULL DEFAULT 'N'
 );
 
 CREATE TABLE public_holidays (
@@ -444,7 +450,32 @@ CREATE TABLE hr_users (
     created_at            TEXT NOT NULL,
     role                  TEXT NOT NULL DEFAULT 'admin',
     can_approve_leave     TEXT NOT NULL DEFAULT 'N',
-    can_approve_appraisal TEXT NOT NULL DEFAULT 'N'
+    can_approve_appraisal TEXT NOT NULL DEFAULT 'N',
+    can_approve_ot        TEXT NOT NULL DEFAULT 'N'
+);
+
+-- OT claims for employees flagged employees.ot_approval_required='Y' -
+-- submitted either by the employee (Staff Portal) or by HR on their
+-- behalf, then must be approved online (today, by Mr Yang Hui - a single
+-- company-wide OT approver, not a per-employee assignment like Leave
+-- Approver) before the hours count in payroll. On approval, the claimed
+-- hours are added into that date's attendance_daily row (creating one if
+-- needed) and attendance_monthly is recomputed from it, the same way
+-- Daily Attendance itself feeds payroll.
+CREATE TABLE ot_claims (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    emp_id         TEXT NOT NULL REFERENCES employees(emp_id),
+    claim_date     TEXT NOT NULL,   -- YYYY-MM-DD, the date OT was worked
+    ot_hours_1_5   REAL NOT NULL DEFAULT 0,
+    ot_hours_2_0   REAL NOT NULL DEFAULT 0,
+    ot_hours_3_0   REAL NOT NULL DEFAULT 0,
+    reason         TEXT,
+    status         TEXT NOT NULL DEFAULT 'Pending',  -- Pending / Approved / Rejected
+    submitted_by   TEXT NOT NULL,   -- 'Employee' or the hr_username who keyed it in
+    submitted_at   TEXT NOT NULL,
+    reviewed_by    TEXT,
+    reviewed_at    TEXT,
+    review_notes   TEXT
 );
 
 -- Employee performance appraisals - digitized version of the paper

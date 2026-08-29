@@ -70,6 +70,13 @@
         {% endfor %}
       </select>
     </div>
+    <div><label>Religion</label>
+      <select name="religion">
+        {% for r in religion_options %}
+        <option value="{{ r }}" {% if emp.religion == r %}selected{% endif %}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </div>
   </div>
 
   <h2>Emergency Contacts</h2>

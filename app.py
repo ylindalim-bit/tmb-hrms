@@ -2878,6 +2878,7 @@ def portal_profile():
             "email": request.form.get("email") or None,
             "address": request.form.get("address") or None,
             "marital_status": request.form.get("marital_status") or None,
+            "religion": request.form.get("religion") or None,
             "emergency_contact_1_name": request.form.get("emergency_contact_1_name") or None,
             "emergency_contact_1_phone": request.form.get("emergency_contact_1_phone") or None,
             "emergency_contact_1_relationship": request.form.get("emergency_contact_1_relationship") or None,
@@ -2905,7 +2906,8 @@ def portal_profile():
            ORDER BY uploaded_at DESC""",
         (emp["emp_id"],),
     ).fetchall()
-    return render_template("portal_profile.html", emp=emp, saved=saved, ic_documents=ic_documents)
+    return render_template("portal_profile.html", emp=emp, saved=saved, ic_documents=ic_documents,
+                            religion_options=RELIGION_OPTIONS)
 
 
 # ---------------- HR: Leave Taken Report ----------------

@@ -46,7 +46,7 @@
       {% if pending_leave_count %}<span class="pill draft" style="margin-left:3px;">{{ pending_leave_count }}</span>{% endif %}
     </a>
     <a href="{{ url_for('leave_report') }}">Leave Report</a>
-    <a href="{{ url_for('ot_report') }}">OT Report</a>
+    <a href="{{ url_for('ot_report', year=cur_year, month=cur_month) }}">OT Report</a>
     <a href="{{ url_for('business_trips_admin') }}">Business Trips
       {% if pending_trip_count %}<span class="pill draft" style="margin-left:3px;">{{ pending_trip_count }}</span>{% endif %}
     </a>

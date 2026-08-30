@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}OT Report {{ year }} - TMB Payroll{% endblock %}
+{% block title %}OT Report {{ month_names[month] }} {{ year }} - TMB Payroll{% endblock %}
 {% block extra_style %}
 <style>
   .print-only { display: none; }
@@ -14,24 +14,23 @@
 {% endblock %}
 {% block content %}
 <div class="no-print" style="display:flex; justify-content:space-between; align-items:center;">
-  <h1 style="margin-bottom:0;">OT Report &mdash; {{ year }}</h1>
+  <h1 style="margin-bottom:0;">OT Report &mdash; {{ month_names[month] }} {{ year }}</h1>
   <button class="btn" type="button" onclick="window.print()">Print / Save as PDF</button>
 </div>
 <div class="print-only" style="margin-bottom:12px;">
   <strong>TIANMA PRECISION SDN BHD</strong><br>
-  OT Report &mdash; {{ year }}
+  OT Report &mdash; {{ month_names[month] }} {{ year }}
 </div>
 
 <div class="month-nav no-print">
-  <span>Year:</span>
-  {% for y in years %}
-  <a href="{{ url_for('ot_report', year=y.year) }}" style="{% if y.year == year %}font-weight:700;{% endif %}">{{ y.year }}</a>
-  {% endfor %}
+  <a href="{{ url_for('ot_report', year=year if month>1 else year-1, month=month-1 if month>1 else 12) }}">&laquo; Prev</a>
+  <strong>{{ month_names[month] }} {{ year }}</strong>
+  <a href="{{ url_for('ot_report', year=year if month<12 else year+1, month=month+1 if month<12 else 1) }}">Next &raquo;</a>
 </div>
 
 <p class="no-print" style="color:var(--muted); font-size:13px;">
-  Shows OT hours already counted in payroll (direct Daily Attendance entry, or an approved OT Claim) - a
-  still-Pending claim isn't included until it's approved. Employees with no OT this year aren't listed.
+  Shows OT hours already counted in payroll for this month (direct Daily Attendance entry, or an approved
+  OT Claim) - a still-Pending claim isn't included until it's approved. Employees with no OT this month aren't listed.
 </p>
 
 <div class="card table-wrap">
@@ -61,7 +60,7 @@
 </tr>
 {% endfor %}
 {% if not rows %}
-<tr><td class="text" colspan="10">No OT recorded for {{ year }}.</td></tr>
+<tr><td class="text" colspan="10">No OT recorded for {{ month_names[month] }} {{ year }}.</td></tr>
 {% endif %}
 </tbody>
 </table>

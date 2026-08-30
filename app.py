@@ -2867,22 +2867,25 @@ def portal_ot_claim():
         claim_date = request.form.get("claim_date", "")
         time_in = request.form.get("time_in") or None
         time_out = request.form.get("time_out") or None
+        ot_before_start = request.form.get("ot_before_start") or None
+        ot_before_end = request.form.get("ot_before_end") or None
         ot_start = request.form.get("ot_start") or None
         ot_end = request.form.get("ot_end") or None
-        ot_1_5, ot_2_0, ot_3_0 = _ot_claim_hours_from_form(request.form, claim_date)
+        ot_1_5, ot_2_0, ot_3_0 = _ot_claim_hours_from_form(db, request.form, claim_date)
         reason = request.form.get("reason", "").strip() or None
         if not claim_date:
             error = "Date is required."
         elif ot_1_5 <= 0 and ot_2_0 <= 0 and ot_3_0 <= 0:
-            error = "Enter at least one OT hours amount (or, for a Sunday, fill in OT Start/End)."
+            error = "Enter at least one OT hours amount (or fill in an OT time window)."
         elif not reason:
             error = "Reason is required."
         else:
             db.execute(
-                """INSERT INTO ot_claims (emp_id, claim_date, time_in, time_out, ot_start, ot_end,
+                """INSERT INTO ot_claims (emp_id, claim_date, time_in, time_out,
+                       ot_before_start, ot_before_end, ot_start, ot_end,
                        ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, reason, status, submitted_by, submitted_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,'Pending','Employee',?)""",
-                (emp["emp_id"], claim_date, time_in, time_out, ot_start, ot_end,
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'Pending','Employee',?)""",
+                (emp["emp_id"], claim_date, time_in, time_out, ot_before_start, ot_before_end, ot_start, ot_end,
                  ot_1_5, ot_2_0, ot_3_0, reason,
                  datetime.datetime.now().isoformat(timespec="seconds")),
             )
@@ -2891,7 +2894,9 @@ def portal_ot_claim():
     my_claims = db.execute(
         "SELECT * FROM ot_claims WHERE emp_id=? ORDER BY submitted_at DESC", (emp["emp_id"],)
     ).fetchall()
-    return render_template("portal_ot_claim.html", emp=emp, claims=my_claims, error=error)
+    holiday_dates = [r["date"] for r in db.execute("SELECT date FROM public_holidays").fetchall()]
+    return render_template("portal_ot_claim.html", emp=emp, claims=my_claims, error=error,
+                            holiday_dates=holiday_dates)
 
 
 @app.route("/portal/ot-claim/<int:claim_id>/delete", methods=["POST"])
@@ -3387,50 +3392,57 @@ def review_business_trip(trip_id):
 # Leave Approver/Business Trips, this has a single company-wide approver
 # (Mr Yang Hui, hr_users.can_approve_ot='Y'), not a per-employee assignment.
 
-def _sunday_ot_split(ot_start, ot_end):
-    """Rest-day OT convention: the first 8 net hours (after rest-break
-    deductions) are paid at 2.0x, anything beyond that at 3.0x. Rest
-    breaks are 0.5 hour for every 5 hours worked or part thereof - e.g. a
-    9-hour span needs two half-hour breaks (one per started 5-hour
-    block), leaving 8 net hours, which is exactly a full day at 2.0x with
-    nothing left over for 3.0x. Returns (ot_hours_2_0, ot_hours_3_0), or
-    (0, 0) if the times don't parse or the span isn't positive."""
+def _time_range_hours(start_str, end_str):
+    """Elapsed hours between two HH:MM strings, or 0 if either is
+    missing, unparseable, or the span isn't positive."""
     try:
-        t1 = datetime.datetime.strptime(ot_start, "%H:%M")
-        t2 = datetime.datetime.strptime(ot_end, "%H:%M")
+        t1 = datetime.datetime.strptime(start_str, "%H:%M")
+        t2 = datetime.datetime.strptime(end_str, "%H:%M")
     except (TypeError, ValueError):
-        return 0, 0
+        return 0
     span_hours = (t2 - t1).total_seconds() / 3600
-    if span_hours <= 0:
-        return 0, 0
-    rest_hours = math.ceil(span_hours / 5) * 0.5
-    net_hours = max(span_hours - rest_hours, 0)
-    ot_2_0 = round(min(net_hours, 8), 2)
-    ot_3_0 = round(max(net_hours - 8, 0), 2)
-    return ot_2_0, ot_3_0
+    return span_hours if span_hours > 0 else 0
 
 
-def _ot_claim_hours_from_form(f, claim_date):
-    """Builds (ot_hours_1_5, ot_hours_2_0, ot_hours_3_0) from a claim
-    submission form. If the claimed date is a Sunday and both OT Start
-    and OT End are given, the 2.0x/3.0x split is computed automatically
-    via _sunday_ot_split (ignoring whatever was typed into those boxes)
-    rather than trusting manual entry, since a rest day follows a fixed
-    formula and doesn't have a 1.5x tier at all. Otherwise (a normal
-    working day), all three tiers are taken exactly as typed, same as
-    before this Sunday auto-calc existed."""
-    ot_start = f.get("ot_start") or None
-    ot_end = f.get("ot_end") or None
+def _is_rest_day(db, claim_date):
+    """Sunday or a public holiday - the two day types that pay OT at
+    2.0x/3.0x instead of the normal working day's 1.5x."""
     try:
-        is_sunday = datetime.date.fromisoformat(claim_date).weekday() == 6
-    except ValueError:
-        is_sunday = False
-    if is_sunday and ot_start and ot_end:
-        ot_2_0, ot_3_0 = _sunday_ot_split(ot_start, ot_end)
+        d = datetime.date.fromisoformat(claim_date)
+    except (TypeError, ValueError):
+        return False
+    if d.weekday() == 6:
+        return True
+    return db.execute("SELECT 1 FROM public_holidays WHERE date=?", (claim_date,)).fetchone() is not None
+
+
+def _ot_claim_hours_from_form(db, f, claim_date):
+    """Builds (ot_hours_1_5, ot_hours_2_0, ot_hours_3_0) from a claim
+    submission form. If either OT window (OT Before Start/End, for OT
+    worked before the normal shift starts, e.g. 6:00am-8:30am; and/or OT
+    Start/End, for OT after the normal shift or the whole span on a rest
+    day) is filled in, the two windows' hours are added together, a rest
+    break of 0.5 hour is deducted for every 5 hours worked or part
+    thereof, and the result is auto-assigned to a rate tier by day type -
+    all 1.5x on a normal working day (Mon-Sat), or split across 2.0x
+    (first 8 net hours) then 3.0x (the rest) on a Sunday or public
+    holiday - ignoring whatever was typed into the OT Hours boxes.
+    Otherwise (no time windows given at all), all three tiers are taken
+    exactly as typed, same as manual entry always worked."""
+    before_hours = _time_range_hours(f.get("ot_before_start"), f.get("ot_before_end"))
+    after_hours = _time_range_hours(f.get("ot_start"), f.get("ot_end"))
+    gross_hours = before_hours + after_hours
+    if gross_hours <= 0:
+        return (f.get("ot_hours_1_5", type=float) or 0,
+                f.get("ot_hours_2_0", type=float) or 0,
+                f.get("ot_hours_3_0", type=float) or 0)
+    rest_hours = math.ceil(gross_hours / 5) * 0.5
+    net_hours = max(gross_hours - rest_hours, 0)
+    if _is_rest_day(db, claim_date):
+        ot_2_0 = round(min(net_hours, 8), 2)
+        ot_3_0 = round(max(net_hours - 8, 0), 2)
         return 0, ot_2_0, ot_3_0
-    return (f.get("ot_hours_1_5", type=float) or 0,
-            f.get("ot_hours_2_0", type=float) or 0,
-            f.get("ot_hours_3_0", type=float) or 0)
+    return round(net_hours, 2), 0, 0
 
 
 def _apply_ot_claim_to_attendance(db, emp_id, claim_date, time_in, time_out, ot_1_5, ot_2_0, ot_3_0):
@@ -3477,8 +3489,10 @@ def ot_claims_admin():
         "SELECT full_name FROM hr_users WHERE can_approve_ot='Y' ORDER BY full_name"
     ).fetchall()
     approver_names = ", ".join(r["full_name"] for r in approvers) or "no one yet - see Settings"
+    holiday_dates = [r["date"] for r in db.execute("SELECT date FROM public_holidays").fetchall()]
     return render_template("ot_claims_admin.html", pending=pending, reviewed=reviewed,
-                            flagged_employees=flagged_employees, approver_names=approver_names)
+                            flagged_employees=flagged_employees, approver_names=approver_names,
+                            holiday_dates=holiday_dates)
 
 
 @app.route("/ot-claims/new", methods=["POST"])
@@ -3496,14 +3510,17 @@ def ot_claim_new():
         return "Reason is required", 400
     time_in = request.form.get("time_in") or None
     time_out = request.form.get("time_out") or None
+    ot_before_start = request.form.get("ot_before_start") or None
+    ot_before_end = request.form.get("ot_before_end") or None
     ot_start = request.form.get("ot_start") or None
     ot_end = request.form.get("ot_end") or None
-    ot_1_5, ot_2_0, ot_3_0 = _ot_claim_hours_from_form(request.form, claim_date)
+    ot_1_5, ot_2_0, ot_3_0 = _ot_claim_hours_from_form(db, request.form, claim_date)
     db.execute(
-        """INSERT INTO ot_claims (emp_id, claim_date, time_in, time_out, ot_start, ot_end,
+        """INSERT INTO ot_claims (emp_id, claim_date, time_in, time_out,
+               ot_before_start, ot_before_end, ot_start, ot_end,
                ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, reason, status, submitted_by, submitted_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,'Pending',?,?)""",
-        (emp_id, claim_date, time_in, time_out, ot_start, ot_end,
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'Pending',?,?)""",
+        (emp_id, claim_date, time_in, time_out, ot_before_start, ot_before_end, ot_start, ot_end,
          ot_1_5, ot_2_0, ot_3_0, reason,
          session["hr_username"], datetime.datetime.now().isoformat(timespec="seconds")),
     )
@@ -3923,7 +3940,8 @@ def hr_migrate_schema():
     if "ot_claims" not in existing_tables:
         db.execute("""CREATE TABLE ot_claims (
             id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),
-            claim_date TEXT NOT NULL, time_in TEXT, time_out TEXT, ot_start TEXT, ot_end TEXT,
+            claim_date TEXT NOT NULL, time_in TEXT, time_out TEXT,
+            ot_before_start TEXT, ot_before_end TEXT, ot_start TEXT, ot_end TEXT,
             ot_hours_1_5 REAL NOT NULL DEFAULT 0,
             ot_hours_2_0 REAL NOT NULL DEFAULT 0, ot_hours_3_0 REAL NOT NULL DEFAULT 0,
             reason TEXT, status TEXT NOT NULL DEFAULT 'Pending', submitted_by TEXT NOT NULL,
@@ -3931,7 +3949,7 @@ def hr_migrate_schema():
         applied.append("table: ot_claims")
     if "ot_claims" in existing_tables:
         ot_claim_cols = [r[1] for r in db.execute("PRAGMA table_info(ot_claims)").fetchall()]
-        for col in ("time_in", "time_out", "ot_start", "ot_end"):
+        for col in ("time_in", "time_out", "ot_before_start", "ot_before_end", "ot_start", "ot_end"):
             if col not in ot_claim_cols:
                 db.execute(f"ALTER TABLE ot_claims ADD COLUMN {col} TEXT")
                 applied.append(f"ot_claims.{col}")

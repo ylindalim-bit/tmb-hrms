@@ -468,8 +468,15 @@ CREATE TABLE ot_claims (
     claim_date     TEXT NOT NULL,   -- YYYY-MM-DD, the date OT was worked
     time_in        TEXT,   -- HH:MM, that day's normal clock in/out - carried
     time_out       TEXT,   -- into attendance_daily on approval, same as Daily Attendance
-    ot_start       TEXT,   -- HH:MM, start of the OT period itself - this (not
-    ot_end         TEXT,   -- Time In/Out) is what the hour-tier split is computed from
+    -- Two separate OT windows on the same day, e.g. an early start before
+    -- the normal shift (ot_before) and/or staying late after it (ot_start/
+    -- ot_end) - both HH:MM. Neither is Time In/Out above; together these
+    -- are what the hour-tier auto-split (1.5x on a normal working day,
+    -- 2.0x/3.0x on a Sunday or public holiday) is computed from.
+    ot_before_start TEXT,
+    ot_before_end   TEXT,
+    ot_start       TEXT,
+    ot_end         TEXT,
     ot_hours_1_5   REAL NOT NULL DEFAULT 0,
     ot_hours_2_0   REAL NOT NULL DEFAULT 0,
     ot_hours_3_0   REAL NOT NULL DEFAULT 0,

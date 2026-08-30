@@ -19,10 +19,16 @@
     <div><label>Time Out</label><input type="time" name="time_out"></div>
   </div>
   <div class="form-grid" style="margin-top:10px;">
+    <div><label>OT Before Start Time</label><input type="time" id="ot_before_start" name="ot_before_start" onchange="updateOtAutoCalc()"></div>
+    <div><label>OT Before End Time</label><input type="time" id="ot_before_end" name="ot_before_end" onchange="updateOtAutoCalc()"></div>
+  </div>
+  <p style="color:var(--muted); font-size:12px; margin:4px 0 0;">OT worked before your normal shift starts, e.g. 6:00am&ndash;8:30am if your shift is 8:30am&ndash;5:30pm.</p>
+  <div class="form-grid" style="margin-top:10px;">
     <div><label>OT Start Time</label><input type="time" id="ot_start" name="ot_start" onchange="updateOtAutoCalc()"></div>
     <div><label>OT End Time</label><input type="time" id="ot_end" name="ot_end" onchange="updateOtAutoCalc()"></div>
   </div>
-  <p id="sunday_calc_note" style="display:none; font-size:12px; color:var(--muted); margin-top:8px; padding:8px; background:var(--card); border:1px solid var(--border); border-radius:6px;"></p>
+  <p style="color:var(--muted); font-size:12px; margin:4px 0 0;">OT worked after your normal shift ends (or the whole span, for a Sunday/public holiday shift).</p>
+  <p id="ot_calc_note" style="display:none; font-size:12px; color:var(--muted); margin-top:8px; padding:8px; background:var(--card); border:1px solid var(--border); border-radius:6px;"></p>
   <div class="form-grid" style="margin-top:10px;">
     <div><label>OT Hours &mdash; 1.5x</label><input type="number" step="0.5" min="0" id="ot_hours_1_5" name="ot_hours_1_5" value="0"></div>
     <div><label>OT Hours &mdash; 2.0x</label><input type="number" step="0.5" min="0" id="ot_hours_2_0" name="ot_hours_2_0" value="0"></div>
@@ -80,52 +86,62 @@ function updateClaimDateDay() {
   out.textContent = d.toLocaleDateString('en-GB', { weekday: 'short' });
 }
 
-// Rest-day OT convention: first 8 net hours (after rest-break
-// deductions) are 2.0x, anything beyond that is 3.0x. Rest breaks are
-// 0.5 hour for every 5 hours worked or part thereof - matches the
-// server-side _sunday_ot_split in app.py exactly, so what's previewed
-// here is what actually gets saved.
-function isSunday(dateStr) {
+// OT rate depends on day type: Mon-Sat (normal working day) = 1.5x on
+// all net hours. Sun or a public holiday (a rest day) = first 8 net
+// hours at 2.0x, the rest at 3.0x. Either way, hours from the OT Before
+// window and the OT (after) window are added together first, then a
+// rest break of 0.5 hour is deducted for every 5 hours worked or part
+// thereof - matches the server-side _ot_claim_hours_from_form in
+// app.py exactly, so what's previewed here is what actually gets saved.
+var HOLIDAY_DATES = {{ holiday_dates | tojson }};
+
+function isRestDay(dateStr) {
   if (!dateStr) return false;
   var parts = dateStr.split('-').map(Number);
-  return new Date(parts[0], parts[1] - 1, parts[2]).getDay() === 0;
+  if (new Date(parts[0], parts[1] - 1, parts[2]).getDay() === 0) return true;
+  return HOLIDAY_DATES.indexOf(dateStr) !== -1;
 }
 
-function computeSundaySplit(startStr, endStr) {
-  if (!startStr || !endStr) return null;
+function rangeHours(startStr, endStr) {
+  if (!startStr || !endStr) return 0;
   var s = startStr.split(':').map(Number);
   var e = endStr.split(':').map(Number);
-  var spanHours = ((e[0] * 60 + e[1]) - (s[0] * 60 + s[1])) / 60;
-  if (spanHours <= 0) return null;
-  var restHours = Math.ceil(spanHours / 5) * 0.5;
-  var netHours = Math.max(spanHours - restHours, 0);
-  var ot2_0 = Math.round(Math.min(netHours, 8) * 100) / 100;
-  var ot3_0 = Math.round(Math.max(netHours - 8, 0) * 100) / 100;
-  return { ot2_0: ot2_0, ot3_0: ot3_0, rest: restHours, span: spanHours, net: netHours };
+  var hours = ((e[0] * 60 + e[1]) - (s[0] * 60 + s[1])) / 60;
+  return hours > 0 ? hours : 0;
 }
 
 function updateOtAutoCalc() {
-  var sunday = isSunday(document.getElementById('claim_date').value);
+  var dateStr = document.getElementById('claim_date').value;
+  var beforeHours = rangeHours(document.getElementById('ot_before_start').value, document.getElementById('ot_before_end').value);
+  var afterHours = rangeHours(document.getElementById('ot_start').value, document.getElementById('ot_end').value);
+  var grossHours = beforeHours + afterHours;
   var ot1_5 = document.getElementById('ot_hours_1_5');
   var ot2_0 = document.getElementById('ot_hours_2_0');
   var ot3_0 = document.getElementById('ot_hours_3_0');
-  var note = document.getElementById('sunday_calc_note');
-  if (!sunday) {
+  var note = document.getElementById('ot_calc_note');
+
+  if (grossHours <= 0) {
     note.style.display = 'none';
     [ot1_5, ot2_0, ot3_0].forEach(function (el) { el.readOnly = false; el.style.background = ''; });
     return;
   }
-  var result = computeSundaySplit(document.getElementById('ot_start').value, document.getElementById('ot_end').value);
+
+  var restHours = Math.ceil(grossHours / 5) * 0.5;
+  var netHours = Math.max(grossHours - restHours, 0);
   [ot1_5, ot2_0, ot3_0].forEach(function (el) { el.readOnly = true; el.style.background = '#f3f4f6'; });
   note.style.display = 'block';
-  if (result) {
-    ot1_5.value = 0;
-    ot2_0.value = result.ot2_0;
-    ot3_0.value = result.ot3_0;
-    note.textContent = 'Sunday auto-calc: ' + result.span.toFixed(2) + ' hrs worked − ' + result.rest.toFixed(2) +
-      ' hr rest = ' + result.net.toFixed(2) + ' net hrs → 2.0x: ' + result.ot2_0 + ', 3.0x: ' + result.ot3_0;
+
+  if (isRestDay(dateStr)) {
+    var ot2 = Math.round(Math.min(netHours, 8) * 100) / 100;
+    var ot3 = Math.round(Math.max(netHours - 8, 0) * 100) / 100;
+    ot1_5.value = 0; ot2_0.value = ot2; ot3_0.value = ot3;
+    note.textContent = 'Sunday/public holiday auto-calc: ' + grossHours.toFixed(2) + ' hrs worked − ' + restHours.toFixed(2) +
+      ' hr rest = ' + netHours.toFixed(2) + ' net hrs → 2.0x: ' + ot2 + ', 3.0x: ' + ot3;
   } else {
-    note.textContent = 'Sunday OT: fill in OT Start Time and OT End Time to auto-calculate the 2.0x/3.0x split.';
+    var ot1 = Math.round(netHours * 100) / 100;
+    ot1_5.value = ot1; ot2_0.value = 0; ot3_0.value = 0;
+    note.textContent = 'Normal working day auto-calc: ' + grossHours.toFixed(2) + ' hrs worked − ' + restHours.toFixed(2) +
+      ' hr rest = ' + netHours.toFixed(2) + ' net hrs → 1.5x: ' + ot1;
   }
 }
 </script>

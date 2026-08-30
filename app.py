@@ -660,7 +660,8 @@ TEXT_FIELDS = ["full_name", "ic_passport_no", "date_of_birth", "marital_status",
                "date_joined", "last_working_day", "probation_end_date",
                "passport_expiry", "work_permit_expiry", "termination_notice_period",
                "confirmation_date", "resignation_date", "appraisal_supervisor_username",
-               "leave_approver_username", "hr_username", "ot_approval_required"]
+               "leave_approver_username", "hr_username", "ot_approval_required",
+               "standard_start", "standard_end"]
 NUM_FIELDS = ["basic_salary", "working_days_week", "working_hours_day",
               "additional_epf_employee", "annual_leave_entitlement", "mc_entitlement",
               "hospitalisation_leave_entitlement", "medical_claim_limit"]
@@ -3481,7 +3482,7 @@ def ot_claims_admin():
            WHERE oc.status!='Pending' ORDER BY oc.reviewed_at DESC LIMIT 50"""
     ).fetchall()
     flagged_employees = db.execute(
-        """SELECT emp_id, full_name FROM employees
+        """SELECT emp_id, full_name, standard_start, standard_end FROM employees
            WHERE ot_approval_required='Y' AND (status IS NULL OR status != 'Inactive')
            ORDER BY full_name"""
     ).fetchall()
@@ -3490,9 +3491,13 @@ def ot_claims_admin():
     ).fetchall()
     approver_names = ", ".join(r["full_name"] for r in approvers) or "no one yet - see Settings"
     holiday_dates = [r["date"] for r in db.execute("SELECT date FROM public_holidays").fetchall()]
+    standard_hours_by_emp = {
+        e["emp_id"]: {"standard_start": e["standard_start"], "standard_end": e["standard_end"]}
+        for e in flagged_employees
+    }
     return render_template("ot_claims_admin.html", pending=pending, reviewed=reviewed,
                             flagged_employees=flagged_employees, approver_names=approver_names,
-                            holiday_dates=holiday_dates)
+                            holiday_dates=holiday_dates, standard_hours_by_emp=standard_hours_by_emp)
 
 
 @app.route("/ot-claims/new", methods=["POST"])
@@ -3985,8 +3990,15 @@ def hr_seed_ot_claims():
     safe to re-run (each call just inserts more Pending claims).
 
     Expected JSON body: {"emp_id": "I001", "claims": [
-        {"claim_date": "2026-08-17", "ot_hours_1_5": 1.5, "ot_hours_2_0": 0,
-         "ot_hours_3_0": 0, "reason": "..."}, ...]}
+        {"claim_date": "2026-08-17", "time_in": "08:30", "time_out": "17:45",
+         "ot_before_start": "06:15", "ot_before_end": "08:30",
+         "ot_start": "17:30", "ot_end": "17:45",
+         "ot_hours_1_5": 1.5, "ot_hours_2_0": 0, "ot_hours_3_0": 0,
+         "reason": "..."}, ...]}
+    ot_hours_* are taken exactly as given, not recomputed from the time
+    fields - those are stored for the record only (e.g. hours already
+    hand-totaled from a signed paper claim form, which may round
+    differently than a fresh calculation would).
     """
     token = os.environ.get("RESTORE_TOKEN")
     if not token or request.form.get("token") != token:
@@ -4001,10 +4013,14 @@ def hr_seed_ot_claims():
     written = 0
     for claim in payload.get("claims", []):
         db.execute(
-            """INSERT INTO ot_claims (emp_id, claim_date, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0,
-                   reason, status, submitted_by, submitted_at)
-               VALUES (?,?,?,?,?,?,'Pending','HR',?)""",
-            (emp_id, claim["claim_date"], claim.get("ot_hours_1_5", 0) or 0,
+            """INSERT INTO ot_claims (emp_id, claim_date, time_in, time_out,
+                   ot_before_start, ot_before_end, ot_start, ot_end,
+                   ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, reason, status, submitted_by, submitted_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'Pending','HR',?)""",
+            (emp_id, claim["claim_date"], claim.get("time_in"), claim.get("time_out"),
+             claim.get("ot_before_start"), claim.get("ot_before_end"),
+             claim.get("ot_start"), claim.get("ot_end"),
+             claim.get("ot_hours_1_5", 0) or 0,
              claim.get("ot_hours_2_0", 0) or 0, claim.get("ot_hours_3_0", 0) or 0,
              claim.get("reason"), now),
         )

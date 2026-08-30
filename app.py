@@ -2872,6 +2872,8 @@ def portal_ot_claim():
             error = "Date is required."
         elif ot_1_5 <= 0 and ot_2_0 <= 0 and ot_3_0 <= 0:
             error = "Enter at least one OT hours amount."
+        elif not reason:
+            error = "Reason is required."
         else:
             db.execute(
                 """INSERT INTO ot_claims (emp_id, claim_date, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0,
@@ -3434,12 +3436,14 @@ def ot_claim_new():
     db = get_db()
     emp_id = request.form.get("emp_id")
     claim_date = request.form.get("claim_date", "")
+    reason = request.form.get("reason", "").strip() or None
     if db.execute("SELECT 1 FROM employees WHERE emp_id=?", (emp_id,)).fetchone() is None or not claim_date:
         return "Employee and claim date are required", 400
+    if not reason:
+        return "Reason is required", 400
     ot_1_5 = request.form.get("ot_hours_1_5", type=float) or 0
     ot_2_0 = request.form.get("ot_hours_2_0", type=float) or 0
     ot_3_0 = request.form.get("ot_hours_3_0", type=float) or 0
-    reason = request.form.get("reason", "").strip() or None
     db.execute(
         """INSERT INTO ot_claims (emp_id, claim_date, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0,
                reason, status, submitted_by, submitted_at)

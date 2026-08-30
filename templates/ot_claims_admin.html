@@ -19,10 +19,19 @@
           {% endfor %}
         </select>
       </div>
-      <div><label>Date</label><input type="date" name="claim_date" required></div>
-      <div><label>OT Hours &mdash; 1.5x</label><input type="number" step="0.5" min="0" name="ot_hours_1_5" value="0"></div>
-      <div><label>OT Hours &mdash; 2.0x</label><input type="number" step="0.5" min="0" name="ot_hours_2_0" value="0"></div>
-      <div><label>OT Hours &mdash; 3.0x</label><input type="number" step="0.5" min="0" name="ot_hours_3_0" value="0"></div>
+      <div><label>Date</label><input type="date" id="claim_date" name="claim_date" required onchange="updateOtAutoCalc()"></div>
+      <div><label>Time In</label><input type="time" name="time_in"></div>
+      <div><label>Time Out</label><input type="time" name="time_out"></div>
+    </div>
+    <div class="form-grid" style="margin-top:10px;">
+      <div><label>OT Start Time</label><input type="time" id="ot_start" name="ot_start" onchange="updateOtAutoCalc()"></div>
+      <div><label>OT End Time</label><input type="time" id="ot_end" name="ot_end" onchange="updateOtAutoCalc()"></div>
+    </div>
+    <p id="sunday_calc_note" style="display:none; font-size:12px; color:var(--muted); margin-top:8px; padding:8px; background:var(--bg); border:1px solid var(--border); border-radius:6px;"></p>
+    <div class="form-grid" style="margin-top:10px;">
+      <div><label>OT Hours &mdash; 1.5x</label><input type="number" step="0.5" min="0" id="ot_hours_1_5" name="ot_hours_1_5" value="0"></div>
+      <div><label>OT Hours &mdash; 2.0x</label><input type="number" step="0.5" min="0" id="ot_hours_2_0" name="ot_hours_2_0" value="0"></div>
+      <div><label>OT Hours &mdash; 3.0x</label><input type="number" step="0.5" min="0" id="ot_hours_3_0" name="ot_hours_3_0" value="0"></div>
     </div>
     <div style="margin-top:12px;">
       <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">Reason <span style="color:var(--danger);">*</span></label>
@@ -108,4 +117,54 @@
   </table>
   </div>
 </div>
+<script>
+// Rest-day OT convention: first 8 net hours (after rest-break
+// deductions) are 2.0x, anything beyond that is 3.0x. Rest breaks are
+// 0.5 hour for every 5 hours worked or part thereof - matches the
+// server-side _sunday_ot_split in app.py exactly, so what's previewed
+// here is what actually gets saved.
+function isSunday(dateStr) {
+  if (!dateStr) return false;
+  var parts = dateStr.split('-').map(Number);
+  return new Date(parts[0], parts[1] - 1, parts[2]).getDay() === 0;
+}
+
+function computeSundaySplit(startStr, endStr) {
+  if (!startStr || !endStr) return null;
+  var s = startStr.split(':').map(Number);
+  var e = endStr.split(':').map(Number);
+  var spanHours = ((e[0] * 60 + e[1]) - (s[0] * 60 + s[1])) / 60;
+  if (spanHours <= 0) return null;
+  var restHours = Math.ceil(spanHours / 5) * 0.5;
+  var netHours = Math.max(spanHours - restHours, 0);
+  var ot2_0 = Math.round(Math.min(netHours, 8) * 100) / 100;
+  var ot3_0 = Math.round(Math.max(netHours - 8, 0) * 100) / 100;
+  return { ot2_0: ot2_0, ot3_0: ot3_0, rest: restHours, span: spanHours, net: netHours };
+}
+
+function updateOtAutoCalc() {
+  var sunday = isSunday(document.getElementById('claim_date').value);
+  var ot1_5 = document.getElementById('ot_hours_1_5');
+  var ot2_0 = document.getElementById('ot_hours_2_0');
+  var ot3_0 = document.getElementById('ot_hours_3_0');
+  var note = document.getElementById('sunday_calc_note');
+  if (!sunday) {
+    note.style.display = 'none';
+    [ot1_5, ot2_0, ot3_0].forEach(function (el) { el.readOnly = false; el.style.background = ''; });
+    return;
+  }
+  var result = computeSundaySplit(document.getElementById('ot_start').value, document.getElementById('ot_end').value);
+  [ot1_5, ot2_0, ot3_0].forEach(function (el) { el.readOnly = true; el.style.background = '#f3f4f6'; });
+  note.style.display = 'block';
+  if (result) {
+    ot1_5.value = 0;
+    ot2_0.value = result.ot2_0;
+    ot3_0.value = result.ot3_0;
+    note.textContent = 'Sunday auto-calc: ' + result.span.toFixed(2) + ' hrs worked − ' + result.rest.toFixed(2) +
+      ' hr rest = ' + result.net.toFixed(2) + ' net hrs → 2.0x: ' + result.ot2_0 + ', 3.0x: ' + result.ot3_0;
+  } else {
+    note.textContent = 'Sunday OT: fill in OT Start Time and OT End Time to auto-calculate the 2.0x/3.0x split.';
+  }
+}
+</script>
 {% endblock %}

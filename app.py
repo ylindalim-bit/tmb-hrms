@@ -4,6 +4,7 @@ import datetime
 import functools
 import io
 import json
+import math
 import os
 import secrets
 import sqlite3
@@ -2864,22 +2865,25 @@ def portal_ot_claim():
     error = None
     if request.method == "POST":
         claim_date = request.form.get("claim_date", "")
-        ot_1_5 = request.form.get("ot_hours_1_5", type=float) or 0
-        ot_2_0 = request.form.get("ot_hours_2_0", type=float) or 0
-        ot_3_0 = request.form.get("ot_hours_3_0", type=float) or 0
+        time_in = request.form.get("time_in") or None
+        time_out = request.form.get("time_out") or None
+        ot_start = request.form.get("ot_start") or None
+        ot_end = request.form.get("ot_end") or None
+        ot_1_5, ot_2_0, ot_3_0 = _ot_claim_hours_from_form(request.form, claim_date)
         reason = request.form.get("reason", "").strip() or None
         if not claim_date:
             error = "Date is required."
         elif ot_1_5 <= 0 and ot_2_0 <= 0 and ot_3_0 <= 0:
-            error = "Enter at least one OT hours amount."
+            error = "Enter at least one OT hours amount (or, for a Sunday, fill in OT Start/End)."
         elif not reason:
             error = "Reason is required."
         else:
             db.execute(
-                """INSERT INTO ot_claims (emp_id, claim_date, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0,
-                       reason, status, submitted_by, submitted_at)
-                   VALUES (?,?,?,?,?,?,'Pending','Employee',?)""",
-                (emp["emp_id"], claim_date, ot_1_5, ot_2_0, ot_3_0, reason,
+                """INSERT INTO ot_claims (emp_id, claim_date, time_in, time_out, ot_start, ot_end,
+                       ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, reason, status, submitted_by, submitted_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,'Pending','Employee',?)""",
+                (emp["emp_id"], claim_date, time_in, time_out, ot_start, ot_end,
+                 ot_1_5, ot_2_0, ot_3_0, reason,
                  datetime.datetime.now().isoformat(timespec="seconds")),
             )
             db.commit()
@@ -3383,20 +3387,69 @@ def review_business_trip(trip_id):
 # Leave Approver/Business Trips, this has a single company-wide approver
 # (Mr Yang Hui, hr_users.can_approve_ot='Y'), not a per-employee assignment.
 
-def _apply_ot_claim_to_attendance(db, emp_id, claim_date, ot_1_5, ot_2_0, ot_3_0):
+def _sunday_ot_split(ot_start, ot_end):
+    """Rest-day OT convention: the first 8 net hours (after rest-break
+    deductions) are paid at 2.0x, anything beyond that at 3.0x. Rest
+    breaks are 0.5 hour for every 5 hours worked or part thereof - e.g. a
+    9-hour span needs two half-hour breaks (one per started 5-hour
+    block), leaving 8 net hours, which is exactly a full day at 2.0x with
+    nothing left over for 3.0x. Returns (ot_hours_2_0, ot_hours_3_0), or
+    (0, 0) if the times don't parse or the span isn't positive."""
+    try:
+        t1 = datetime.datetime.strptime(ot_start, "%H:%M")
+        t2 = datetime.datetime.strptime(ot_end, "%H:%M")
+    except (TypeError, ValueError):
+        return 0, 0
+    span_hours = (t2 - t1).total_seconds() / 3600
+    if span_hours <= 0:
+        return 0, 0
+    rest_hours = math.ceil(span_hours / 5) * 0.5
+    net_hours = max(span_hours - rest_hours, 0)
+    ot_2_0 = round(min(net_hours, 8), 2)
+    ot_3_0 = round(max(net_hours - 8, 0), 2)
+    return ot_2_0, ot_3_0
+
+
+def _ot_claim_hours_from_form(f, claim_date):
+    """Builds (ot_hours_1_5, ot_hours_2_0, ot_hours_3_0) from a claim
+    submission form. If the claimed date is a Sunday and both OT Start
+    and OT End are given, the 2.0x/3.0x split is computed automatically
+    via _sunday_ot_split (ignoring whatever was typed into those boxes)
+    rather than trusting manual entry, since a rest day follows a fixed
+    formula and doesn't have a 1.5x tier at all. Otherwise (a normal
+    working day), all three tiers are taken exactly as typed, same as
+    before this Sunday auto-calc existed."""
+    ot_start = f.get("ot_start") or None
+    ot_end = f.get("ot_end") or None
+    try:
+        is_sunday = datetime.date.fromisoformat(claim_date).weekday() == 6
+    except ValueError:
+        is_sunday = False
+    if is_sunday and ot_start and ot_end:
+        ot_2_0, ot_3_0 = _sunday_ot_split(ot_start, ot_end)
+        return 0, ot_2_0, ot_3_0
+    return (f.get("ot_hours_1_5", type=float) or 0,
+            f.get("ot_hours_2_0", type=float) or 0,
+            f.get("ot_hours_3_0", type=float) or 0)
+
+
+def _apply_ot_claim_to_attendance(db, emp_id, claim_date, time_in, time_out, ot_1_5, ot_2_0, ot_3_0):
     """Adds an approved OT claim's hours into that date's attendance_daily
-    row (creating one as WORKED if it doesn't exist yet), then recomputes
-    that month's attendance_monthly aggregate - the same path Daily
-    Attendance itself feeds payroll through, so an approved claim counts
-    exactly like HR having typed those hours in directly."""
+    row (creating one as WORKED if it doesn't exist yet, and filling in
+    Time In/Out if the claim had them and the row doesn't already), then
+    recomputes that month's attendance_monthly aggregate - the same path
+    Daily Attendance itself feeds payroll through, so an approved claim
+    counts exactly like HR having typed those hours in directly."""
     db.execute(
-        """INSERT INTO attendance_daily (emp_id, date, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0)
-           VALUES (?,?,?,?,?)
+        """INSERT INTO attendance_daily (emp_id, date, time_in, time_out, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0)
+           VALUES (?,?,?,?,?,?,?)
            ON CONFLICT(emp_id, date) DO UPDATE SET
+             time_in = COALESCE(time_in, excluded.time_in),
+             time_out = COALESCE(time_out, excluded.time_out),
              ot_hours_1_5 = COALESCE(ot_hours_1_5,0) + excluded.ot_hours_1_5,
              ot_hours_2_0 = COALESCE(ot_hours_2_0,0) + excluded.ot_hours_2_0,
              ot_hours_3_0 = COALESCE(ot_hours_3_0,0) + excluded.ot_hours_3_0""",
-        (emp_id, claim_date, ot_1_5, ot_2_0, ot_3_0),
+        (emp_id, claim_date, time_in, time_out, ot_1_5, ot_2_0, ot_3_0),
     )
     year, month, _day = (int(p) for p in claim_date.split("-"))
     _sync_daily_to_monthly(db, emp_id, year, month)
@@ -3441,14 +3494,17 @@ def ot_claim_new():
         return "Employee and claim date are required", 400
     if not reason:
         return "Reason is required", 400
-    ot_1_5 = request.form.get("ot_hours_1_5", type=float) or 0
-    ot_2_0 = request.form.get("ot_hours_2_0", type=float) or 0
-    ot_3_0 = request.form.get("ot_hours_3_0", type=float) or 0
+    time_in = request.form.get("time_in") or None
+    time_out = request.form.get("time_out") or None
+    ot_start = request.form.get("ot_start") or None
+    ot_end = request.form.get("ot_end") or None
+    ot_1_5, ot_2_0, ot_3_0 = _ot_claim_hours_from_form(request.form, claim_date)
     db.execute(
-        """INSERT INTO ot_claims (emp_id, claim_date, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0,
-               reason, status, submitted_by, submitted_at)
-           VALUES (?,?,?,?,?,?,'Pending',?,?)""",
-        (emp_id, claim_date, ot_1_5, ot_2_0, ot_3_0, reason,
+        """INSERT INTO ot_claims (emp_id, claim_date, time_in, time_out, ot_start, ot_end,
+               ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, reason, status, submitted_by, submitted_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,'Pending',?,?)""",
+        (emp_id, claim_date, time_in, time_out, ot_start, ot_end,
+         ot_1_5, ot_2_0, ot_3_0, reason,
          session["hr_username"], datetime.datetime.now().isoformat(timespec="seconds")),
     )
     db.commit()
@@ -3473,7 +3529,7 @@ def review_ot_claim(claim_id):
     )
     if decision == "Approved":
         _apply_ot_claim_to_attendance(
-            db, claim["emp_id"], claim["claim_date"],
+            db, claim["emp_id"], claim["claim_date"], claim["time_in"], claim["time_out"],
             claim["ot_hours_1_5"], claim["ot_hours_2_0"], claim["ot_hours_3_0"],
         )
     db.commit()
@@ -3867,11 +3923,18 @@ def hr_migrate_schema():
     if "ot_claims" not in existing_tables:
         db.execute("""CREATE TABLE ot_claims (
             id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),
-            claim_date TEXT NOT NULL, ot_hours_1_5 REAL NOT NULL DEFAULT 0,
+            claim_date TEXT NOT NULL, time_in TEXT, time_out TEXT, ot_start TEXT, ot_end TEXT,
+            ot_hours_1_5 REAL NOT NULL DEFAULT 0,
             ot_hours_2_0 REAL NOT NULL DEFAULT 0, ot_hours_3_0 REAL NOT NULL DEFAULT 0,
             reason TEXT, status TEXT NOT NULL DEFAULT 'Pending', submitted_by TEXT NOT NULL,
             submitted_at TEXT NOT NULL, reviewed_by TEXT, reviewed_at TEXT, review_notes TEXT)""")
         applied.append("table: ot_claims")
+    if "ot_claims" in existing_tables:
+        ot_claim_cols = [r[1] for r in db.execute("PRAGMA table_info(ot_claims)").fetchall()]
+        for col in ("time_in", "time_out", "ot_start", "ot_end"):
+            if col not in ot_claim_cols:
+                db.execute(f"ALTER TABLE ot_claims ADD COLUMN {col} TEXT")
+                applied.append(f"ot_claims.{col}")
 
     db.execute("UPDATE hr_users SET can_approve_leave='Y', can_approve_appraisal='Y' WHERE username='kee'")
     yang_password = request.form.get("yang_password", "")

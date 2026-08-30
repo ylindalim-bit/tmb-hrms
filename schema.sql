@@ -466,6 +466,10 @@ CREATE TABLE ot_claims (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     emp_id         TEXT NOT NULL REFERENCES employees(emp_id),
     claim_date     TEXT NOT NULL,   -- YYYY-MM-DD, the date OT was worked
+    time_in        TEXT,   -- HH:MM, that day's normal clock in/out - carried
+    time_out       TEXT,   -- into attendance_daily on approval, same as Daily Attendance
+    ot_start       TEXT,   -- HH:MM, start of the OT period itself - this (not
+    ot_end         TEXT,   -- Time In/Out) is what the hour-tier split is computed from
     ot_hours_1_5   REAL NOT NULL DEFAULT 0,
     ot_hours_2_0   REAL NOT NULL DEFAULT 0,
     ot_hours_3_0   REAL NOT NULL DEFAULT 0,

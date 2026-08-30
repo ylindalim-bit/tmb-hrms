@@ -66,4 +66,38 @@
 </table>
 </div>
 <p><strong>Employees with OT: {{ rows|length }}</strong></p>
+
+<h2 style="margin-top:28px;">Pending &mdash; Awaiting Approval</h2>
+<p class="no-print" style="color:var(--muted); font-size:13px; margin-top:-8px;">
+  OT Claims submitted for this month but not yet reviewed - not counted in payroll until approved.
+</p>
+<div class="card table-wrap">
+<table>
+<thead>
+<tr>
+  <th class="text">Emp ID</th><th class="text">Name</th><th class="text">Department</th><th class="text">Position</th>
+  <th>Claims</th><th>OT 1.5x</th><th>OT 2.0x</th><th>OT 3.0x</th><th>Total OT Hrs</th>
+</tr>
+</thead>
+<tbody>
+{% for r in pending_rows %}
+<tr>
+  <td class="text">{{ r.emp_id }}</td>
+  <td class="text">{{ r.full_name }}</td>
+  <td class="text">{{ r.department or "-" }}</td>
+  <td class="text">{{ r.position or "-" }}</td>
+  <td>{{ r.claim_count }}</td>
+  <td>{{ "%.2f"|format(r.ot_1_5) }}</td>
+  <td>{{ "%.2f"|format(r.ot_2_0) }}</td>
+  <td>{{ "%.2f"|format(r.ot_3_0) }}</td>
+  <td><strong>{{ "%.2f"|format(r.ot_total) }}</strong></td>
+</tr>
+{% endfor %}
+{% if not pending_rows %}
+<tr><td class="text" colspan="9">No pending OT Claims for {{ month_names[month] }} {{ year }}.</td></tr>
+{% endif %}
+</tbody>
+</table>
+</div>
+<p><strong>Employees with pending OT: {{ pending_rows|length }}</strong></p>
 {% endblock %}

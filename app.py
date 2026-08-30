@@ -3185,7 +3185,28 @@ def ot_report(year, month):
         })
     rows.sort(key=lambda r: r["ot_total"], reverse=True)
 
-    return render_template("ot_report.html", rows=rows, year=year, month=month)
+    pending_rows = []
+    pending_totals = db.execute(
+        """SELECT oc.emp_id, e.full_name, e.department, e.position,
+                  COUNT(*) AS claim_count,
+                  COALESCE(SUM(oc.ot_hours_1_5),0) AS ot_1_5,
+                  COALESCE(SUM(oc.ot_hours_2_0),0) AS ot_2_0,
+                  COALESCE(SUM(oc.ot_hours_3_0),0) AS ot_3_0
+           FROM ot_claims oc JOIN employees e ON e.emp_id = oc.emp_id
+           WHERE oc.status='Pending' AND oc.claim_date LIKE ?
+           GROUP BY oc.emp_id""",
+        (f"{year:04d}-{month:02d}-%",),
+    ).fetchall()
+    for r in pending_totals:
+        pending_rows.append({
+            "emp_id": r["emp_id"], "full_name": r["full_name"], "department": r["department"],
+            "position": r["position"], "claim_count": r["claim_count"],
+            "ot_1_5": r["ot_1_5"], "ot_2_0": r["ot_2_0"], "ot_3_0": r["ot_3_0"],
+            "ot_total": r["ot_1_5"] + r["ot_2_0"] + r["ot_3_0"],
+        })
+    pending_rows.sort(key=lambda r: r["ot_total"], reverse=True)
+
+    return render_template("ot_report.html", rows=rows, pending_rows=pending_rows, year=year, month=month)
 
 
 # ---------------- HR: Leave Requests Admin ----------------

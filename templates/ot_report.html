@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}OT Report {{ year }} - TMB Payroll{% endblock %}
+{% block extra_style %}
+<style>
+  .print-only { display: none; }
+  @media print {
+    @page { size: A4 landscape; margin: 10mm; }
+    .print-only { display: block; }
+    .table-wrap { overflow-x: visible; }
+    table { font-size: 10px; width: 100%; }
+    th, td { padding: 3px 5px; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="no-print" style="display:flex; justify-content:space-between; align-items:center;">
+  <h1 style="margin-bottom:0;">OT Report &mdash; {{ year }}</h1>
+  <button class="btn" type="button" onclick="window.print()">Print / Save as PDF</button>
+</div>
+<div class="print-only" style="margin-bottom:12px;">
+  <strong>TIANMA PRECISION SDN BHD</strong><br>
+  OT Report &mdash; {{ year }}
+</div>
+
+<div class="month-nav no-print">
+  <span>Year:</span>
+  {% for y in years %}
+  <a href="{{ url_for('ot_report', year=y.year) }}" style="{% if y.year == year %}font-weight:700;{% endif %}">{{ y.year }}</a>
+  {% endfor %}
+</div>
+
+<p class="no-print" style="color:var(--muted); font-size:13px;">
+  Shows OT hours already counted in payroll (direct Daily Attendance entry, or an approved OT Claim) - a
+  still-Pending claim isn't included until it's approved. Employees with no OT this year aren't listed.
+</p>
+
+<div class="card table-wrap">
+<table>
+<thead>
+<tr>
+  <th class="text">Emp ID</th><th class="text">Name</th><th class="text">Department</th><th class="text">Position</th>
+  <th>OT 1.5x</th><th>OT 2.0x</th><th>OT 3.0x</th><th>Total OT Hrs</th>
+  <th class="text">Needs Approval</th><th class="text no-print">Pending Claims</th>
+</tr>
+</thead>
+<tbody>
+{% for r in rows %}
+<tr>
+  <td class="text">{{ r.emp_id }}</td>
+  <td class="text">{{ r.full_name }}</td>
+  <td class="text">{{ r.department or "-" }}</td>
+  <td class="text">{{ r.position or "-" }}</td>
+  <td>{{ "%.2f"|format(r.ot_1_5) }}</td>
+  <td>{{ "%.2f"|format(r.ot_2_0) }}</td>
+  <td>{{ "%.2f"|format(r.ot_3_0) }}</td>
+  <td><strong>{{ "%.2f"|format(r.ot_total) }}</strong></td>
+  <td class="text">{{ "Yes" if r.ot_approval_required == "Y" else "No" }}</td>
+  <td class="text no-print">
+    {% if r.pending %}<span class="pill draft">{{ r.pending }} pending</span>{% else %}-{% endif %}
+  </td>
+</tr>
+{% endfor %}
+{% if not rows %}
+<tr><td class="text" colspan="10">No OT recorded for {{ year }}.</td></tr>
+{% endif %}
+</tbody>
+</table>
+</div>
+<p><strong>Employees with OT: {{ rows|length }}</strong></p>
+{% endblock %}

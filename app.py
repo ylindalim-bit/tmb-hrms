@@ -3146,6 +3146,58 @@ def leave_report():
     return render_template("leave_report.html", rows=rows, year=year, years=years)
 
 
+@app.route("/ot-report")
+def ot_report():
+    """Per-employee OT totals for a year, printable - same shape as the
+    Leave Taken Report. Sums attendance_monthly (the figures actually
+    used by payroll: direct entry, or an approved OT Claim's hours once
+    applied), not ot_claims directly, so a still-Pending claim isn't
+    counted until it's approved."""
+    db = get_db()
+    year = request.args.get("year", type=int) or datetime.date.today().year
+
+    emps = db.execute(
+        """SELECT emp_id, full_name, department, position, ot_approval_required
+           FROM employees
+           WHERE status != 'Inactive'
+              OR (last_working_day IS NOT NULL AND last_working_day LIKE ?)
+              OR (resignation_date IS NOT NULL AND resignation_date LIKE ? AND last_working_day IS NULL)
+           ORDER BY emp_id""",
+        (f"{year}%", f"{year}%"),
+    ).fetchall()
+
+    rows = []
+    for e in emps:
+        totals = db.execute(
+            """SELECT COALESCE(SUM(ot_hours_1_5),0) AS ot_1_5, COALESCE(SUM(ot_hours_2_0),0) AS ot_2_0,
+                      COALESCE(SUM(ot_hours_3_0),0) AS ot_3_0
+               FROM attendance_monthly WHERE emp_id=? AND year=?""",
+            (e["emp_id"], year),
+        ).fetchone()
+        if totals["ot_1_5"] == 0 and totals["ot_2_0"] == 0 and totals["ot_3_0"] == 0:
+            continue
+        pending = db.execute(
+            "SELECT COUNT(*) AS c FROM ot_claims WHERE emp_id=? AND status='Pending' AND claim_date LIKE ?",
+            (e["emp_id"], f"{year}%"),
+        ).fetchone()["c"]
+        rows.append({
+            "emp_id": e["emp_id"], "full_name": e["full_name"], "department": e["department"],
+            "position": e["position"], "ot_approval_required": e["ot_approval_required"],
+            "ot_1_5": totals["ot_1_5"], "ot_2_0": totals["ot_2_0"], "ot_3_0": totals["ot_3_0"],
+            "ot_total": totals["ot_1_5"] + totals["ot_2_0"] + totals["ot_3_0"],
+            "pending": pending,
+        })
+    rows.sort(key=lambda r: r["ot_total"], reverse=True)
+
+    years = db.execute(
+        "SELECT DISTINCT year FROM attendance_monthly ORDER BY year DESC"
+    ).fetchall()
+    if not years:
+        years = [{"year": year}]
+
+    return render_template("ot_report.html", rows=rows, year=year, years=years)
+
+
 # ---------------- HR: Leave Requests Admin ----------------
 
 @app.route("/leave-requests")

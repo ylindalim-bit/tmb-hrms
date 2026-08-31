@@ -47,14 +47,24 @@
   </td>
   <td class="text"><input type="time" name="time_in__{{ d.day }}" value="{{ r.time_in if r else '' }}" style="width:110px;"></td>
   <td class="text"><input type="time" name="time_out__{{ d.day }}" value="{{ r.time_out if r else '' }}" style="width:110px;"></td>
-  <td><input type="checkbox" name="meal__{{ d.day }}" {% if r and r.meal_allowance_flag == 'Y' %}checked{% endif %}></td>
-  <td><input type="number" step="0.5" name="ot_1_5__{{ d.day }}" value="{{ r.ot_hours_1_5 if r else 0 }}" style="width:64px;" {% if emp.ot_approval_required == "Y" %}readonly{% endif %}></td>
-  <td><input type="number" step="0.5" name="ot_2_0__{{ d.day }}" value="{{ r.ot_hours_2_0 if r else 0 }}" style="width:64px;" {% if emp.ot_approval_required == "Y" %}readonly{% endif %}></td>
-  <td><input type="number" step="0.5" name="ot_3_0__{{ d.day }}" value="{{ r.ot_hours_3_0 if r else 0 }}" style="width:64px;" {% if emp.ot_approval_required == "Y" %}readonly{% endif %}></td>
+  <td><input type="checkbox" class="meal-input" name="meal__{{ d.day }}" {% if r and r.meal_allowance_flag == 'Y' %}checked{% endif %} onchange="updateAttendanceTotals()"></td>
+  <td><input type="number" step="0.5" class="ot15-input" name="ot_1_5__{{ d.day }}" value="{{ r.ot_hours_1_5 if r else 0 }}" style="width:64px;" {% if emp.ot_approval_required == "Y" %}readonly{% endif %} oninput="updateAttendanceTotals()"></td>
+  <td><input type="number" step="0.5" class="ot20-input" name="ot_2_0__{{ d.day }}" value="{{ r.ot_hours_2_0 if r else 0 }}" style="width:64px;" {% if emp.ot_approval_required == "Y" %}readonly{% endif %} oninput="updateAttendanceTotals()"></td>
+  <td><input type="number" step="0.5" class="ot30-input" name="ot_3_0__{{ d.day }}" value="{{ r.ot_hours_3_0 if r else 0 }}" style="width:64px;" {% if emp.ot_approval_required == "Y" %}readonly{% endif %} oninput="updateAttendanceTotals()"></td>
   <td class="text"><input type="text" name="ot_reason__{{ d.day }}" value="{{ r.ot_reason if r and r.ot_reason else '' }}" style="width:100%;"></td>
 </tr>
 {% endfor %}
 </tbody>
+<tfoot>
+<tr class="totals-row">
+  <td class="text" colspan="5" style="text-align:right;">Total</td>
+  <td id="meal_total">0</td>
+  <td id="ot15_total">0.0</td>
+  <td id="ot20_total">0.0</td>
+  <td id="ot30_total">0.0</td>
+  <td></td>
+</tr>
+</tfoot>
 </table>
 </div>
 <div class="form-actions">
@@ -80,4 +90,19 @@
   </div>
 </div>
 {% endif %}
+<script>
+function updateAttendanceTotals() {
+  var mealCount = document.querySelectorAll('.meal-input:checked').length;
+  var sum = function (selector) {
+    var total = 0;
+    document.querySelectorAll(selector).forEach(function (el) { total += parseFloat(el.value) || 0; });
+    return total;
+  };
+  document.getElementById('meal_total').textContent = mealCount;
+  document.getElementById('ot15_total').textContent = sum('.ot15-input').toFixed(1);
+  document.getElementById('ot20_total').textContent = sum('.ot20-input').toFixed(1);
+  document.getElementById('ot30_total').textContent = sum('.ot30-input').toFixed(1);
+}
+updateAttendanceTotals();
+</script>
 {% endblock %}

@@ -2623,6 +2623,8 @@ def portal_leave():
             error = "End date cannot be before start date."
         elif leave_type in DOC_REQUIRED_TYPES and not has_file:
             error = f"{leave_type} requires a supporting document (e.g. medical certificate) to be uploaded."
+        elif leave_type in DOC_REQUIRED_TYPES and not reason:
+            error = f"{leave_type} requires the name of the illness/diagnosis to be stated."
         elif has_file:
             for f in files:
                 original_name = secure_filename(f.filename)

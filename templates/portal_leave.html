@@ -42,8 +42,8 @@
     <button type="button" class="btn secondary" style="padding:3px 10px; font-size:12px;" onclick="addAnotherDocInput()">+ Add another file</button>
   </div>
   <div style="margin-top:12px;">
-    <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">Reason (optional)</label>
-    <input type="text" name="reason" style="width:100%;">
+    <label id="reason_label" style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">Reason (optional)</label>
+    <input type="text" id="reason_input" name="reason" style="width:100%;">
   </div>
   <div class="form-actions">
     <button class="btn" type="submit">Submit Request</button>
@@ -139,6 +139,13 @@ function updateDocRequirement() {
   row.style.display = required ? 'block' : 'none';
   if (firstInput) firstInput.required = required;
   requiredMark.style.display = required ? 'inline' : 'none';
+
+  var reasonLabel = document.getElementById('reason_label');
+  var reasonInput = document.getElementById('reason_input');
+  reasonInput.required = required;
+  reasonLabel.innerHTML = required
+    ? 'Name of Illness / Diagnosis <span style="color:var(--danger);">*</span>'
+    : 'Reason (optional)';
 }
 
 function addAnotherDocInput() {

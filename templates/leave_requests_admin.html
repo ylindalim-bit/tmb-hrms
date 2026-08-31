@@ -27,6 +27,10 @@
           {% elif lr.leave_type in ("Medical Leave", "Hospitalisation Leave") %}
           <span style="color:var(--danger);">Missing</span>
           {% else %}<span style="color:var(--muted);">-</span>{% endif %}
+          <form method="post" action="{{ url_for('leave_request_document_add', request_id=lr.id) }}" enctype="multipart/form-data" style="margin-top:6px; display:flex; gap:4px; align-items:center;">
+            <input type="file" name="supporting_doc" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple style="font-size:11px; width:140px;">
+            <button class="btn secondary" type="submit" style="padding:2px 8px; font-size:11px;">+ Add</button>
+          </form>
         </td>
         <td class="text">{{ lr.submitted_at }}</td>
         <td class="text" style="white-space:nowrap;">

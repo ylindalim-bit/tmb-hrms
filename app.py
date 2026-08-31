@@ -3349,6 +3349,44 @@ def leave_request_document(doc_id):
     )
 
 
+@app.route("/leave-requests/<int:request_id>/document/add", methods=["POST"])
+def leave_request_document_add(request_id):
+    """HR-side equivalent of portal_leave_document_add - lets HR/the
+    approver attach further supporting document(s) on an employee's
+    behalf (e.g. a physical MC handed in and scanned), without the
+    employee needing to log into the Staff Portal themselves. Same
+    still-Pending restriction and approver scope check as reviewing."""
+    db = get_db()
+    lr = db.execute(
+        """SELECT lr.*, e.leave_approver_username FROM leave_requests lr
+           JOIN employees e ON e.emp_id = lr.emp_id WHERE lr.id=? AND lr.status='Pending'""",
+        (request_id,),
+    ).fetchone()
+    if lr is None:
+        abort(404)
+    if session.get("hr_role") == "approver" and lr["leave_approver_username"] != session["hr_username"]:
+        abort(403)
+    files = [f for f in request.files.getlist("supporting_doc") if f.filename]
+    if not files:
+        return redirect(url_for("leave_requests_admin"))
+    for f in files:
+        original_name = secure_filename(f.filename)
+        ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+        if ext not in ALLOWED_DOC_EXTENSIONS:
+            continue
+        emp_dir = os.path.join(UPLOAD_DIR, lr["emp_id"])
+        os.makedirs(emp_dir, exist_ok=True)
+        stored_name = f"{uuid.uuid4().hex}_{original_name}"
+        f.save(os.path.join(emp_dir, stored_name))
+        db.execute(
+            """INSERT INTO leave_request_documents (leave_request_id, original_name, stored_name, uploaded_at)
+               VALUES (?,?,?,?)""",
+            (request_id, original_name, stored_name, datetime.datetime.now().isoformat(timespec="seconds")),
+        )
+    db.commit()
+    return redirect(url_for("leave_requests_admin"))
+
+
 LEAVE_TYPE_TO_ATTENDANCE_COLUMN = {
     "Annual Leave": "al_days",
     "Medical Leave": "mc_days",

@@ -19,8 +19,11 @@
         <td>{{ lr.days }}</td>
         <td class="text">{{ lr.reason or "" }}</td>
         <td class="text">
-          {% if lr.supporting_doc_stored %}
-          <a href="{{ url_for('leave_request_document', request_id=lr.id) }}" target="_blank" rel="noopener">View</a>
+          {% set docs = documents_by_request.get(lr.id, []) %}
+          {% if docs %}
+            {% for doc in docs %}
+            <a href="{{ url_for('leave_request_document', doc_id=doc.id) }}" target="_blank" rel="noopener">{{ doc.original_name }}</a>{% if not loop.last %}<br>{% endif %}
+            {% endfor %}
           {% elif lr.leave_type in ("Medical Leave", "Hospitalisation Leave") %}
           <span style="color:var(--danger);">Missing</span>
           {% else %}<span style="color:var(--muted);">-</span>{% endif %}
@@ -68,8 +71,11 @@
           <span class="pill {% if lr.status == 'Approved' %}finalized{% else %}rejected{% endif %}">{{ lr.status }}</span>
         </td>
         <td class="text">
-          {% if lr.supporting_doc_stored %}
-          <a href="{{ url_for('leave_request_document', request_id=lr.id) }}" target="_blank" rel="noopener">View</a>
+          {% set docs = documents_by_request.get(lr.id, []) %}
+          {% if docs %}
+            {% for doc in docs %}
+            <a href="{{ url_for('leave_request_document', doc_id=doc.id) }}" target="_blank" rel="noopener">{{ doc.original_name }}</a>{% if not loop.last %}<br>{% endif %}
+            {% endfor %}
           {% else %}<span style="color:var(--muted);">-</span>{% endif %}
         </td>
         <td class="text">{{ lr.reviewed_by or "" }}</td>

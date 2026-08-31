@@ -2615,8 +2615,8 @@ def portal_leave():
         start_date = request.form.get("start_date", "")
         end_date = request.form.get("end_date", "")
         reason = request.form.get("reason", "").strip() or None
-        file = request.files.get("supporting_doc")
-        has_file = file is not None and file.filename != ""
+        files = [f for f in request.files.getlist("supporting_doc") if f.filename]
+        has_file = len(files) > 0
         if not leave_type or not start_date or not end_date:
             error = "Leave type, start date, and end date are required."
         elif end_date < start_date:
@@ -2624,26 +2624,34 @@ def portal_leave():
         elif leave_type in DOC_REQUIRED_TYPES and not has_file:
             error = f"{leave_type} requires a supporting document (e.g. medical certificate) to be uploaded."
         elif has_file:
-            original_name = secure_filename(file.filename)
-            ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
-            if ext not in ALLOWED_DOC_EXTENSIONS:
-                error = "Supporting document must be a PDF, Word file, or an image (JPG/PNG)."
+            for f in files:
+                original_name = secure_filename(f.filename)
+                ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+                if ext not in ALLOWED_DOC_EXTENSIONS:
+                    error = "Supporting document(s) must be PDF, Word files, or images (JPG/PNG)."
+                    break
         if error is None:
             days = (datetime.date.fromisoformat(end_date) - datetime.date.fromisoformat(start_date)).days + 1
-            stored_name = None
+            now = datetime.datetime.now().isoformat(timespec="seconds")
+            cur = db.execute(
+                """INSERT INTO leave_requests (emp_id, leave_type, start_date, end_date, days, reason, status,
+                       submitted_at)
+                   VALUES (?,?,?,?,?,?,'Pending',?)""",
+                (emp["emp_id"], leave_type, start_date, end_date, days, reason, now),
+            )
+            leave_request_id = cur.lastrowid
             if has_file:
                 emp_dir = os.path.join(UPLOAD_DIR, emp["emp_id"])
                 os.makedirs(emp_dir, exist_ok=True)
-                stored_name = f"{uuid.uuid4().hex}_{original_name}"
-                file.save(os.path.join(emp_dir, stored_name))
-            db.execute(
-                """INSERT INTO leave_requests (emp_id, leave_type, start_date, end_date, days, reason, status,
-                       submitted_at, supporting_doc_original, supporting_doc_stored)
-                   VALUES (?,?,?,?,?,?,'Pending',?,?,?)""",
-                (emp["emp_id"], leave_type, start_date, end_date, days, reason,
-                 datetime.datetime.now().isoformat(timespec="seconds"),
-                 original_name if has_file else None, stored_name),
-            )
+                for f in files:
+                    original_name = secure_filename(f.filename)
+                    stored_name = f"{uuid.uuid4().hex}_{original_name}"
+                    f.save(os.path.join(emp_dir, stored_name))
+                    db.execute(
+                        """INSERT INTO leave_request_documents (leave_request_id, original_name, stored_name, uploaded_at)
+                           VALUES (?,?,?,?)""",
+                        (leave_request_id, original_name, stored_name, now),
+                    )
             db.commit()
             return redirect(url_for("portal_leave"))
 
@@ -2651,6 +2659,14 @@ def portal_leave():
         """SELECT * FROM leave_requests WHERE emp_id=? ORDER BY submitted_at DESC""",
         (emp["emp_id"],),
     ).fetchall()
+    documents_by_request = {}
+    for doc in db.execute(
+        """SELECT lrd.* FROM leave_request_documents lrd
+           JOIN leave_requests lr ON lr.id = lrd.leave_request_id
+           WHERE lr.emp_id=? ORDER BY lrd.uploaded_at""",
+        (emp["emp_id"],),
+    ).fetchall():
+        documents_by_request.setdefault(doc["leave_request_id"], []).append(doc)
 
     cur_year = datetime.date.today().year
     year_rows = db.execute(
@@ -2666,7 +2682,8 @@ def portal_leave():
     hl_balance = (emp["hospitalisation_leave_entitlement"] or 0) - hl_used
 
     return render_template("portal_leave.html", emp=emp, requests=my_requests, error=error,
-                            al_balance=al_balance, mc_balance=mc_balance, hl_balance=hl_balance)
+                            al_balance=al_balance, mc_balance=mc_balance, hl_balance=hl_balance,
+                            documents_by_request=documents_by_request)
 
 
 @app.route("/portal/leave/<int:request_id>/delete", methods=["POST"])
@@ -2678,19 +2695,58 @@ def portal_leave_delete(request_id):
     return redirect(url_for("portal_leave"))
 
 
-@app.route("/portal/leave/<int:request_id>/document")
+@app.route("/portal/leave/<int:request_id>/document/add", methods=["POST"])
 @portal_login_required
-def portal_leave_document(request_id):
+def portal_leave_document_add(request_id):
+    """Lets an employee attach further supporting document(s) to a leave
+    request they already submitted - e.g. a second page of a medical
+    certificate - as long as it's still Pending (once reviewed, the
+    record shouldn't keep changing)."""
     db = get_db()
     emp = current_portal_employee(db)
     lr = db.execute(
-        "SELECT * FROM leave_requests WHERE id=? AND emp_id=?", (request_id, emp["emp_id"])
+        "SELECT * FROM leave_requests WHERE id=? AND emp_id=? AND status='Pending'",
+        (request_id, emp["emp_id"]),
     ).fetchone()
-    if lr is None or not lr["supporting_doc_stored"]:
+    if lr is None:
+        abort(404)
+    files = [f for f in request.files.getlist("supporting_doc") if f.filename]
+    if not files:
+        return redirect(url_for("portal_leave"))
+    for f in files:
+        original_name = secure_filename(f.filename)
+        ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+        if ext not in ALLOWED_DOC_EXTENSIONS:
+            continue
+        emp_dir = os.path.join(UPLOAD_DIR, emp["emp_id"])
+        os.makedirs(emp_dir, exist_ok=True)
+        stored_name = f"{uuid.uuid4().hex}_{original_name}"
+        f.save(os.path.join(emp_dir, stored_name))
+        db.execute(
+            """INSERT INTO leave_request_documents (leave_request_id, original_name, stored_name, uploaded_at)
+               VALUES (?,?,?,?)""",
+            (request_id, original_name, stored_name, datetime.datetime.now().isoformat(timespec="seconds")),
+        )
+    db.commit()
+    return redirect(url_for("portal_leave"))
+
+
+@app.route("/portal/leave/document/<int:doc_id>")
+@portal_login_required
+def portal_leave_document(doc_id):
+    db = get_db()
+    emp = current_portal_employee(db)
+    doc = db.execute(
+        """SELECT lrd.* FROM leave_request_documents lrd
+           JOIN leave_requests lr ON lr.id = lrd.leave_request_id
+           WHERE lrd.id=? AND lr.emp_id=?""",
+        (doc_id, emp["emp_id"]),
+    ).fetchone()
+    if doc is None:
         abort(404)
     return send_from_directory(
-        os.path.join(UPLOAD_DIR, emp["emp_id"]), lr["supporting_doc_stored"],
-        as_attachment=False, download_name=lr["supporting_doc_original"],
+        os.path.join(UPLOAD_DIR, emp["emp_id"]), doc["stored_name"],
+        as_attachment=False, download_name=doc["original_name"],
     )
 
 
@@ -3250,8 +3306,14 @@ def leave_requests_admin():
         years = list(years) + [{"year": year}]
         years.sort(key=lambda y: y["year"], reverse=True)
 
+    documents_by_request = {}
+    for doc in db.execute(
+        "SELECT * FROM leave_request_documents ORDER BY uploaded_at"
+    ).fetchall():
+        documents_by_request.setdefault(doc["leave_request_id"], []).append(doc)
+
     return render_template("leave_requests_admin.html", pending=pending, reviewed=reviewed,
-                            year=year, years=years)
+                            year=year, years=years, documents_by_request=documents_by_request)
 
 
 @app.route("/leave-requests/<int:request_id>/delete", methods=["POST"])
@@ -3268,21 +3330,22 @@ def delete_leave_request(request_id):
     return redirect(url_for("leave_requests_admin"))
 
 
-@app.route("/leave-requests/<int:request_id>/document")
-def leave_request_document(request_id):
+@app.route("/leave-requests/document/<int:doc_id>")
+def leave_request_document(doc_id):
     db = get_db()
-    lr = db.execute(
-        """SELECT lr.*, e.leave_approver_username FROM leave_requests lr
-           JOIN employees e ON e.emp_id = lr.emp_id WHERE lr.id=?""",
-        (request_id,),
+    doc = db.execute(
+        """SELECT lrd.*, lr.emp_id, e.leave_approver_username FROM leave_request_documents lrd
+           JOIN leave_requests lr ON lr.id = lrd.leave_request_id
+           JOIN employees e ON e.emp_id = lr.emp_id WHERE lrd.id=?""",
+        (doc_id,),
     ).fetchone()
-    if lr is None or not lr["supporting_doc_stored"]:
+    if doc is None:
         abort(404)
-    if session.get("hr_role") == "approver" and lr["leave_approver_username"] != session["hr_username"]:
+    if session.get("hr_role") == "approver" and doc["leave_approver_username"] != session["hr_username"]:
         abort(403)
     return send_from_directory(
-        os.path.join(UPLOAD_DIR, lr["emp_id"]), lr["supporting_doc_stored"],
-        as_attachment=False, download_name=lr["supporting_doc_original"],
+        os.path.join(UPLOAD_DIR, doc["emp_id"]), doc["stored_name"],
+        as_attachment=False, download_name=doc["original_name"],
     )
 
 
@@ -3988,6 +4051,18 @@ def hr_migrate_schema():
             id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),
             updated_at TEXT NOT NULL, hr_viewed_at TEXT)""")
         applied.append("table: profile_update_log")
+    if "leave_request_documents" not in existing_tables:
+        db.execute("""CREATE TABLE leave_request_documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, leave_request_id INTEGER NOT NULL REFERENCES leave_requests(id),
+            original_name TEXT NOT NULL, stored_name TEXT NOT NULL, uploaded_at TEXT NOT NULL)""")
+        applied.append("table: leave_request_documents")
+        backfilled = db.execute(
+            """INSERT INTO leave_request_documents (leave_request_id, original_name, stored_name, uploaded_at)
+               SELECT id, supporting_doc_original, supporting_doc_stored, submitted_at
+               FROM leave_requests WHERE supporting_doc_stored IS NOT NULL"""
+        ).rowcount
+        if backfilled:
+            applied.append(f"leave_request_documents: backfilled {backfilled} existing file(s)")
     if "business_trips" in existing_tables:
         bt_cols = [r[1] for r in db.execute("PRAGMA table_info(business_trips)").fetchall()]
         if "notice_type" not in bt_cols:

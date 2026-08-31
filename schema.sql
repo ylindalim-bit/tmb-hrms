@@ -372,8 +372,20 @@ CREATE TABLE leave_requests (
     reviewed_by    TEXT,
     reviewed_at    TEXT,
     review_notes   TEXT,
-    supporting_doc_original TEXT,  -- e.g. medical certificate for MC/Hospitalisation Leave
-    supporting_doc_stored   TEXT   -- uploads/<emp_id>/<uuid>_<original filename>
+    supporting_doc_original TEXT,  -- legacy single-file column, kept for old rows -
+    supporting_doc_stored   TEXT   -- new uploads go into leave_request_documents below instead
+);
+
+-- One or more supporting documents per leave request (e.g. multiple
+-- pages of a medical certificate) - leave_requests.supporting_doc_* only
+-- ever held a single file, which didn't fit an employee needing to
+-- attach more than one document.
+CREATE TABLE leave_request_documents (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    leave_request_id  INTEGER NOT NULL REFERENCES leave_requests(id),
+    original_name     TEXT NOT NULL,
+    stored_name       TEXT NOT NULL,  -- uploads/<emp_id>/<uuid>_<original filename>
+    uploaded_at       TEXT NOT NULL
 );
 
 -- Business trip / outstation notices - deliberately separate from

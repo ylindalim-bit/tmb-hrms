@@ -33,10 +33,10 @@
   <p id="balance_warning" style="font-weight:600; margin-top:4px; color:var(--danger); display:none;"></p>
   <div id="doc_upload_row" style="margin-top:12px; display:none;">
     <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">
-      Supporting Document <span id="doc_required_mark" style="color:var(--danger);">*</span>
-      <span style="font-weight:400;">(medical certificate / hospital admission note &mdash; PDF, Word, or image)</span>
+      Supporting Document(s) <span id="doc_required_mark" style="color:var(--danger);">*</span>
+      <span style="font-weight:400;">(medical certificate / hospital admission note &mdash; PDF, Word, or image; you can select more than one file)</span>
     </label>
-    <input type="file" id="supporting_doc" name="supporting_doc" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+    <input type="file" id="supporting_doc" name="supporting_doc" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple>
   </div>
   <div style="margin-top:12px;">
     <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">Reason (optional)</label>
@@ -64,9 +64,18 @@
         </td>
         <td class="text">{{ lr.review_notes or "" }}</td>
         <td class="text">
-          {% if lr.supporting_doc_stored %}
-          <a href="{{ url_for('portal_leave_document', request_id=lr.id) }}" target="_blank" rel="noopener">View</a>
+          {% set docs = documents_by_request.get(lr.id, []) %}
+          {% if docs %}
+            {% for doc in docs %}
+            <a href="{{ url_for('portal_leave_document', doc_id=doc.id) }}" target="_blank" rel="noopener">{{ doc.original_name }}</a>{% if not loop.last %}<br>{% endif %}
+            {% endfor %}
           {% else %}<span style="color:var(--muted);">-</span>{% endif %}
+          {% if lr.status == 'Pending' %}
+          <form method="post" action="{{ url_for('portal_leave_document_add', request_id=lr.id) }}" enctype="multipart/form-data" style="margin-top:6px; display:flex; gap:4px; align-items:center;">
+            <input type="file" name="supporting_doc" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple style="font-size:11px; width:140px;">
+            <button class="btn secondary" type="submit" style="padding:2px 8px; font-size:11px;">+ Add</button>
+          </form>
+          {% endif %}
         </td>
         <td class="text">
           {% if lr.status == 'Pending' %}

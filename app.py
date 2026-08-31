@@ -540,6 +540,16 @@ def _portal_delete_own_pending(db, table, record_id, emp_id):
     Approved request may already have side effects elsewhere (attendance,
     leave balance) that deleting the record wouldn't undo. `table` is
     always one of a fixed set of internal literals, never user input."""
+    if table == "leave_requests":
+        # leave_request_documents.leave_request_id references this row - has
+        # to go first, or the DELETE below fails a foreign-key check (PRAGMA
+        # foreign_keys=ON) since a leave request now commonly has document(s).
+        owns_it = db.execute(
+            "SELECT 1 FROM leave_requests WHERE id=? AND emp_id=? AND status='Pending'",
+            (record_id, emp_id),
+        ).fetchone()
+        if owns_it:
+            db.execute("DELETE FROM leave_request_documents WHERE leave_request_id=?", (record_id,))
     db.execute(f"DELETE FROM {table} WHERE id=? AND emp_id=? AND status='Pending'", (record_id, emp_id))
     db.commit()
 
@@ -3327,6 +3337,7 @@ def delete_leave_request(request_id):
     if session.get("hr_role") != "admin":
         abort(403)
     db = get_db()
+    db.execute("DELETE FROM leave_request_documents WHERE leave_request_id=?", (request_id,))
     db.execute("DELETE FROM leave_requests WHERE id=?", (request_id,))
     db.commit()
     return redirect(url_for("leave_requests_admin"))

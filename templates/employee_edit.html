@@ -164,6 +164,8 @@
     <div><label>Basic Salary (RM)</label><input type="number" step="0.01" name="basic_salary" id="basic_salary" value="{{ "%.2f"|format(emp.basic_salary or 0) }}" oninput="suggestOtApproval()"></div>
     <div><label>Working Days/Week</label><input type="number" step="0.5" name="working_days_week" value="{{ emp.working_days_week or 6 }}"></div>
     <div><label>Working Hours/Day</label><input type="number" step="0.5" name="working_hours_day" value="{{ emp.working_hours_day or 8 }}"></div>
+    <div><label>Normal Start Time</label><input type="time" name="standard_start" value="{{ emp.standard_start or '' }}"></div>
+    <div><label>Normal End Time</label><input type="time" name="standard_end" value="{{ emp.standard_end or '' }}"></div>
     <div><label>Work Pattern</label>
       <select name="work_pattern">
         <option value="Manual" {% if not emp.work_pattern or emp.work_pattern=="Manual" %}selected{% endif %}>Manual (set Working Days in Month yourself each time)</option>

@@ -15,9 +15,14 @@
     <div><label>Date</label><input type="date" id="claim_date" name="claim_date" required onchange="updateClaimDateDay(); updateOtAutoCalc();">
       <span id="claim_date_day" style="font-size:12px; color:var(--muted); margin-left:6px;"></span>
     </div>
-    <div><label>Time In</label><input type="time" name="time_in"></div>
-    <div><label>Time Out</label><input type="time" name="time_out"></div>
+    <div><label>Time In</label><input type="time" id="time_in" name="time_in" onchange="deriveOtWindows()"></div>
+    <div><label>Time Out</label><input type="time" id="time_out" name="time_out" onchange="deriveOtWindows()"></div>
   </div>
+  {% if emp.standard_start and emp.standard_end %}
+  <p style="color:var(--muted); font-size:12px; margin-top:6px;">
+    Your normal shift is {{ emp.standard_start }}&ndash;{{ emp.standard_end }}, so the OT windows below fill in automatically from Time In/Out.
+  </p>
+  {% endif %}
   <div class="form-grid" style="margin-top:10px;">
     <div><label>OT Before Start Time</label><input type="time" id="ot_before_start" name="ot_before_start" onchange="updateOtAutoCalc()"></div>
     <div><label>OT Before End Time</label><input type="time" id="ot_before_end" name="ot_before_end" onchange="updateOtAutoCalc()"></div>
@@ -94,6 +99,36 @@ function updateClaimDateDay() {
 // thereof - matches the server-side _ot_claim_hours_from_form in
 // app.py exactly, so what's previewed here is what actually gets saved.
 var HOLIDAY_DATES = {{ holiday_dates | tojson }};
+var STANDARD_START = {{ (emp.standard_start or "") | tojson }};
+var STANDARD_END = {{ (emp.standard_end or "") | tojson }};
+
+// Derives the OT Before/OT windows from Time In/Time Out against your
+// normal shift (Normal Start/End Time on your profile, set by HR) - so
+// you don't have to work out and re-type the OT boundaries yourself.
+// Only fires if both your normal shift times are on file; otherwise the
+// OT window fields stay exactly as you type them, same as before.
+function deriveOtWindows() {
+  if (!STANDARD_START || !STANDARD_END) return;
+  var timeIn = document.getElementById('time_in').value;
+  var timeOut = document.getElementById('time_out').value;
+  var beforeStart = document.getElementById('ot_before_start');
+  var beforeEnd = document.getElementById('ot_before_end');
+  var afterStart = document.getElementById('ot_start');
+  var afterEnd = document.getElementById('ot_end');
+
+  beforeStart.value = ''; beforeEnd.value = '';
+  afterStart.value = ''; afterEnd.value = '';
+
+  if (timeIn && timeIn < STANDARD_START) {
+    beforeStart.value = timeIn;
+    beforeEnd.value = STANDARD_START;
+  }
+  if (timeOut && timeOut > STANDARD_END) {
+    afterStart.value = STANDARD_END;
+    afterEnd.value = timeOut;
+  }
+  updateOtAutoCalc();
+}
 
 function isRestDay(dateStr) {
   if (!dateStr) return false;

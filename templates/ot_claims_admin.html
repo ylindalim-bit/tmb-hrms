@@ -12,7 +12,7 @@
   <form method="post" action="{{ url_for('ot_claim_new') }}">
     <div class="form-grid">
       <div><label>Employee</label>
-        <select name="emp_id" required>
+        <select name="emp_id" id="emp_id" required onchange="deriveOtWindows()">
           <option value="">-- Select --</option>
           {% for e in flagged_employees %}
           <option value="{{ e.emp_id }}">{{ e.emp_id }} &mdash; {{ e.full_name }}</option>
@@ -20,8 +20,8 @@
         </select>
       </div>
       <div><label>Date</label><input type="date" id="claim_date" name="claim_date" required onchange="updateOtAutoCalc()"></div>
-      <div><label>Time In</label><input type="time" name="time_in"></div>
-      <div><label>Time Out</label><input type="time" name="time_out"></div>
+      <div><label>Time In</label><input type="time" id="time_in" name="time_in" onchange="deriveOtWindows()"></div>
+      <div><label>Time Out</label><input type="time" id="time_out" name="time_out" onchange="deriveOtWindows()"></div>
     </div>
     <div class="form-grid" style="margin-top:10px;">
       <div><label>OT Before Start Time</label><input type="time" id="ot_before_start" name="ot_before_start" onchange="updateOtAutoCalc()"></div>
@@ -132,6 +132,38 @@
 // thereof - matches the server-side _ot_claim_hours_from_form in
 // app.py exactly, so what's previewed here is what actually gets saved.
 var HOLIDAY_DATES = {{ holiday_dates | tojson }};
+var STANDARD_HOURS_BY_EMP = {{ standard_hours_by_emp | tojson }};
+
+// Derives the OT Before/OT windows from Time In/Time Out against the
+// selected employee's normal shift (Normal Start/End Time on their
+// profile) - so HR doesn't have to work out and re-type the OT
+// boundaries by hand. Only fires if that employee has both normal
+// shift times on file; otherwise the OT window fields stay exactly as
+// typed, same as before.
+function deriveOtWindows() {
+  var empId = document.getElementById('emp_id').value;
+  var hours = STANDARD_HOURS_BY_EMP[empId];
+  var beforeStart = document.getElementById('ot_before_start');
+  var beforeEnd = document.getElementById('ot_before_end');
+  var afterStart = document.getElementById('ot_start');
+  var afterEnd = document.getElementById('ot_end');
+  if (!hours || !hours.standard_start || !hours.standard_end) return;
+  var timeIn = document.getElementById('time_in').value;
+  var timeOut = document.getElementById('time_out').value;
+
+  beforeStart.value = ''; beforeEnd.value = '';
+  afterStart.value = ''; afterEnd.value = '';
+
+  if (timeIn && timeIn < hours.standard_start) {
+    beforeStart.value = timeIn;
+    beforeEnd.value = hours.standard_start;
+  }
+  if (timeOut && timeOut > hours.standard_end) {
+    afterStart.value = hours.standard_end;
+    afterEnd.value = timeOut;
+  }
+  updateOtAutoCalc();
+}
 
 function isRestDay(dateStr) {
   if (!dateStr) return false;

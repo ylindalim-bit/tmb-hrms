@@ -3297,26 +3297,19 @@ def leave_requests_admin():
         params,
     ).fetchall()
 
-    # Reviewed (historical) list is filtered to one year at a time - Jan to
-    # Dec of whichever year is selected - by the leave's own start_date
-    # rather than an arbitrary "last 50" cap.
-    year = request.args.get("year", type=int) or datetime.date.today().year
+    # Reviewed (historical) list is filtered to one month at a time - by the
+    # leave's own start_date - defaulting to the current month, rather than
+    # showing a whole year (or an arbitrary "last 50" cap) at once.
+    today = datetime.date.today()
+    year = request.args.get("year", type=int) or today.year
+    month = request.args.get("month", type=int) or today.month
     reviewed = db.execute(
         f"""SELECT lr.*, e.full_name FROM leave_requests lr
            JOIN employees e ON e.emp_id = lr.emp_id
            WHERE lr.status!='Pending' AND lr.start_date LIKE ? {scope_clause}
            ORDER BY lr.reviewed_at DESC""",
-        [f"{year}%"] + params,
+        [f"{year:04d}-{month:02d}%"] + params,
     ).fetchall()
-    years = db.execute(
-        f"""SELECT DISTINCT CAST(substr(lr.start_date,1,4) AS INTEGER) AS year
-           FROM leave_requests lr JOIN employees e ON e.emp_id = lr.emp_id
-           WHERE lr.status!='Pending' {scope_clause} ORDER BY year DESC""",
-        params,
-    ).fetchall()
-    if not years or year not in [y["year"] for y in years]:
-        years = list(years) + [{"year": year}]
-        years.sort(key=lambda y: y["year"], reverse=True)
 
     documents_by_request = {}
     for doc in db.execute(
@@ -3325,7 +3318,7 @@ def leave_requests_admin():
         documents_by_request.setdefault(doc["leave_request_id"], []).append(doc)
 
     return render_template("leave_requests_admin.html", pending=pending, reviewed=reviewed,
-                            year=year, years=years, documents_by_request=documents_by_request)
+                            year=year, month=month, documents_by_request=documents_by_request)
 
 
 @app.route("/leave-requests/<int:request_id>/delete", methods=["POST"])

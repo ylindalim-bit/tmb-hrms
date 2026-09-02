@@ -52,7 +52,7 @@
 <div class="card table-wrap">
 <table>
 <thead>
-<tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Updated</th><th class="text">What Changed</th><th></th></tr>
+<tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Updated</th><th class="text">Field Changed</th><th class="text">Before</th><th class="text">After</th><th></th></tr>
 </thead>
 <tbody>
 {% for u in profile_updates %}
@@ -61,19 +61,20 @@
   <td class="text">{{ u.full_name }}</td>
   <td class="text">{{ u.updated_at }}</td>
   <td class="text">
-    {% if u.changes %}
-    <ul style="margin:0; padding-left:16px;">
-      {% for c in u.changes %}
-      <li><strong>{{ c.field }}</strong>: {{ c.old }} &rarr; {{ c.new }}</li>
-      {% endfor %}
-    </ul>
+    {% if u.changes %}{% for c in u.changes %}<div{% if not loop.first %} style="margin-top:4px;"{% endif %}>{{ c.field }}</div>{% endfor %}
     {% else %}<span style="color:var(--muted);">-</span>{% endif %}
+  </td>
+  <td class="text">
+    {% for c in u.changes %}<div{% if not loop.first %} style="margin-top:4px;"{% endif %}>{{ c.old }}</div>{% endfor %}
+  </td>
+  <td class="text">
+    {% for c in u.changes %}<div{% if not loop.first %} style="margin-top:4px;"{% endif %}><strong>{{ c.new }}</strong></div>{% endfor %}
   </td>
   <td><a class="emp-link" href="{{ url_for('edit_employee', emp_id=u.emp_id) }}">View</a></td>
 </tr>
 {% endfor %}
 {% if not profile_updates %}
-<tr><td class="text" colspan="5">No self-service profile updates yet.</td></tr>
+<tr><td class="text" colspan="7">No self-service profile updates yet.</td></tr>
 {% endif %}
 </tbody>
 </table>

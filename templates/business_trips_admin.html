@@ -14,7 +14,7 @@
       {% for t in pending %}
       <tr>
         <td class="text">{{ t.emp_id }} &mdash; {{ t.full_name }}</td>
-        <td class="text">{{ t.notice_type }}</td>
+        <td class="text">{% if t.notice_type == 'Unrecorded Leave' %}<strong>{{ t.notice_type }}</strong>{% else %}{{ t.notice_type }}{% endif %}</td>
         <td class="text">{{ t.destination }}</td>
         <td class="text">{{ t.start_date }} &ndash; {{ t.end_date }}</td>
         <td class="text">{{ t.purpose or "" }}</td>
@@ -51,7 +51,7 @@
       {% for t in reviewed %}
       <tr>
         <td class="text">{{ t.emp_id }} &mdash; {{ t.full_name }}</td>
-        <td class="text">{{ t.notice_type }}</td>
+        <td class="text">{% if t.notice_type == 'Unrecorded Leave' %}<strong>{{ t.notice_type }}</strong>{% else %}{{ t.notice_type }}{% endif %}</td>
         <td class="text">{{ t.destination }}</td>
         <td class="text">{{ t.start_date }} &ndash; {{ t.end_date }}</td>
         <td class="text">

@@ -439,7 +439,8 @@ CREATE TABLE profile_update_log (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     emp_id      TEXT NOT NULL REFERENCES employees(emp_id),
     updated_at  TEXT NOT NULL,
-    hr_viewed_at TEXT
+    hr_viewed_at TEXT,
+    changes     TEXT  -- JSON list of {"field": "<label>", "old": "<value>", "new": "<value>"}
 );
 
 -- HR/admin accounts that can access the HR side of this app (Employees,

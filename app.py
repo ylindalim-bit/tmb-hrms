@@ -1457,11 +1457,18 @@ def confirmation_due():
     # Recent self-service profile updates, most recent first - viewing this
     # page marks them all seen (clears the Alerts nav badge), like reading
     # a notification inbox.
-    profile_updates = db.execute(
-        """SELECT pul.id, pul.emp_id, pul.updated_at, e.full_name FROM profile_update_log pul
+    profile_updates = []
+    for r in db.execute(
+        """SELECT pul.id, pul.emp_id, pul.updated_at, pul.changes, e.full_name FROM profile_update_log pul
            JOIN employees e ON e.emp_id = pul.emp_id
            ORDER BY pul.updated_at DESC LIMIT 50"""
-    ).fetchall()
+    ).fetchall():
+        row = dict(r)
+        try:
+            row["changes"] = json.loads(row["changes"]) if row["changes"] else []
+        except (TypeError, ValueError):
+            row["changes"] = []
+        profile_updates.append(row)
     db.execute(
         "UPDATE profile_update_log SET hr_viewed_at=? WHERE hr_viewed_at IS NULL",
         (datetime.datetime.now().isoformat(timespec="seconds"),),
@@ -3068,6 +3075,17 @@ def portal_document_download(doc_id):
     return send_from_directory(os.path.join(UPLOAD_DIR, emp["emp_id"]), doc["stored_name"])
 
 
+PROFILE_FIELD_LABELS = {
+    "phone_number": "Phone Number", "hp_no": "HP No.", "email": "Email Address",
+    "address": "Address", "marital_status": "Marital Status", "religion": "Religion",
+    "emergency_contact_1_name": "Contact 1 - Name", "emergency_contact_1_phone": "Contact 1 - Phone",
+    "emergency_contact_1_relationship": "Contact 1 - Relationship",
+    "emergency_contact_2_name": "Contact 2 - Name", "emergency_contact_2_phone": "Contact 2 - Phone",
+    "emergency_contact_2_relationship": "Contact 2 - Relationship",
+    "portal_password_hash": "Password",
+}
+
+
 @app.route("/portal/profile", methods=["GET", "POST"])
 @portal_login_required
 def portal_profile():
@@ -3092,15 +3110,27 @@ def portal_profile():
         new_password = request.form.get("new_password", "").strip()
         if new_password:
             fields["portal_password_hash"] = generate_password_hash(new_password)
+        # Diff against the pre-save record so the Alerts page can show HR
+        # exactly what changed, not just that something did. Password is
+        # tracked as changed/not-changed only - never the actual value.
+        changes = []
+        for col, new_val in fields.items():
+            old_val = emp[col]
+            if col == "portal_password_hash":
+                changes.append({"field": PROFILE_FIELD_LABELS[col], "old": "(previous password)", "new": "(new password set)"})
+                continue
+            if (old_val or None) != (new_val or None):
+                changes.append({"field": PROFILE_FIELD_LABELS[col], "old": old_val or "-", "new": new_val or "-"})
         set_clause = ",".join(f"{col}=?" for col in fields)
         db.execute(
             f"UPDATE employees SET {set_clause} WHERE emp_id=?",
             list(fields.values()) + [emp["emp_id"]],
         )
-        db.execute(
-            "INSERT INTO profile_update_log (emp_id, updated_at) VALUES (?,?)",
-            (emp["emp_id"], datetime.datetime.now().isoformat(timespec="seconds")),
-        )
+        if changes:
+            db.execute(
+                "INSERT INTO profile_update_log (emp_id, updated_at, changes) VALUES (?,?,?)",
+                (emp["emp_id"], datetime.datetime.now().isoformat(timespec="seconds"), json.dumps(changes)),
+            )
         db.commit()
         emp = current_portal_employee(db)
         saved = True
@@ -4093,8 +4123,13 @@ def hr_migrate_schema():
     if "profile_update_log" not in existing_tables:
         db.execute("""CREATE TABLE profile_update_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),
-            updated_at TEXT NOT NULL, hr_viewed_at TEXT)""")
+            updated_at TEXT NOT NULL, hr_viewed_at TEXT, changes TEXT)""")
         applied.append("table: profile_update_log")
+    if "profile_update_log" in existing_tables:
+        pul_cols = [r[1] for r in db.execute("PRAGMA table_info(profile_update_log)").fetchall()]
+        if "changes" not in pul_cols:
+            db.execute("ALTER TABLE profile_update_log ADD COLUMN changes TEXT")
+            applied.append("profile_update_log.changes")
     if "leave_request_documents" not in existing_tables:
         db.execute("""CREATE TABLE leave_request_documents (
             id INTEGER PRIMARY KEY AUTOINCREMENT, leave_request_id INTEGER NOT NULL REFERENCES leave_requests(id),

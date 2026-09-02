@@ -1386,6 +1386,58 @@ def attendance_daily(emp_id, year, month):
                             days=days, day_types=DAY_TYPES, monthly=monthly)
 
 
+@app.route("/attendance-daily-all/<int:year>/<int:month>")
+def attendance_daily_all(year, month):
+    """Read-only, all-employees view of Daily Attendance for one month -
+    so HR can scan for problems (a WORKED day missing Time In or Time
+    Out) across everyone at once, instead of opening each employee's
+    page one by one. Only lists employees who have at least one daily
+    entry that month - someone with none isn't being tracked this way
+    this month, so an empty grid for them wouldn't be useful. Editing
+    still happens on the per-employee page (linked from each block)."""
+    db = get_db()
+    days_in_month = calendar.monthrange(year, month)[1]
+    month_prefix = f"{year:04d}-{month:02d}-"
+
+    emp_ids_with_data = [
+        r["emp_id"] for r in db.execute(
+            "SELECT DISTINCT emp_id FROM attendance_daily WHERE date LIKE ?", (f"{month_prefix}%",)
+        ).fetchall()
+    ]
+    employees = db.execute(
+        f"""SELECT emp_id, full_name FROM employees WHERE emp_id IN ({",".join("?" * len(emp_ids_with_data))})
+            ORDER BY emp_id""",
+        emp_ids_with_data,
+    ).fetchall() if emp_ids_with_data else []
+
+    blocks = []
+    problem_count = 0
+    for e in employees:
+        saved = {
+            r["date"]: r for r in db.execute(
+                "SELECT * FROM attendance_daily WHERE emp_id=? AND date LIKE ? ORDER BY date",
+                (e["emp_id"], f"{month_prefix}%"),
+            ).fetchall()
+        }
+        days = []
+        emp_problems = 0
+        for day in range(1, days_in_month + 1):
+            date_obj = datetime.date(year, month, day)
+            row = saved.get(date_obj.isoformat())
+            is_problem = bool(row) and row["day_type"] == "WORKED" and (not row["time_in"] or not row["time_out"])
+            if is_problem:
+                emp_problems += 1
+            days.append({
+                "day": day, "date": date_obj.isoformat(), "weekday": date_obj.strftime("%a"),
+                "row": row, "problem": is_problem,
+            })
+        problem_count += emp_problems
+        blocks.append({"emp": e, "days": days, "problem_count": emp_problems})
+
+    return render_template("attendance_daily_all.html", year=year, month=month,
+                            blocks=blocks, problem_count=problem_count)
+
+
 # ---------------- Payroll History ----------------
 
 @app.route("/history")

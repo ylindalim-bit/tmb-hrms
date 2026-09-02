@@ -172,7 +172,9 @@
         <option value="5-day (Mon-Fri)" {% if emp.work_pattern=="5-day (Mon-Fri)" %}selected{% endif %}>5-day (Mon-Fri)</option>
         <option value="5.5-day (Mon-Fri + half-day Sat)" {% if emp.work_pattern=="5.5-day (Mon-Fri + half-day Sat)" %}selected{% endif %}>5.5-day (Mon-Fri + half-day every Saturday)</option>
         <option value="6-day (Mon-Sat)" {% if emp.work_pattern=="6-day (Mon-Sat)" %}selected{% endif %}>6-day (Mon-Sat, every Saturday)</option>
+        <option value="2 Off Day (Saturday)" {% if emp.work_pattern=="2 Off Day (Saturday)" %}selected{% endif %}>2 Off Day (Saturday) - alternate Saturday, e.g. Chengdu/Zhejiang base</option>
       </select>
+      <p style="color:var(--muted); font-size:12px; margin-top:4px;">"2 Off Day (Saturday)" is for reference only - like Manual, it still needs Working Days in Month set yourself each time, since which specific Saturdays are off varies month to month and can't be predicted from a calendar alone.</p>
     </div>
     <div><label style="color:#db2777;">Bank Name</label><input type="text" name="bank_name" value="{{ emp.bank_name or '' }}"></div>
     <div><label style="color:#db2777;">Bank Account No.</label><input type="text" name="bank_account_no" value="{{ emp.bank_account_no or '' }}"></div>

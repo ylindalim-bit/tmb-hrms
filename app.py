@@ -306,6 +306,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/adjust-attendance",      # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/seed-ot-claims",         # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/ot-claims-cleanup",      # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/set-work-pattern",       # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -4322,6 +4323,30 @@ def hr_ot_claims_cleanup():
         updated += cur.rowcount
     db.commit()
     return f"OK - rejected {updated} claim(s)", 200
+
+
+@app.route("/hr/set-work-pattern", methods=["POST"])
+def hr_set_work_pattern():
+    """One-off helper to set employees.work_pattern for a batch of emp_ids
+    without a live HR session - e.g. tagging China HQ staff on an
+    alternating-Saturday schedule as "2 Off Day (Saturday)". Same
+    RESTORE_TOKEN gate as the other one-time routes.
+
+    Form fields: emp_ids (comma-separated), work_pattern."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    emp_ids = [e.strip() for e in request.form.get("emp_ids", "").split(",") if e.strip()]
+    work_pattern = request.form.get("work_pattern", "").strip()
+    if not emp_ids or not work_pattern:
+        return "Refused: emp_ids and work_pattern are required", 400
+    db = get_db()
+    updated = 0
+    for emp_id in emp_ids:
+        cur = db.execute("UPDATE employees SET work_pattern=? WHERE emp_id=?", (work_pattern, emp_id))
+        updated += cur.rowcount
+    db.commit()
+    return f"OK - set work_pattern={work_pattern!r} for {updated} employee(s)", 200
 
 
 @app.route("/hr/import-historical-payroll", methods=["POST"])

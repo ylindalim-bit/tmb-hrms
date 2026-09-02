@@ -307,6 +307,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/seed-ot-claims",         # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/ot-claims-cleanup",      # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/set-work-pattern",       # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/delete-attendance-daily", # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -4347,6 +4348,39 @@ def hr_set_work_pattern():
         updated += cur.rowcount
     db.commit()
     return f"OK - set work_pattern={work_pattern!r} for {updated} employee(s)", 200
+
+
+@app.route("/hr/delete-attendance-daily", methods=["POST"])
+def hr_delete_attendance_daily():
+    """One-off helper to remove specific attendance_daily rows without a
+    live HR session - e.g. undoing a wrongly-guessed OFF/REST day so the
+    date goes back to having no record (pending a real clock-in or leave
+    application), rather than a fabricated status. Recomputes
+    attendance_monthly for every emp/month actually touched. Same
+    RESTORE_TOKEN gate as the other one-time routes.
+
+    Expected JSON body: {"EMP_ID": ["YYYY-MM-DD", ...], ...}
+    """
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    payload = json.loads(request.files["data"].read())
+    db = get_db()
+    known_emp_ids = {r["emp_id"] for r in db.execute("SELECT emp_id FROM employees").fetchall()}
+    deleted = 0
+    months_touched = set()
+    for emp_id, dates in payload.items():
+        if emp_id not in known_emp_ids:
+            return f"Refused: unknown emp_id {emp_id}", 400
+        for date_str in dates:
+            cur = db.execute("DELETE FROM attendance_daily WHERE emp_id=? AND date=?", (emp_id, date_str))
+            deleted += cur.rowcount
+            year, month, _day = (int(p) for p in date_str.split("-"))
+            months_touched.add((emp_id, year, month))
+    for emp_id, year, month in months_touched:
+        _sync_daily_to_monthly(db, emp_id, year, month)
+    db.commit()
+    return f"OK - deleted {deleted} row(s), resynced {len(months_touched)} employee-month(s)", 200
 
 
 @app.route("/hr/import-historical-payroll", methods=["POST"])

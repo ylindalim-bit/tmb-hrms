@@ -44,6 +44,7 @@ CREATE TABLE employees (
     -- activated for this employee (set by HR via Employees > Edit).
     portal_password_hash    TEXT,
     annual_leave_entitlement INTEGER,
+    al_bf_days               REAL DEFAULT 0,   -- AL brought forward from the prior year, keyed in once/year, applies to the current year only
     mc_entitlement           INTEGER,
     hospitalisation_leave_entitlement INTEGER,
     medical_claim_limit      REAL DEFAULT 0,   -- RM/year cap for outpatient medical claim reimbursement

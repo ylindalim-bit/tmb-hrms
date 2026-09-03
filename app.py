@@ -675,7 +675,7 @@ TEXT_FIELDS = ["full_name", "ic_passport_no", "date_of_birth", "marital_status",
                "leave_approver_username", "hr_username", "ot_approval_required",
                "standard_start", "standard_end"]
 NUM_FIELDS = ["basic_salary", "working_days_week", "working_hours_day",
-              "additional_epf_employee", "annual_leave_entitlement", "mc_entitlement",
+              "additional_epf_employee", "annual_leave_entitlement", "al_bf_days", "mc_entitlement",
               "hospitalisation_leave_entitlement", "medical_claim_limit"]
 NULLABLE_NUM_FIELDS = ["confirmed_new_salary"]
 ALLOWANCE_FIELDS = [
@@ -859,8 +859,19 @@ def edit_employee(emp_id):
         "SELECT COALESCE(SUM(al_days),0) AS al FROM attendance_monthly WHERE emp_id=? AND year=?",
         (emp_id, al_year),
     ).fetchone()["al"]
-    al_entitlement_effective = prorated_al
-    al_balance = (al_entitlement_effective - al_used) if al_entitlement_effective is not None else None
+    # prorated_al is None either because the full year is employed (no
+    # proration needed - al_note is also None) or because there isn't
+    # enough data on file to prorate reliably (al_note explains why). Only
+    # the latter should suppress the entitlement/balance display.
+    if prorated_al is not None:
+        al_entitlement_effective = prorated_al
+    elif not al_note:
+        al_entitlement_effective = emp["annual_leave_entitlement"] or 0
+    else:
+        al_entitlement_effective = None
+    al_bf = _al_bf_for_year(emp, al_year)
+    al_total_available = (al_entitlement_effective + al_bf) if al_entitlement_effective is not None else None
+    al_balance = (al_total_available - al_used) if al_total_available is not None else None
 
     appraisal_supervisors = db.execute(
         "SELECT username, full_name FROM hr_users WHERE can_approve_appraisal='Y' ORDER BY full_name"
@@ -874,7 +885,7 @@ def edit_employee(emp_id):
                             salary_history=salary_history, eis_applies=eis_applies,
                             documents=documents, document_types=DOCUMENT_TYPES,
                             al_note=al_note, al_year=al_year, al_entitlement_effective=al_entitlement_effective,
-                            al_used=al_used, al_balance=al_balance,
+                            al_used=al_used, al_balance=al_balance, al_bf=al_bf, al_total_available=al_total_available,
                             race_options=RACE_OPTIONS, religion_options=RELIGION_OPTIONS,
                             holiday_state_options=HOLIDAY_STATE_OPTIONS,
                             appraisal_supervisors=appraisal_supervisors, leave_approvers=leave_approvers,
@@ -1830,7 +1841,7 @@ def leave_application_form():
         prorated_al, _al_note = _prorated_al_note(emp, year)
         al_entitlement = prorated_al if prorated_al is not None else (emp["annual_leave_entitlement"] or 0)
         balances = {
-            "al": al_entitlement - totals["al"],
+            "al": al_entitlement + _al_bf_for_year(emp, year) - totals["al"],
             "mc": (emp["mc_entitlement"] or 0) - totals["mc"],
             "hl": (emp["hospitalisation_leave_entitlement"] or 0) - totals["hl"],
         }
@@ -2499,7 +2510,7 @@ def portal_dashboard():
     ).fetchone()["used"]
     prorated_al, _al_note = _prorated_al_note(emp, today.year)
     al_entitlement = prorated_al if prorated_al is not None else (emp["annual_leave_entitlement"] or 0)
-    al_balance = al_entitlement - al_used
+    al_balance = al_entitlement + _al_bf_for_year(emp, today.year) - al_used
 
     pending_leave = db.execute(
         """SELECT COUNT(*) AS n FROM leave_requests WHERE emp_id=? AND status='Pending'""",
@@ -2656,7 +2667,7 @@ def portal_attendance():
     hl_used = sum(r["hl_days"] or 0 for r in rows)
     prorated_al, _al_note = _prorated_al_note(emp, year)
     al_entitlement = prorated_al if prorated_al is not None else (emp["annual_leave_entitlement"] or 0)
-    al_balance = al_entitlement - al_used
+    al_balance = al_entitlement + _al_bf_for_year(emp, year) - al_used
     mc_balance = (emp["mc_entitlement"] or 0) - mc_used
     hl_balance = (emp["hospitalisation_leave_entitlement"] or 0) - hl_used
 
@@ -2750,7 +2761,7 @@ def portal_leave():
     hl_used = sum(r["hl_days"] or 0 for r in year_rows)
     prorated_al, _al_note = _prorated_al_note(emp, cur_year)
     al_entitlement = prorated_al if prorated_al is not None else (emp["annual_leave_entitlement"] or 0)
-    al_balance = al_entitlement - al_used
+    al_balance = al_entitlement + _al_bf_for_year(emp, cur_year) - al_used
     mc_balance = (emp["mc_entitlement"] or 0) - mc_used
     hl_balance = (emp["hospitalisation_leave_entitlement"] or 0) - hl_used
 
@@ -3245,6 +3256,18 @@ def _prorated_al_note(e, year):
     return _prorate_by_days(e, year, e["annual_leave_entitlement"])
 
 
+def _al_bf_for_year(e, year):
+    """AL brought forward is keyed in once/year and represents days carried
+    into the year currently in progress - it only applies when looking at
+    the current calendar year, not to past or future years' balances."""
+    if year != datetime.date.today().year:
+        return 0
+    try:
+        return e["al_bf_days"] or 0
+    except (IndexError, KeyError):
+        return 0
+
+
 def _prorated_medical_claim_limit(e, year):
     """Same day-based proration as Annual Leave, applied to the RM/year
     medical claim limit."""
@@ -3259,7 +3282,7 @@ def leave_report():
 
     emps = db.execute(
         """SELECT emp_id, full_name, department, date_joined, last_working_day, resignation_date,
-                  annual_leave_entitlement, mc_entitlement
+                  annual_leave_entitlement, al_bf_days, mc_entitlement
            FROM employees
            WHERE status != 'Inactive'
               OR (last_working_day IS NOT NULL AND last_working_day LIKE ?)
@@ -3282,10 +3305,13 @@ def leave_report():
         prorated_al, al_note = _prorated_al_note(e, year)
         if prorated_al is not None:
             al_entitlement = prorated_al
+        al_bf = _al_bf_for_year(e, year)
+        al_total_available = al_entitlement + al_bf
         rows.append({
             "emp_id": e["emp_id"], "full_name": e["full_name"], "department": e["department"],
-            "al_entitlement": al_entitlement, "al_used": totals["al"],
-            "al_balance": al_entitlement - totals["al"], "al_note": al_note,
+            "al_entitlement": al_entitlement, "al_bf": al_bf, "al_total_available": al_total_available,
+            "al_used": totals["al"],
+            "al_balance": al_total_available - totals["al"], "al_note": al_note,
             "mc_entitlement": mc_entitlement, "mc_used": totals["mc"],
             "mc_balance": mc_entitlement - totals["mc"],
             "hl_used": totals["hl"], "ul_used": totals["ul"], "other_used": totals["other"],
@@ -4135,6 +4161,9 @@ def hr_migrate_schema():
     if "ot_approval_required" not in emp_cols:
         db.execute("ALTER TABLE employees ADD COLUMN ot_approval_required TEXT NOT NULL DEFAULT 'N'")
         applied.append("employees.ot_approval_required")
+    if "al_bf_days" not in emp_cols:
+        db.execute("ALTER TABLE employees ADD COLUMN al_bf_days REAL DEFAULT 0")
+        applied.append("employees.al_bf_days")
     for col in ["emergency_contact_1_name", "emergency_contact_1_phone", "emergency_contact_1_relationship",
                 "emergency_contact_2_name", "emergency_contact_2_phone", "emergency_contact_2_relationship",
                 "hr_username"]:

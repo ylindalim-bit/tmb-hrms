@@ -4656,7 +4656,7 @@ def hr_bulk_set_al_bf():
     if not token or request.form.get("token") != token:
         abort(404)
     db = get_db()
-    emp_ids = ["A003", "L001", "M002", "M003", "N001", "R001", "S001"]
+    emp_ids = ["A006", "L001", "M001", "M002", "N001", "R001", "S001"]
     cur = db.executemany(
         "UPDATE employees SET al_bf_days=2 WHERE emp_id=?",
         [(e,) for e in emp_ids],

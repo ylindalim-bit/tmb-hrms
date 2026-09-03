@@ -308,6 +308,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/ot-claims-cleanup",      # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/set-work-pattern",       # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/delete-attendance-daily", # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/bulk-set-al-bf",         # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -4642,6 +4643,26 @@ def hr_bulk_set_medical_claim_limit():
     )
     db.commit()
     return f"OK - updated {cur.rowcount} employee(s) to RM500/year", 200
+
+
+@app.route("/hr/bulk-set-al-bf", methods=["POST"])
+def hr_bulk_set_al_bf():
+    """One-time fix: sets 2025 AL Brought Forward = 2 for the specific
+    employees confirmed against Linda's 2026 Leave Record spreadsheet
+    (everyone else on that sheet shows B/F 0). Same RESTORE_TOKEN gate as
+    the other one-time routes above; safe to re-run since it just sets an
+    explicit value for these emp_ids."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    emp_ids = ["A003", "L001", "M002", "M003", "N001", "R001", "S001"]
+    cur = db.executemany(
+        "UPDATE employees SET al_bf_days=2 WHERE emp_id=?",
+        [(e,) for e in emp_ids],
+    )
+    db.commit()
+    return f"OK - set al_bf_days=2 for {cur.rowcount} employee(s): {', '.join(emp_ids)}", 200
 
 
 if __name__ == "__main__":

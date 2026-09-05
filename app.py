@@ -309,6 +309,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/set-work-pattern",       # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/delete-attendance-daily", # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/bulk-set-al-bf",         # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/backfill-leave-attendance-daily",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -3524,6 +3525,42 @@ LEAVE_TYPE_TO_ATTENDANCE_COLUMN = {
     "Maternity/Paternity Leave": "other_paid_leave",
     "Emergency Leave": "other_paid_leave",
 }
+LEAVE_TYPE_TO_DAY_TYPE = {
+    "Annual Leave": "AL",
+    "Medical Leave": "MC",
+    "Hospitalisation Leave": "HL",
+    "Unpaid Leave": "UL",
+    "Maternity/Paternity Leave": "OTHER_PAID",
+    "Emergency Leave": "OTHER_PAID",
+}
+
+
+def _sync_leave_to_attendance_daily(db, leave_request):
+    """Mirrors an approved leave request onto Attendance Daily (day-by-day
+    view) so it doesn't look unrecorded there - _sync_leave_to_attendance
+    already updates the attendance_monthly totals that payroll reads;
+    this only keeps the daily grid visually consistent with that, so it
+    must never touch attendance_monthly itself (many days legitimately
+    have no daily row at all, so recomputing monthly from daily rows
+    here would undercount days that aren't leave and aren't yet
+    entered)."""
+    day_type = LEAVE_TYPE_TO_DAY_TYPE.get(leave_request["leave_type"])
+    if day_type is None:
+        return
+    start = datetime.date.fromisoformat(leave_request["start_date"])
+    end = datetime.date.fromisoformat(leave_request["end_date"])
+    day = start
+    while day <= end:
+        db.execute(
+            """INSERT INTO attendance_daily (emp_id, date, day_type, time_in, time_out,
+                   meal_allowance_flag, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0)
+               VALUES (?,?,?,NULL,NULL,'N',0,0,0)
+               ON CONFLICT(emp_id, date) DO UPDATE SET
+                   day_type=excluded.day_type, time_in=NULL, time_out=NULL,
+                   meal_allowance_flag='N', ot_hours_1_5=0, ot_hours_2_0=0, ot_hours_3_0=0""",
+            (leave_request["emp_id"], day.isoformat(), day_type),
+        )
+        day += datetime.timedelta(days=1)
 
 
 def _sync_leave_to_attendance(db, leave_request):
@@ -3605,6 +3642,7 @@ def review_leave_request(request_id):
     )
     if decision == "Approved":
         _sync_leave_to_attendance(db, leave_request)
+        _sync_leave_to_attendance_daily(db, leave_request)
     db.commit()
     return redirect(url_for("leave_requests_admin"))
 
@@ -4672,6 +4710,27 @@ def hr_bulk_set_al_bf():
     )
     db.commit()
     return f"OK - set al_bf_days=2 for {cur.rowcount} employee(s): {', '.join(emp_ids)}", 200
+
+
+@app.route("/hr/backfill-leave-attendance-daily", methods=["POST"])
+def hr_backfill_leave_attendance_daily():
+    """One-time fix: already-approved leave requests only ever updated
+    attendance_monthly (via _sync_leave_to_attendance), never the
+    attendance_daily day-by-day table, so approved leave looked like
+    unrecorded/blank days on Daily Attendance and the all-staff view.
+    Approvals from now on call _sync_leave_to_attendance_daily directly
+    (see review_leave_request); this backfills every request approved
+    before that existed. Does not touch attendance_monthly - those
+    totals are already correct. Safe to re-run."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    approved = db.execute("SELECT * FROM leave_requests WHERE status='Approved'").fetchall()
+    for lr in approved:
+        _sync_leave_to_attendance_daily(db, lr)
+    db.commit()
+    return f"OK - backfilled attendance_daily for {len(approved)} approved leave request(s)", 200
 
 
 if __name__ == "__main__":

@@ -19,11 +19,9 @@
     <div>
       <label>Leave Type</label>
       <select id="leave_type" name="leave_type" onchange="updateDaysRequested(); updateDocRequirement();" required>
-        <option value="Annual Leave">Annual Leave</option>
-        <option value="Medical Leave">Medical Leave</option>
-        <option value="Hospitalisation Leave">Hospitalisation Leave</option>
-        <option value="Unpaid Leave">Unpaid Leave</option>
-        <option value="Maternity/Paternity Leave">Maternity / Paternity Leave</option>
+        {% for t in leave_types %}
+        <option value="{{ t }}">{{ t.replace("/", " / ") }}</option>
+        {% endfor %}
       </select>
     </div>
     <div><label>Start Date</label><input type="date" id="leave_start_date" name="start_date" onchange="updateDaysRequested()" required></div>

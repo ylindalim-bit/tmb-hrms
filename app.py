@@ -151,7 +151,8 @@ if not os.path.exists(DB_PATH):
 DOCUMENT_TYPES = ["Job Application Form", "IC / Passport Copy", "Letter of Employment", "Confirmation Letter",
                    "Resignation Letter", "CP22A", "e-Stamping Certificate", "TP3 (Prior Employer Income)", "Other"]
 BUSINESS_TRIP_TYPES = ["Business Trip", "Out-Duty", "Training", "Unrecorded Leave"]
-LEAVE_TYPES = ["Annual Leave", "Medical Leave", "Hospitalisation Leave", "Unpaid Leave", "Maternity/Paternity Leave"]
+LEAVE_TYPES = ["Annual Leave", "Medical Leave", "Hospitalisation Leave", "Unpaid Leave", "Maternity/Paternity Leave",
+               "School Personal Leave"]
 LEAVE_DOC_REQUIRED_TYPES = {"Medical Leave", "Hospitalisation Leave"}
 ALLOWED_DOC_EXTENSIONS = {"pdf", "doc", "docx", "jpg", "jpeg", "png"}
 ALLOWED_PHOTO_EXTENSIONS = {"jpg", "jpeg", "png"}
@@ -2852,7 +2853,7 @@ def portal_leave():
 
     return render_template("portal_leave.html", emp=emp, requests=my_requests, error=error,
                             al_balance=al_balance, mc_balance=mc_balance, hl_balance=hl_balance,
-                            documents_by_request=documents_by_request)
+                            documents_by_request=documents_by_request, leave_types=LEAVE_TYPES)
 
 
 @app.route("/portal/leave/<int:request_id>/delete", methods=["POST"])
@@ -3644,11 +3645,12 @@ LEAVE_TYPE_TO_ATTENDANCE_COLUMN = {
     "Medical Leave": "mc_days",
     "Hospitalisation Leave": "hl_days",
     "Unpaid Leave": "ul_days",
-    # No dedicated columns for these two - attendance_monthly.other_paid_leave
-    # is documented as "PL + EL" (Paid Leave + Emergency Leave), which covers
-    # both.
+    # No dedicated columns for these - attendance_monthly.other_paid_leave
+    # is documented as "PL + EL" (Paid Leave + Emergency Leave), which
+    # covers all of these: paid, but doesn't touch the AL balance.
     "Maternity/Paternity Leave": "other_paid_leave",
     "Emergency Leave": "other_paid_leave",
+    "School Personal Leave": "other_paid_leave",
 }
 LEAVE_TYPE_TO_DAY_TYPE = {
     "Annual Leave": "AL",
@@ -3657,6 +3659,7 @@ LEAVE_TYPE_TO_DAY_TYPE = {
     "Unpaid Leave": "UL",
     "Maternity/Paternity Leave": "OTHER_PAID",
     "Emergency Leave": "OTHER_PAID",
+    "School Personal Leave": "OTHER_PAID",
 }
 
 

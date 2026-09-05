@@ -13,7 +13,8 @@
   Enter each day's status, Time In/Out, meal allowance, CEWI, and OT hours. Saving recalculates this month's
   totals (Days Worked, AL/MC/HL/UL, PH, Meal/CEWI Eligible Days, OT hours) automatically - the same figures
   the bulk Attendance page and payroll read. Meal and CEWI are separate checkboxes - a day can be eligible
-  for one without the other.
+  for one without the other. Rows shaded <span style="background:#fef3c7; padding:1px 5px;">amber</span> have
+  no record at all that day - no attendance, no approved leave, no Movement Notice.
 </p>
 {% if emp.ot_approval_required == "Y" %}
 <div class="card" style="background:#fef9c3; border-color:#eab308;">
@@ -36,7 +37,7 @@
 <tbody>
 {% for d in days %}
 {% set r = d.row %}
-<tr>
+<tr{% if d.unrecorded %} style="background:#fef3c7;"{% endif %}>
   <td class="text">{{ d.date }}</td>
   <td class="text">{{ d.weekday }}</td>
   <td class="text">

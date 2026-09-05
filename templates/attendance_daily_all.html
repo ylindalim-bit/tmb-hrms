@@ -11,8 +11,10 @@
 
 <p style="color:var(--muted); font-size:13px;">
   Read-only - shows everyone with at least one Daily Attendance entry this month, so you don't need to open
-  each employee one by one. Rows shaded red are a WORKED day missing Time In or Time Out - a likely problem
-  worth checking. To edit, use the link on each employee's block below to open their own page.
+  each employee one by one. Rows shaded <span style="background:#fee2e2; padding:1px 5px;">red</span> are a
+  WORKED day missing Time In or Time Out. Rows shaded <span style="background:#fef3c7; padding:1px 5px;">amber</span>
+  have no record at all that day - no attendance, no approved leave, no Movement Notice. To edit, use the
+  link on each employee's block below to open their own page.
 </p>
 
 {% if problem_count %}
@@ -24,12 +26,18 @@
   No missing Time In/Out found among the staff with daily entries this month.
 </div>
 {% endif %}
+{% if unrecorded_count %}
+<div class="card" style="background:#fef3c7; color:#92400e; border-color:#eab308; font-weight:600;">
+  {{ unrecorded_count }} day{{ "s" if unrecorded_count != 1 }} across {{ blocks|selectattr("unrecorded_count", "greaterthan", 0)|list|length }} employee{{ "s" if blocks|selectattr("unrecorded_count", "greaterthan", 0)|list|length != 1 }} with no record at all this month.
+</div>
+{% endif %}
 
 {% for b in blocks %}
 <div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
     <h2 style="margin:0;">{{ b.emp.emp_id }} &mdash; {{ b.emp.full_name }}
       {% if b.problem_count %}<span class="pill rejected" style="margin-left:6px;">{{ b.problem_count }} problem{{ "s" if b.problem_count != 1 }}</span>{% endif %}
+      {% if b.unrecorded_count %}<span class="pill" style="margin-left:6px; background:#fef3c7; color:#92400e;">{{ b.unrecorded_count }} unrecorded</span>{% endif %}
     </h2>
     <a class="btn secondary" href="{{ url_for('attendance_daily', emp_id=b.emp.emp_id, year=year, month=month) }}">Edit &rarr;</a>
   </div>
@@ -45,7 +53,7 @@
   <tbody>
   {% for d in b.days %}
   {% set r = d.row %}
-  <tr{% if d.problem %} style="background:#fee2e2;"{% endif %}>
+  <tr{% if d.problem %} style="background:#fee2e2;"{% elif d.unrecorded %} style="background:#fef3c7;"{% endif %}>
     <td class="text">{{ d.date }}</td>
     <td class="text">{{ d.weekday }}</td>
     <td class="text">

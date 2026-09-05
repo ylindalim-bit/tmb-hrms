@@ -1426,10 +1426,12 @@ def attendance_daily(emp_id, year, month):
     for day in range(1, days_in_month + 1):
         date_obj = datetime.date(year, month, day)
         date_iso = date_obj.isoformat()
+        row = saved.get(date_iso)
+        trip_label = trip_labels.get((emp_id, date_iso))
         days.append({
             "day": day, "date": date_iso, "weekday": date_obj.strftime("%a"),
-            "row": saved.get(date_iso),
-            "trip_label": trip_labels.get((emp_id, date_iso)),
+            "row": row, "unrecorded": row is None and not trip_label,
+            "trip_label": trip_label,
         })
     monthly = db.execute(
         "SELECT * FROM attendance_monthly WHERE emp_id=? AND year=? AND month=?",
@@ -1475,6 +1477,7 @@ def attendance_daily_all(year, month):
 
     blocks = []
     problem_count = 0
+    unrecorded_count = 0
     for e in employees:
         saved = {
             r["date"]: r for r in db.execute(
@@ -1484,23 +1487,29 @@ def attendance_daily_all(year, month):
         }
         days = []
         emp_problems = 0
+        emp_unrecorded = 0
         for day in range(1, days_in_month + 1):
             date_obj = datetime.date(year, month, day)
             date_iso = date_obj.isoformat()
             row = saved.get(date_iso)
+            trip_label = trip_labels.get((e["emp_id"], date_iso))
             is_problem = bool(row) and row["day_type"] == "WORKED" and (not row["time_in"] or not row["time_out"])
+            is_unrecorded = row is None and not trip_label
             if is_problem:
                 emp_problems += 1
+            if is_unrecorded:
+                emp_unrecorded += 1
             days.append({
                 "day": day, "date": date_iso, "weekday": date_obj.strftime("%a"),
-                "row": row, "problem": is_problem,
-                "trip_label": trip_labels.get((e["emp_id"], date_iso)),
+                "row": row, "problem": is_problem, "unrecorded": is_unrecorded,
+                "trip_label": trip_label,
             })
         problem_count += emp_problems
-        blocks.append({"emp": e, "days": days, "problem_count": emp_problems})
+        unrecorded_count += emp_unrecorded
+        blocks.append({"emp": e, "days": days, "problem_count": emp_problems, "unrecorded_count": emp_unrecorded})
 
     return render_template("attendance_daily_all.html", year=year, month=month,
-                            blocks=blocks, problem_count=problem_count)
+                            blocks=blocks, problem_count=problem_count, unrecorded_count=unrecorded_count)
 
 
 # ---------------- Payroll History ----------------

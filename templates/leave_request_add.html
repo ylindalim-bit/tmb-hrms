@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Add Leave Request - TMB Payroll{% endblock %}
+{% block content %}
+<h1>Add Leave Request (on behalf of employee)</h1>
+<p style="color:var(--muted); font-size:13px;">
+  For a backdated or otherwise never-submitted leave application. Saved straight to <strong>Approved</strong>
+  and synced onto Attendance immediately - the same as approving a normal pending request.
+</p>
+{% if error %}
+<div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger);">{{ error }}</div>
+{% endif %}
+<div class="card">
+<form method="post" enctype="multipart/form-data">
+  <div class="form-grid">
+    <div>
+      <label>Employee</label>
+      <select name="emp_id" required>
+        <option value="">Select...</option>
+        {% for e in employees %}
+        <option value="{{ e.emp_id }}">{{ e.emp_id }} &mdash; {{ e.full_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Leave Type</label>
+      <select id="leave_type" name="leave_type" onchange="updateDaysRequested(); updateDocRequirement();" required>
+        {% for t in leave_types %}
+        <option value="{{ t }}">{{ t.replace("/", " / ") }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div><label>Start Date</label><input type="date" id="leave_start_date" name="start_date" onchange="updateDaysRequested()" required></div>
+    <div><label>End Date</label><input type="date" id="leave_end_date" name="end_date" onchange="updateDaysRequested()" required></div>
+  </div>
+  <p id="days_requested" style="font-weight:600; margin-top:8px;"></p>
+  <div id="doc_upload_row" style="margin-top:12px;">
+    <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">
+      Supporting Document(s) <span id="doc_required_mark" style="color:var(--danger); display:none;">*</span>
+      <span id="doc_optional_mark" style="font-weight:400;">(optional)</span>
+      <span style="font-weight:400;">(medical certificate / hospital admission note &mdash; PDF, Word, or image)</span>
+    </label>
+    <div id="doc_file_inputs">
+      <div style="margin-bottom:4px;"><input type="file" class="supporting-doc-input" name="supporting_doc" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"></div>
+    </div>
+    <button type="button" class="btn secondary" style="padding:3px 10px; font-size:12px;" onclick="addAnotherDocInput()">+ Add another file</button>
+  </div>
+  <div style="margin-top:12px;">
+    <label id="reason_label" style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">Reason (optional)</label>
+    <input type="text" id="reason_input" name="reason" style="width:100%;">
+  </div>
+  <div class="form-actions">
+    <button class="btn" type="submit">Save as Approved</button>
+    <a class="btn secondary" href="{{ url_for('leave_requests_admin') }}">Cancel</a>
+  </div>
+</form>
+</div>
+<script>
+function updateDaysRequested() {
+  var startStr = document.getElementById('leave_start_date').value;
+  var endStr = document.getElementById('leave_end_date').value;
+  var display = document.getElementById('days_requested');
+  if (!startStr || !endStr) { display.textContent = ''; return; }
+  var start = new Date(startStr);
+  var end = new Date(endStr);
+  var days = Math.round((end - start) / 86400000) + 1;
+  if (days < 1) {
+    display.textContent = 'End date cannot be before start date.';
+    display.style.color = 'var(--danger)';
+    return;
+  }
+  display.textContent = days + (days === 1 ? ' day' : ' days');
+  display.style.color = '';
+}
+
+var DOC_REQUIRED_TYPES = ['Medical Leave', 'Hospitalisation Leave'];
+
+function updateDocRequirement() {
+  var leaveType = document.getElementById('leave_type').value;
+  var firstInput = document.querySelector('.supporting-doc-input');
+  var requiredMark = document.getElementById('doc_required_mark');
+  var optionalMark = document.getElementById('doc_optional_mark');
+  var required = DOC_REQUIRED_TYPES.indexOf(leaveType) !== -1;
+  if (firstInput) firstInput.required = required;
+  requiredMark.style.display = required ? 'inline' : 'none';
+  optionalMark.style.display = required ? 'none' : 'inline';
+
+  var reasonLabel = document.getElementById('reason_label');
+  var reasonInput = document.getElementById('reason_input');
+  reasonInput.required = required;
+  reasonLabel.innerHTML = required
+    ? 'Name of Illness / Diagnosis <span style="color:var(--danger);">*</span>'
+    : 'Reason (optional)';
+}
+
+function addAnotherDocInput() {
+  var container = document.getElementById('doc_file_inputs');
+  var div = document.createElement('div');
+  div.style.marginBottom = '4px';
+  var input = document.createElement('input');
+  input.type = 'file';
+  input.className = 'supporting-doc-input';
+  input.name = 'supporting_doc';
+  input.accept = '.pdf,.doc,.docx,.jpg,.jpeg,.png';
+  div.appendChild(input);
+  container.appendChild(div);
+}
+
+updateDocRequirement();
+</script>
+{% endblock %}

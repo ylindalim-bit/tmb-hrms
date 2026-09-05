@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Leave Requests - TMB Payroll{% endblock %}
 {% block content %}
-<h1>Leave Requests {% if hr_role != "approver" %}<a href="{{ url_for('leave_application_form') }}" target="_blank" style="font-size:13px; font-weight:600; margin-left:10px;">Print Leave Application Form &rarr;</a>{% endif %}</h1>
+<h1>Leave Requests
+  <a href="{{ url_for('hr_add_leave_request') }}" style="font-size:13px; font-weight:600; margin-left:10px;">+ Add Leave Request (on behalf of employee)</a>
+  {% if hr_role != "approver" %}<a href="{{ url_for('leave_application_form') }}" target="_blank" style="font-size:13px; font-weight:600; margin-left:10px;">Print Leave Application Form &rarr;</a>{% endif %}
+</h1>
 
 <div class="card">
   <h2 style="margin-top:0;">Pending ({{ pending|length }})</h2>

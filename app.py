@@ -151,6 +151,8 @@ if not os.path.exists(DB_PATH):
 DOCUMENT_TYPES = ["Job Application Form", "IC / Passport Copy", "Letter of Employment", "Confirmation Letter",
                    "Resignation Letter", "CP22A", "e-Stamping Certificate", "TP3 (Prior Employer Income)", "Other"]
 BUSINESS_TRIP_TYPES = ["Business Trip", "Out-Duty", "Training", "Unrecorded Leave"]
+LEAVE_TYPES = ["Annual Leave", "Medical Leave", "Hospitalisation Leave", "Unpaid Leave", "Maternity/Paternity Leave"]
+LEAVE_DOC_REQUIRED_TYPES = {"Medical Leave", "Hospitalisation Leave"}
 ALLOWED_DOC_EXTENSIONS = {"pdf", "doc", "docx", "jpg", "jpeg", "png"}
 ALLOWED_PHOTO_EXTENSIONS = {"jpg", "jpeg", "png"}
 RACE_OPTIONS = ["Malay", "Chinese", "Iban", "Kadazan", "Other"]
@@ -2746,57 +2748,79 @@ def portal_attendance():
     )
 
 
+def _validate_and_create_leave_request(db, emp_id, leave_type, start_date, end_date, reason, files, status,
+                                        reviewed_by=None):
+    """Shared validation + insert for a new leave_requests row - used by
+    both the employee's own portal submission (status='Pending') and
+    HR keying one in on an employee's behalf (status='Approved' or
+    'Pending'). Returns (leave_request_id, None) on success, or
+    (None, error_message) if validation failed. Does not commit - the
+    caller commits once, alongside whatever else belongs in the same
+    request (e.g. syncing an Approved entry onto Attendance)."""
+    has_file = len(files) > 0
+    if not leave_type or not start_date or not end_date:
+        return None, "Leave type, start date, and end date are required."
+    if end_date < start_date:
+        return None, "End date cannot be before start date."
+    if leave_type in LEAVE_DOC_REQUIRED_TYPES and not has_file:
+        return None, f"{leave_type} requires a supporting document (e.g. medical certificate) to be uploaded."
+    if leave_type in LEAVE_DOC_REQUIRED_TYPES and not reason:
+        return None, f"{leave_type} requires the name of the illness/diagnosis to be stated."
+    if has_file:
+        for f in files:
+            original_name = secure_filename(f.filename)
+            ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+            if ext not in ALLOWED_DOC_EXTENSIONS:
+                return None, "Supporting document(s) must be PDF, Word files, or images (JPG/PNG)."
+
+    days = (datetime.date.fromisoformat(end_date) - datetime.date.fromisoformat(start_date)).days + 1
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    if status == "Approved":
+        cur = db.execute(
+            """INSERT INTO leave_requests (emp_id, leave_type, start_date, end_date, days, reason, status,
+                   submitted_at, reviewed_by, reviewed_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (emp_id, leave_type, start_date, end_date, days, reason, status, now, reviewed_by, now),
+        )
+    else:
+        cur = db.execute(
+            """INSERT INTO leave_requests (emp_id, leave_type, start_date, end_date, days, reason, status,
+                   submitted_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (emp_id, leave_type, start_date, end_date, days, reason, status, now),
+        )
+    leave_request_id = cur.lastrowid
+    if has_file:
+        emp_dir = os.path.join(UPLOAD_DIR, emp_id)
+        os.makedirs(emp_dir, exist_ok=True)
+        for f in files:
+            original_name = secure_filename(f.filename)
+            stored_name = f"{uuid.uuid4().hex}_{original_name}"
+            f.save(os.path.join(emp_dir, stored_name))
+            db.execute(
+                """INSERT INTO leave_request_documents (leave_request_id, original_name, stored_name, uploaded_at)
+                   VALUES (?,?,?,?)""",
+                (leave_request_id, original_name, stored_name, now),
+            )
+    return leave_request_id, None
+
+
 @app.route("/portal/leave", methods=["GET", "POST"])
 @portal_login_required
 def portal_leave():
     db = get_db()
     emp = current_portal_employee(db)
     error = None
-    DOC_REQUIRED_TYPES = {"Medical Leave", "Hospitalisation Leave"}
     if request.method == "POST":
         leave_type = request.form.get("leave_type", "").strip()
         start_date = request.form.get("start_date", "")
         end_date = request.form.get("end_date", "")
         reason = request.form.get("reason", "").strip() or None
         files = [f for f in request.files.getlist("supporting_doc") if f.filename]
-        has_file = len(files) > 0
-        if not leave_type or not start_date or not end_date:
-            error = "Leave type, start date, and end date are required."
-        elif end_date < start_date:
-            error = "End date cannot be before start date."
-        elif leave_type in DOC_REQUIRED_TYPES and not has_file:
-            error = f"{leave_type} requires a supporting document (e.g. medical certificate) to be uploaded."
-        elif leave_type in DOC_REQUIRED_TYPES and not reason:
-            error = f"{leave_type} requires the name of the illness/diagnosis to be stated."
-        elif has_file:
-            for f in files:
-                original_name = secure_filename(f.filename)
-                ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
-                if ext not in ALLOWED_DOC_EXTENSIONS:
-                    error = "Supporting document(s) must be PDF, Word files, or images (JPG/PNG)."
-                    break
+        leave_request_id, error = _validate_and_create_leave_request(
+            db, emp["emp_id"], leave_type, start_date, end_date, reason, files, "Pending"
+        )
         if error is None:
-            days = (datetime.date.fromisoformat(end_date) - datetime.date.fromisoformat(start_date)).days + 1
-            now = datetime.datetime.now().isoformat(timespec="seconds")
-            cur = db.execute(
-                """INSERT INTO leave_requests (emp_id, leave_type, start_date, end_date, days, reason, status,
-                       submitted_at)
-                   VALUES (?,?,?,?,?,?,'Pending',?)""",
-                (emp["emp_id"], leave_type, start_date, end_date, days, reason, now),
-            )
-            leave_request_id = cur.lastrowid
-            if has_file:
-                emp_dir = os.path.join(UPLOAD_DIR, emp["emp_id"])
-                os.makedirs(emp_dir, exist_ok=True)
-                for f in files:
-                    original_name = secure_filename(f.filename)
-                    stored_name = f"{uuid.uuid4().hex}_{original_name}"
-                    f.save(os.path.join(emp_dir, stored_name))
-                    db.execute(
-                        """INSERT INTO leave_request_documents (leave_request_id, original_name, stored_name, uploaded_at)
-                           VALUES (?,?,?,?)""",
-                        (leave_request_id, original_name, stored_name, now),
-                    )
             db.commit()
             return redirect(url_for("portal_leave"))
 
@@ -3490,6 +3514,57 @@ def leave_requests_admin():
 
     return render_template("leave_requests_admin.html", pending=pending, reviewed=reviewed,
                             year=year, month=month, documents_by_request=documents_by_request)
+
+
+@app.route("/leave-requests/add", methods=["GET", "POST"])
+def hr_add_leave_request():
+    """Lets HR key in a leave request on an employee's behalf - e.g. a
+    backdated application the employee never submitted themselves.
+    Created straight to status='Approved' (HR entering it is treated as
+    already agreed), so it's synced onto Attendance immediately, the
+    same way approving a normal pending request does."""
+    db = get_db()
+    error = None
+    is_approver = session.get("hr_role") == "approver"
+    if is_approver:
+        employees = db.execute(
+            "SELECT emp_id, full_name FROM employees WHERE status != 'Inactive' AND leave_approver_username=? ORDER BY emp_id",
+            (session["hr_username"],),
+        ).fetchall()
+    else:
+        employees = db.execute(
+            "SELECT emp_id, full_name FROM employees WHERE status != 'Inactive' ORDER BY emp_id"
+        ).fetchall()
+
+    if request.method == "POST":
+        emp_id = request.form.get("emp_id", "").strip()
+        leave_type = request.form.get("leave_type", "").strip()
+        start_date = request.form.get("start_date", "")
+        end_date = request.form.get("end_date", "")
+        reason = request.form.get("reason", "").strip() or None
+        files = [f for f in request.files.getlist("supporting_doc") if f.filename]
+
+        emp = db.execute("SELECT * FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+        if emp is None:
+            error = "Select a valid employee."
+        elif is_approver and emp["leave_approver_username"] != session["hr_username"]:
+            error = "You can only enter leave for staff assigned to you."
+        else:
+            hr_user = db.execute("SELECT full_name FROM hr_users WHERE username=?", (session["hr_username"],)).fetchone()
+            reviewer = hr_user["full_name"] if hr_user else session["hr_username"]
+            leave_request_id, error = _validate_and_create_leave_request(
+                db, emp_id, leave_type, start_date, end_date, reason, files, "Approved", reviewed_by=reviewer
+            )
+            if error is None:
+                leave_request = db.execute("SELECT * FROM leave_requests WHERE id=?", (leave_request_id,)).fetchone()
+                _sync_leave_to_attendance(db, leave_request)
+                _sync_leave_to_attendance_daily(db, leave_request)
+                db.commit()
+                sd = datetime.date.fromisoformat(start_date)
+                return redirect(url_for("leave_requests_admin", year=sd.year, month=sd.month))
+
+    return render_template("leave_request_add.html", employees=employees, error=error,
+                            leave_types=LEAVE_TYPES)
 
 
 @app.route("/leave-requests/<int:request_id>/delete", methods=["POST"])

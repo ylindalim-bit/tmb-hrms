@@ -310,6 +310,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/delete-attendance-daily", # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/bulk-set-al-bf",         # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/backfill-leave-attendance-daily",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/backfill-unrecorded-leave-attendance",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -3535,20 +3536,15 @@ LEAVE_TYPE_TO_DAY_TYPE = {
 }
 
 
-def _sync_leave_to_attendance_daily(db, leave_request):
-    """Mirrors an approved leave request onto Attendance Daily (day-by-day
-    view) so it doesn't look unrecorded there - _sync_leave_to_attendance
-    already updates the attendance_monthly totals that payroll reads;
-    this only keeps the daily grid visually consistent with that, so it
-    must never touch attendance_monthly itself (many days legitimately
-    have no daily row at all, so recomputing monthly from daily rows
-    here would undercount days that aren't leave and aren't yet
-    entered)."""
-    day_type = LEAVE_TYPE_TO_DAY_TYPE.get(leave_request["leave_type"])
-    if day_type is None:
-        return
-    start = datetime.date.fromisoformat(leave_request["start_date"])
-    end = datetime.date.fromisoformat(leave_request["end_date"])
+def _sync_days_to_attendance_daily(db, emp_id, start_date, end_date, day_type):
+    """Writes day_type onto Attendance Daily (day-by-day view) for every day
+    in [start_date, end_date] so an approved absence doesn't look
+    unrecorded there. Must never touch attendance_monthly itself - many
+    days legitimately have no daily row at all, so recomputing monthly
+    from daily rows here would undercount days that aren't leave and
+    aren't yet entered."""
+    start = datetime.date.fromisoformat(start_date)
+    end = datetime.date.fromisoformat(end_date)
     day = start
     while day <= end:
         db.execute(
@@ -3558,23 +3554,20 @@ def _sync_leave_to_attendance_daily(db, leave_request):
                ON CONFLICT(emp_id, date) DO UPDATE SET
                    day_type=excluded.day_type, time_in=NULL, time_out=NULL,
                    meal_allowance_flag='N', ot_hours_1_5=0, ot_hours_2_0=0, ot_hours_3_0=0""",
-            (leave_request["emp_id"], day.isoformat(), day_type),
+            (emp_id, day.isoformat(), day_type),
         )
         day += datetime.timedelta(days=1)
 
 
-def _sync_leave_to_attendance(db, leave_request):
-    """Adds an approved leave request's days onto Attendance, split across
-    whichever month(s) the date range actually falls in, so HR doesn't have
-    to re-enter the same days by hand on the Attendance page. Adds to
-    whatever's already there for that month rather than overwriting it,
-    since other days may already be recorded."""
-    column = LEAVE_TYPE_TO_ATTENDANCE_COLUMN.get(leave_request["leave_type"])
-    if column is None:
-        return  # unrecognized leave type - nothing to sync
-
-    start = datetime.date.fromisoformat(leave_request["start_date"])
-    end = datetime.date.fromisoformat(leave_request["end_date"])
+def _sync_days_to_attendance_monthly(db, emp_id, start_date, end_date, column):
+    """Adds days in [start_date, end_date] onto attendance_monthly's
+    `column`, split across whichever month(s) the range actually falls
+    in, so HR doesn't have to re-enter the same days by hand on the
+    Attendance page. Adds to whatever's already there for that month
+    rather than overwriting it, since other days may already be
+    recorded."""
+    start = datetime.date.fromisoformat(start_date)
+    end = datetime.date.fromisoformat(end_date)
 
     days_per_month = {}
     day = start
@@ -3589,7 +3582,7 @@ def _sync_leave_to_attendance(db, leave_request):
                 VALUES (?,?,?,?)
                 ON CONFLICT(emp_id, year, month) DO UPDATE SET
                     {column} = {column} + excluded.{column}""",
-            (leave_request["emp_id"], year, month, count),
+            (emp_id, year, month, count),
         )
         # Days Worked and Meal Eligible Days both need to drop when leave is
         # added, or the employee ends up credited for days off as if they
@@ -3601,7 +3594,7 @@ def _sync_leave_to_attendance(db, leave_request):
             """SELECT working_days_in_month, al_days, mc_days, hl_days,
                       ul_days, other_paid_leave, absent_days
                FROM attendance_monthly WHERE emp_id=? AND year=? AND month=?""",
-            (leave_request["emp_id"], year, month),
+            (emp_id, year, month),
         ).fetchone()
         total_leave = sum(
             row[k] or 0 for k in
@@ -3611,8 +3604,26 @@ def _sync_leave_to_attendance(db, leave_request):
         db.execute(
             """UPDATE attendance_monthly SET days_worked=?, meal_eligible_days=?
                WHERE emp_id=? AND year=? AND month=?""",
-            (recomputed_days, recomputed_days, leave_request["emp_id"], year, month),
+            (recomputed_days, recomputed_days, emp_id, year, month),
         )
+
+
+def _sync_leave_to_attendance_daily(db, leave_request):
+    day_type = LEAVE_TYPE_TO_DAY_TYPE.get(leave_request["leave_type"])
+    if day_type is None:
+        return
+    _sync_days_to_attendance_daily(
+        db, leave_request["emp_id"], leave_request["start_date"], leave_request["end_date"], day_type
+    )
+
+
+def _sync_leave_to_attendance(db, leave_request):
+    column = LEAVE_TYPE_TO_ATTENDANCE_COLUMN.get(leave_request["leave_type"])
+    if column is None:
+        return  # unrecognized leave type - nothing to sync
+    _sync_days_to_attendance_monthly(
+        db, leave_request["emp_id"], leave_request["start_date"], leave_request["end_date"], column
+    )
 
 
 @app.route("/leave-requests/<int:request_id>/review", methods=["POST"])
@@ -3711,6 +3722,12 @@ def review_business_trip(trip_id):
            WHERE id=?""",
         (decision, reviewer, datetime.datetime.now().isoformat(timespec="seconds"), notes, trip_id),
     )
+    if decision == "Approved" and trip["notice_type"] == "Unrecorded Leave":
+        # Special Leave granted to the employee to explain an attendance gap
+        # after the fact - recorded as Other Paid Leave (paid, not deducted
+        # from AL/UL), same bucket as Maternity/Paternity and Emergency Leave.
+        _sync_days_to_attendance_monthly(db, trip["emp_id"], trip["start_date"], trip["end_date"], "other_paid_leave")
+        _sync_days_to_attendance_daily(db, trip["emp_id"], trip["start_date"], trip["end_date"], "OTHER_PAID")
     db.commit()
     return redirect(url_for("business_trips_admin"))
 
@@ -4731,6 +4748,31 @@ def hr_backfill_leave_attendance_daily():
         _sync_leave_to_attendance_daily(db, lr)
     db.commit()
     return f"OK - backfilled attendance_daily for {len(approved)} approved leave request(s)", 200
+
+
+@app.route("/hr/backfill-unrecorded-leave-attendance", methods=["POST"])
+def hr_backfill_unrecorded_leave_attendance():
+    """One-time fix: approving an 'Unrecorded Leave' Movement Notice never
+    touched attendance at all (unlike a Leave Request) - approved notices
+    from before this existed left their date range looking like a
+    genuinely blank/unexplained attendance gap. Backfills both
+    attendance_monthly (other_paid_leave) and attendance_daily
+    (OTHER_PAID) for every already-approved 'Unrecorded Leave' notice.
+    Re-running would double-count attendance_monthly (it adds, it doesn't
+    upsert an absolute value), so this is NOT safe to call twice - unlike
+    the other backfill routes above."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    trips = db.execute(
+        "SELECT * FROM business_trips WHERE status='Approved' AND notice_type='Unrecorded Leave'"
+    ).fetchall()
+    for t in trips:
+        _sync_days_to_attendance_monthly(db, t["emp_id"], t["start_date"], t["end_date"], "other_paid_leave")
+        _sync_days_to_attendance_daily(db, t["emp_id"], t["start_date"], t["end_date"], "OTHER_PAID")
+    db.commit()
+    return f"OK - backfilled attendance for {len(trips)} approved Unrecorded Leave notice(s)", 200
 
 
 if __name__ == "__main__":

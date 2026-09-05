@@ -1396,8 +1396,17 @@ def attendance_daily(emp_id, year, month):
         (emp_id, year, month),
     ).fetchone()
 
+    cewi_incentive = None
+    if monthly is not None:
+        # Same formula as payroll_calc.py's cewi_allowance - CEWI rides on
+        # the same per-day Meal checkbox as Meal Allowance, it isn't a
+        # separate daily entry.
+        factor = payroll_calc.allowance_prorate_factor(emp["cewi_effective_date"], year, month) if emp["cewi_flag"] == "Y" else 0.0
+        cewi_incentive = round((monthly["meal_eligible_days"] or 0) * (emp["cewi_rate"] or 0) * factor, 2)
+
     return render_template("attendance_daily.html", emp=emp, year=year, month=month,
-                            days=days, day_types=DAY_TYPES, monthly=monthly)
+                            days=days, day_types=DAY_TYPES, monthly=monthly,
+                            cewi_incentive=cewi_incentive)
 
 
 @app.route("/attendance-daily-all/<int:year>/<int:month>")

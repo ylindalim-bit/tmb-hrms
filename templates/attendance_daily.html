@@ -12,7 +12,8 @@
 <p style="color:var(--muted); font-size:13px;">
   Enter each day's status, Time In/Out, meal allowance, and OT hours. Saving recalculates this month's
   totals (Days Worked, AL/MC/HL/UL, PH, Meal Eligible Days, OT hours) automatically - the same figures
-  the bulk Attendance page and payroll read.
+  the bulk Attendance page and payroll read. The Meal checkbox also drives this employee's CEWI
+  Incentive (see totals below) - there's no separate CEWI checkbox, it uses the same eligible days.
 </p>
 {% if emp.ot_approval_required == "Y" %}
 <div class="card" style="background:#fef9c3; border-color:#eab308;">
@@ -87,6 +88,14 @@
     <div><label style="display:block; font-size:12px; color:var(--muted);">Working Days in Month</label>{{ monthly.working_days_in_month }}</div>
     <div><label style="display:block; font-size:12px; color:var(--muted);">Meal Eligible Days</label>{{ monthly.meal_eligible_days }}</div>
     <div><label style="display:block; font-size:12px; color:var(--muted);">OT 1.5x / 2.0x / 3.0x</label>{{ monthly.ot_hours_1_5 }} / {{ monthly.ot_hours_2_0 }} / {{ monthly.ot_hours_3_0 }}</div>
+    <div><label style="display:block; font-size:12px; color:var(--muted);">CEWI Incentive (RM)</label>
+      {% if emp.cewi_flag == "Y" %}
+      <strong>{{ "%.2f"|format(cewi_incentive) }}</strong>
+      <span style="font-size:11px; color:var(--muted);">({{ monthly.meal_eligible_days }} days &times; RM{{ "%.2f"|format(emp.cewi_rate or 0) }})</span>
+      {% else %}
+      <span style="color:var(--muted);">Not enabled for this employee</span>
+      {% endif %}
+    </div>
   </div>
 </div>
 {% endif %}

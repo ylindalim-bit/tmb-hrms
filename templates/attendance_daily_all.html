@@ -48,7 +48,9 @@
   <tr{% if d.problem %} style="background:#fee2e2;"{% endif %}>
     <td class="text">{{ d.date }}</td>
     <td class="text">{{ d.weekday }}</td>
-    <td class="text">{{ r.day_type if r else "-" }}</td>
+    <td class="text">
+      {% if d.trip_label %}{{ d.trip_label }}{% else %}{{ r.day_type if r else "-" }}{% endif %}
+    </td>
     <td class="text">{{ r.time_in if r and r.time_in else "-" }}</td>
     <td class="text">{{ r.time_out if r and r.time_out else "-" }}</td>
     <td>{{ "Y" if r and r.meal_allowance_flag == "Y" else "-" }}</td>

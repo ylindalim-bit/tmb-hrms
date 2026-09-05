@@ -1336,6 +1336,38 @@ def _sync_daily_to_monthly(db, emp_id, year, month):
     )
 
 
+def _trip_labels_for_month(db, year, month, emp_id=None):
+    """Maps (emp_id, date) -> Movement Notice type (Business Trip,
+    Out-Duty, Training, Unrecorded Leave) for every approved notice
+    overlapping this month, so Daily Attendance can show the specific
+    reason instead of just the payroll day_type - which collapses
+    several different reasons into one bucket (e.g. an Unrecorded Leave
+    notice and a Maternity/Paternity Leave request both land on
+    OTHER_PAID), and doesn't cover Business Trip/Out-Duty/Training at
+    all since those don't touch attendance/payroll."""
+    month_start = datetime.date(year, month, 1)
+    month_end = datetime.date(year, month, calendar.monthrange(year, month)[1])
+    params = [month_end.isoformat(), month_start.isoformat()]
+    scope = ""
+    if emp_id is not None:
+        scope = "AND emp_id=?"
+        params.append(emp_id)
+    trips = db.execute(
+        f"""SELECT emp_id, notice_type, start_date, end_date FROM business_trips
+            WHERE status='Approved' AND start_date<=? AND end_date>=? {scope}""",
+        params,
+    ).fetchall()
+    labels = {}
+    for t in trips:
+        start = max(datetime.date.fromisoformat(t["start_date"]), month_start)
+        end = min(datetime.date.fromisoformat(t["end_date"]), month_end)
+        day = start
+        while day <= end:
+            labels[(t["emp_id"], day.isoformat())] = t["notice_type"]
+            day += datetime.timedelta(days=1)
+    return labels
+
+
 @app.route("/attendance-daily/<emp_id>/<int:year>/<int:month>", methods=["GET", "POST"])
 def attendance_daily(emp_id, year, month):
     """Day-by-day attendance entry for one employee - HR fills in each
@@ -1386,12 +1418,15 @@ def attendance_daily(emp_id, year, month):
             (emp_id, f"{year:04d}-{month:02d}-%"),
         ).fetchall()
     }
+    trip_labels = _trip_labels_for_month(db, year, month, emp_id)
     days = []
     for day in range(1, days_in_month + 1):
         date_obj = datetime.date(year, month, day)
+        date_iso = date_obj.isoformat()
         days.append({
-            "day": day, "date": date_obj.isoformat(), "weekday": date_obj.strftime("%a"),
-            "row": saved.get(date_obj.isoformat()),
+            "day": day, "date": date_iso, "weekday": date_obj.strftime("%a"),
+            "row": saved.get(date_iso),
+            "trip_label": trip_labels.get((emp_id, date_iso)),
         })
     monthly = db.execute(
         "SELECT * FROM attendance_monthly WHERE emp_id=? AND year=? AND month=?",
@@ -1435,6 +1470,8 @@ def attendance_daily_all(year, month):
         emp_ids_with_data,
     ).fetchall() if emp_ids_with_data else []
 
+    trip_labels = _trip_labels_for_month(db, year, month)
+
     blocks = []
     problem_count = 0
     for e in employees:
@@ -1448,13 +1485,15 @@ def attendance_daily_all(year, month):
         emp_problems = 0
         for day in range(1, days_in_month + 1):
             date_obj = datetime.date(year, month, day)
-            row = saved.get(date_obj.isoformat())
+            date_iso = date_obj.isoformat()
+            row = saved.get(date_iso)
             is_problem = bool(row) and row["day_type"] == "WORKED" and (not row["time_in"] or not row["time_out"])
             if is_problem:
                 emp_problems += 1
             days.append({
-                "day": day, "date": date_obj.isoformat(), "weekday": date_obj.strftime("%a"),
+                "day": day, "date": date_iso, "weekday": date_obj.strftime("%a"),
                 "row": row, "problem": is_problem,
+                "trip_label": trip_labels.get((e["emp_id"], date_iso)),
             })
         problem_count += emp_problems
         blocks.append({"emp": e, "days": days, "problem_count": emp_problems})

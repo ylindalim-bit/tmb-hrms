@@ -40,11 +40,14 @@
   <td class="text">{{ d.date }}</td>
   <td class="text">{{ d.weekday }}</td>
   <td class="text">
-    <select name="day_type__{{ d.day }}">
+    <select name="day_type__{{ d.day }}" style="min-width:110px;">
       {% for t in day_types %}
       <option value="{{ t }}" {% if (r.day_type if r else 'WORKED') == t %}selected{% endif %}>{{ t }}</option>
       {% endfor %}
     </select>
+    {% if d.trip_label %}
+    <div style="font-size:11px; color:var(--muted); margin-top:2px;">{{ d.trip_label }}</div>
+    {% endif %}
   </td>
   <td class="text"><input type="time" name="time_in__{{ d.day }}" value="{{ r.time_in if r else '' }}" style="width:110px;"></td>
   <td class="text"><input type="time" name="time_out__{{ d.day }}" value="{{ r.time_out if r else '' }}" style="width:110px;"></td>

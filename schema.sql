@@ -160,6 +160,7 @@ CREATE TABLE attendance_monthly (
     ot_hours_2_0        REAL DEFAULT 0,
     ot_hours_3_0        REAL DEFAULT 0,
     meal_eligible_days  REAL DEFAULT 0,
+    cewi_eligible_days  REAL DEFAULT 0,   -- separate from Meal Eligible Days - CEWI Incentive has its own daily checkbox
     PRIMARY KEY (emp_id, year, month)
 );
 
@@ -178,6 +179,7 @@ CREATE TABLE attendance_daily (
     time_in         TEXT,   -- HH:MM, only meaningful when day_type='WORKED'
     time_out        TEXT,
     meal_allowance_flag TEXT NOT NULL DEFAULT 'N',  -- Y/N - meal allowance applies this day
+    cewi_flag       TEXT NOT NULL DEFAULT 'N',  -- Y/N - CEWI Incentive applies this day (separate from Meal)
     ot_hours_1_5    REAL DEFAULT 0,
     ot_hours_2_0    REAL DEFAULT 0,
     ot_hours_3_0    REAL DEFAULT 0,

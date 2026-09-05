@@ -1233,7 +1233,7 @@ def attendance(year, month):
                   "other_paid_leave", "ph_days", "off_days", "rest_days",
                   "absent_days", "working_days_in_month",
                   "ot_hours_1_5", "ot_hours_2_0", "ot_hours_3_0",
-                  "meal_eligible_days"]
+                  "meal_eligible_days", "cewi_eligible_days"]
         for emp_id in emp_ids:
             values = [float(request.form.get(f"{f}__{emp_id}", 0) or 0) for f in fields]
             db.execute(
@@ -1315,24 +1315,26 @@ def _sync_daily_to_monthly(db, emp_id, year, month):
     ot_2_0 = sum(r["ot_hours_2_0"] or 0 for r in rows)
     ot_3_0 = sum(r["ot_hours_3_0"] or 0 for r in rows)
     meal_days = sum(1 for r in rows if r["meal_allowance_flag"] == "Y")
+    cewi_days = sum(1 for r in rows if r["cewi_flag"] == "Y")
     working_days_in_month = counts["WORKED"] + counts["AL"] + counts["MC"] + counts["HL"] + counts["OTHER_PAID"] + counts["PH"]
 
     db.execute(
         """INSERT INTO attendance_monthly (
                emp_id, year, month, days_worked, al_days, mc_days, hl_days, ul_days,
                other_paid_leave, ph_days, off_days, rest_days, working_days_in_month,
-               ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, meal_eligible_days
-           ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, meal_eligible_days, cewi_eligible_days
+           ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(emp_id, year, month) DO UPDATE SET
              days_worked=excluded.days_worked, al_days=excluded.al_days, mc_days=excluded.mc_days,
              hl_days=excluded.hl_days, ul_days=excluded.ul_days, other_paid_leave=excluded.other_paid_leave,
              ph_days=excluded.ph_days, off_days=excluded.off_days, rest_days=excluded.rest_days,
              working_days_in_month=excluded.working_days_in_month,
              ot_hours_1_5=excluded.ot_hours_1_5, ot_hours_2_0=excluded.ot_hours_2_0,
-             ot_hours_3_0=excluded.ot_hours_3_0, meal_eligible_days=excluded.meal_eligible_days""",
+             ot_hours_3_0=excluded.ot_hours_3_0, meal_eligible_days=excluded.meal_eligible_days,
+             cewi_eligible_days=excluded.cewi_eligible_days""",
         (emp_id, year, month, counts["WORKED"], counts["AL"], counts["MC"], counts["HL"], counts["UL"],
          counts["OTHER_PAID"], counts["PH"], counts["OFF"], counts["REST"], working_days_in_month,
-         ot_1_5, ot_2_0, ot_3_0, meal_days),
+         ot_1_5, ot_2_0, ot_3_0, meal_days, cewi_days),
     )
 
 
@@ -1391,21 +1393,22 @@ def attendance_daily(emp_id, year, month):
             time_in = request.form.get(f"time_in__{day}") or None
             time_out = request.form.get(f"time_out__{day}") or None
             meal_flag = "Y" if request.form.get(f"meal__{day}") else "N"
+            cewi_flag = "Y" if request.form.get(f"cewi__{day}") else "N"
             ot_1_5 = float(request.form.get(f"ot_1_5__{day}", 0) or 0)
             ot_2_0 = float(request.form.get(f"ot_2_0__{day}", 0) or 0)
             ot_3_0 = float(request.form.get(f"ot_3_0__{day}", 0) or 0)
             ot_reason = request.form.get(f"ot_reason__{day}") or None
             db.execute(
                 """INSERT INTO attendance_daily (
-                       emp_id, date, day_type, time_in, time_out, meal_allowance_flag,
+                       emp_id, date, day_type, time_in, time_out, meal_allowance_flag, cewi_flag,
                        ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, ot_reason
-                   ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(emp_id, date) DO UPDATE SET
                      day_type=excluded.day_type, time_in=excluded.time_in, time_out=excluded.time_out,
-                     meal_allowance_flag=excluded.meal_allowance_flag,
+                     meal_allowance_flag=excluded.meal_allowance_flag, cewi_flag=excluded.cewi_flag,
                      ot_hours_1_5=excluded.ot_hours_1_5, ot_hours_2_0=excluded.ot_hours_2_0,
                      ot_hours_3_0=excluded.ot_hours_3_0, ot_reason=excluded.ot_reason""",
-                (emp_id, date_str, day_type, time_in, time_out, meal_flag,
+                (emp_id, date_str, day_type, time_in, time_out, meal_flag, cewi_flag,
                  ot_1_5, ot_2_0, ot_3_0, ot_reason),
             )
         _sync_daily_to_monthly(db, emp_id, year, month)
@@ -1435,11 +1438,9 @@ def attendance_daily(emp_id, year, month):
 
     cewi_incentive = None
     if monthly is not None:
-        # Same formula as payroll_calc.py's cewi_allowance - CEWI rides on
-        # the same per-day Meal checkbox as Meal Allowance, it isn't a
-        # separate daily entry.
+        # Same formula as payroll_calc.py's cewi_allowance.
         factor = payroll_calc.allowance_prorate_factor(emp["cewi_effective_date"], year, month) if emp["cewi_flag"] == "Y" else 0.0
-        cewi_incentive = round((monthly["meal_eligible_days"] or 0) * (emp["cewi_rate"] or 0) * factor, 2)
+        cewi_incentive = round((monthly["cewi_eligible_days"] or 0) * (emp["cewi_rate"] or 0) * factor, 2)
 
     return render_template("attendance_daily.html", emp=emp, year=year, month=month,
                             days=days, day_types=DAY_TYPES, monthly=monthly,
@@ -3588,11 +3589,11 @@ def _sync_days_to_attendance_daily(db, emp_id, start_date, end_date, day_type):
     while day <= end:
         db.execute(
             """INSERT INTO attendance_daily (emp_id, date, day_type, time_in, time_out,
-                   meal_allowance_flag, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0)
-               VALUES (?,?,?,NULL,NULL,'N',0,0,0)
+                   meal_allowance_flag, cewi_flag, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0)
+               VALUES (?,?,?,NULL,NULL,'N','N',0,0,0)
                ON CONFLICT(emp_id, date) DO UPDATE SET
                    day_type=excluded.day_type, time_in=NULL, time_out=NULL,
-                   meal_allowance_flag='N', ot_hours_1_5=0, ot_hours_2_0=0, ot_hours_3_0=0""",
+                   meal_allowance_flag='N', cewi_flag='N', ot_hours_1_5=0, ot_hours_2_0=0, ot_hours_3_0=0""",
             (emp_id, day.isoformat(), day_type),
         )
         day += datetime.timedelta(days=1)
@@ -3623,12 +3624,13 @@ def _sync_days_to_attendance_monthly(db, emp_id, start_date, end_date, column):
                     {column} = {column} + excluded.{column}""",
             (emp_id, year, month, count),
         )
-        # Days Worked and Meal Eligible Days both need to drop when leave is
-        # added, or the employee ends up credited for days off as if they
-        # were fully worked (and meal-allowance-eligible). Recompute both
-        # from Working Days in Month minus every leave/absence type on file,
-        # rather than just decrementing, so they stay correct even if this
-        # runs more than once or attendance was edited independently.
+        # Days Worked, Meal Eligible Days, and CEWI Eligible Days all need
+        # to drop when leave is added, or the employee ends up credited for
+        # days off as if they were fully worked (and allowance-eligible).
+        # Recompute all three from Working Days in Month minus every
+        # leave/absence type on file, rather than just decrementing, so
+        # they stay correct even if this runs more than once or attendance
+        # was edited independently.
         row = db.execute(
             """SELECT working_days_in_month, al_days, mc_days, hl_days,
                       ul_days, other_paid_leave, absent_days
@@ -3641,9 +3643,9 @@ def _sync_days_to_attendance_monthly(db, emp_id, start_date, end_date, column):
         )
         recomputed_days = max((row["working_days_in_month"] or 0) - total_leave, 0)
         db.execute(
-            """UPDATE attendance_monthly SET days_worked=?, meal_eligible_days=?
+            """UPDATE attendance_monthly SET days_worked=?, meal_eligible_days=?, cewi_eligible_days=?
                WHERE emp_id=? AND year=? AND month=?""",
-            (recomputed_days, recomputed_days, emp_id, year, month),
+            (recomputed_days, recomputed_days, recomputed_days, emp_id, year, month),
         )
 
 
@@ -4343,9 +4345,26 @@ def hr_migrate_schema():
             id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),
             date TEXT NOT NULL, day_type TEXT NOT NULL DEFAULT 'WORKED',
             time_in TEXT, time_out TEXT, meal_allowance_flag TEXT NOT NULL DEFAULT 'N',
+            cewi_flag TEXT NOT NULL DEFAULT 'N',
             ot_hours_1_5 REAL DEFAULT 0, ot_hours_2_0 REAL DEFAULT 0, ot_hours_3_0 REAL DEFAULT 0,
             ot_reason TEXT, UNIQUE (emp_id, date))""")
         applied.append("table: attendance_daily")
+    ad_cols = [r[1] for r in db.execute("PRAGMA table_info(attendance_daily)").fetchall()]
+    if "cewi_flag" not in ad_cols:
+        db.execute("ALTER TABLE attendance_daily ADD COLUMN cewi_flag TEXT NOT NULL DEFAULT 'N'")
+        applied.append("attendance_daily.cewi_flag")
+        # CEWI used to ride on the Meal checkbox - backfill so already-entered
+        # days keep computing CEWI the same way until HR ticks/unticks the
+        # new separate checkbox going forward.
+        n = db.execute("UPDATE attendance_daily SET cewi_flag = meal_allowance_flag").rowcount
+        applied.append(f"attendance_daily: backfilled cewi_flag from meal_allowance_flag on {n} row(s)")
+
+    am_cols = [r[1] for r in db.execute("PRAGMA table_info(attendance_monthly)").fetchall()]
+    if "cewi_eligible_days" not in am_cols:
+        db.execute("ALTER TABLE attendance_monthly ADD COLUMN cewi_eligible_days REAL DEFAULT 0")
+        applied.append("attendance_monthly.cewi_eligible_days")
+        n = db.execute("UPDATE attendance_monthly SET cewi_eligible_days = meal_eligible_days").rowcount
+        applied.append(f"attendance_monthly: backfilled cewi_eligible_days from meal_eligible_days on {n} row(s)")
     if "ot_claims" not in existing_tables:
         db.execute("""CREATE TABLE ot_claims (
             id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),

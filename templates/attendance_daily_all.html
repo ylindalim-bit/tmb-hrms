@@ -38,7 +38,7 @@
   <thead>
   <tr>
     <th class="text">Date</th><th class="text">Day</th><th class="text">Status</th>
-    <th class="text">Time In</th><th class="text">Time Out</th><th>Meal</th>
+    <th class="text">Time In</th><th class="text">Time Out</th><th>Meal</th><th>CEWI</th>
     <th>OT 1.5x</th><th>OT 2.0x</th><th>OT 3.0x</th><th class="text">OT Reason</th>
   </tr>
   </thead>
@@ -54,6 +54,7 @@
     <td class="text">{{ r.time_in if r and r.time_in else "-" }}</td>
     <td class="text">{{ r.time_out if r and r.time_out else "-" }}</td>
     <td>{{ "Y" if r and r.meal_allowance_flag == "Y" else "-" }}</td>
+    <td>{{ "Y" if r and r.cewi_flag == "Y" else "-" }}</td>
     <td>{{ r.ot_hours_1_5 if r else "-" }}</td>
     <td>{{ r.ot_hours_2_0 if r else "-" }}</td>
     <td>{{ r.ot_hours_3_0 if r else "-" }}</td>

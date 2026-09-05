@@ -17,7 +17,7 @@
   <th class="text sticky-col sticky-col-wide">Employee</th>
   <th>Days Worked</th><th>AL</th><th>MC</th><th>HL</th><th>UL</th>
   <th>Other Paid</th><th>PH</th><th>OFF</th><th>REST</th><th>Absent</th>
-  <th>Working Days</th><th>OT @1.5x</th><th>OT @2.0x</th><th>OT @3.0x</th><th>Meal Elig. Days</th>
+  <th>Working Days</th><th>OT @1.5x</th><th>OT @2.0x</th><th>OT @3.0x</th><th>Meal Elig. Days</th><th>CEWI Elig. Days</th>
   <th>Var. Allow. (RM)</th><th>Var?</th><th>Other Ded. (RM)</th><th class="text" style="min-width:180px;">Deduction Reason</th>
 </tr>
 </thead>
@@ -40,12 +40,14 @@
   <td><input type="number" step="0.5" name="rest_days__{{ e.emp_id }}" value="{{ a.rest_days if a else 0 }}"></td>
   <td><input type="number" step="0.5" name="absent_days__{{ e.emp_id }}" value="{{ a.absent_days if a else 0 }}"></td>
   <td><input type="number" step="0.5" id="working_days__{{ e.emp_id }}" name="working_days_in_month__{{ e.emp_id }}" value="{{ a.working_days_in_month if a else suggested_working_days.get(e.emp_id, 0) }}"
-             {% if e.meal_allowance_flag == "Y" or e.cewi_flag == "Y" %}oninput="syncMealDays('{{ e.emp_id }}', this.value)"{% endif %}></td>
+             {% if e.meal_allowance_flag == "Y" or e.cewi_flag == "Y" %}oninput="syncMealDays('{{ e.emp_id }}', this.value); syncCewiDays('{{ e.emp_id }}', this.value);"{% endif %}></td>
   <td><input type="number" step="0.01" name="ot_hours_1_5__{{ e.emp_id }}" value="{{ a.ot_hours_1_5 if a else 0 }}"></td>
   <td><input type="number" step="0.01" name="ot_hours_2_0__{{ e.emp_id }}" value="{{ a.ot_hours_2_0 if a else 0 }}"></td>
   <td><input type="number" step="0.01" name="ot_hours_3_0__{{ e.emp_id }}" value="{{ a.ot_hours_3_0 if a else 0 }}"></td>
   <td><input type="number" step="0.5" id="meal_days__{{ e.emp_id }}" name="meal_eligible_days__{{ e.emp_id }}" value="{{ a.meal_eligible_days if a else 0 }}"
-             {% if e.meal_allowance_flag == "Y" or e.cewi_flag == "Y" %}data-linked="1"{% endif %} oninput="this.dataset.touched='1'"></td>
+             {% if e.meal_allowance_flag == "Y" %}data-linked="1"{% endif %} oninput="this.dataset.touched='1'"></td>
+  <td><input type="number" step="0.5" id="cewi_days__{{ e.emp_id }}" name="cewi_eligible_days__{{ e.emp_id }}" value="{{ a.cewi_eligible_days if a else 0 }}"
+             {% if e.cewi_flag == "Y" %}data-linked="1"{% endif %} oninput="this.dataset.touched='1'"></td>
   <td><input type="number" step="0.01" name="variable_allowance__{{ e.emp_id }}" value="{{ "%.2f"|format(adj_row.variable_allowance if adj_row else 0) }}"></td>
   <td>
     <select name="variable_allowance_flag__{{ e.emp_id }}">
@@ -66,15 +68,23 @@
 </form>
 <script>
 // Employees with Meal Allowance or CEWI marked "Y" on their Employee Master
-// page (data-linked="1") get their Meal Elig. Days auto-filled from Working
-// Days as HR types it in - this is exactly the field that got left at 0 for
-// a new hire (Halimah) since nothing prompted HR to fill it in separately.
-// Stops auto-filling the moment HR edits Meal Elig. Days directly, so it
-// never silently overwrites an intentionally different value.
+// page (data-linked="1") get their Meal/CEWI Elig. Days auto-filled from
+// Working Days as HR types it in - this is exactly the field that got left
+// at 0 for a new hire (Halimah) since nothing prompted HR to fill it in
+// separately. Stops auto-filling the moment HR edits a field directly, so
+// it never silently overwrites an intentionally different value. Meal and
+// CEWI are separate fields/flags - an employee can be eligible for one
+// without the other.
 function syncMealDays(empId, workingDaysValue) {
   const mealField = document.getElementById('meal_days__' + empId);
   if (mealField && mealField.dataset.linked === '1' && !mealField.dataset.touched) {
     mealField.value = workingDaysValue;
+  }
+}
+function syncCewiDays(empId, workingDaysValue) {
+  const cewiField = document.getElementById('cewi_days__' + empId);
+  if (cewiField && cewiField.dataset.linked === '1' && !cewiField.dataset.touched) {
+    cewiField.value = workingDaysValue;
   }
 }
 </script>

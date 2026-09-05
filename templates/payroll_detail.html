@@ -49,6 +49,7 @@
   <div class="formula-row"><span class="label">Paid Leave Days (AL + MC + HL + Other)</span><span class="val">{{ r.paid_leave_days }}</span></div>
   <div class="formula-row"><span class="label">Unpaid Days (UL + Absent)</span><span class="val">{{ r.unpaid_days }}</span></div>
   <div class="formula-row"><span class="label">Meal Eligible Days</span><span class="val">{{ r.meal_eligible_days }}</span></div>
+  <div class="formula-row"><span class="label">CEWI Eligible Days</span><span class="val">{{ r.cewi_eligible_days }}</span></div>
   <div class="formula-row"><span class="label">OT Hours (1.5x / 2.0x / 3.0x)</span><span class="val">{{ "%.2f"|format(r.ot_hours_1_5) }} / {{ "%.2f"|format(r.ot_hours_2_0) }} / {{ "%.2f"|format(r.ot_hours_3_0) }}</span></div>
 </div>
 
@@ -68,7 +69,7 @@
   <div class="formula-row"><span class="label">Variable Allowance</span><span class="val">RM {{ "%.2f"|format(r.variable_allowance) }}</span></div>
   <div class="formula-row"><span class="expr">Transport Allowance (prorated by join/leave &amp; effective date)</span><span class="val">RM {{ "%.2f"|format(r.transport_allowance) }}</span></div>
   <div class="formula-row"><span class="expr">Meal Allowance = {{ r.meal_eligible_days }} eligible days &times; rate</span><span class="val">RM {{ "%.2f"|format(r.meal_allowance) }}</span></div>
-  <div class="formula-row"><span class="expr">CEWI = {{ r.meal_eligible_days }} eligible days &times; rate</span><span class="val">RM {{ "%.2f"|format(r.cewi_allowance) }}</span></div>
+  <div class="formula-row"><span class="expr">CEWI = {{ r.cewi_eligible_days }} eligible days &times; rate</span><span class="val">RM {{ "%.2f"|format(r.cewi_allowance) }}</span></div>
 </div>
 
 <div class="card calc-section">

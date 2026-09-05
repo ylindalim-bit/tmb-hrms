@@ -300,6 +300,7 @@ def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: i
     ot_hours_3_0 = att["ot_hours_3_0"] if att else 0
     ot_hours = ot_hours_1_5 + ot_hours_2_0 + ot_hours_3_0
     meal_eligible_days = att["meal_eligible_days"] if att else 0
+    cewi_eligible_days = att["cewi_eligible_days"] if att else 0
 
     settings = {r["key"]: r["value"] for r in conn.execute("SELECT * FROM payroll_settings")}
     hrd_registered = settings.get("hrd_levy_registered", "N")
@@ -344,7 +345,7 @@ def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: i
         * allowance_month_factor(emp["meal_allowance_flag"], emp["meal_allowance_effective_date"]), 2
     )
     cewi_allowance = round(
-        meal_eligible_days * (emp["cewi_rate"] or 0)
+        cewi_eligible_days * (emp["cewi_rate"] or 0)
         * allowance_month_factor(emp["cewi_flag"], emp["cewi_effective_date"]), 2
     )
 
@@ -526,6 +527,7 @@ def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: i
         "prorated_basic": round(prorated_basic, 2),
         "basic_salary_raw": basic_salary,
         "meal_eligible_days": meal_eligible_days,
+        "cewi_eligible_days": cewi_eligible_days,
         "fixed_allowance_unprorated": round(fixed_allowance, 2),
         "age": age,
         "epf_wage_base": round(epf_wage_base, 2),

@@ -31,9 +31,10 @@
   </div>
   <p id="days_requested" style="font-weight:600; margin-top:8px;"></p>
   <p id="balance_warning" style="font-weight:600; margin-top:4px; color:var(--danger); display:none;"></p>
-  <div id="doc_upload_row" style="margin-top:12px; display:none;">
+  <div id="doc_upload_row" style="margin-top:12px;">
     <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">
-      Supporting Document(s) <span id="doc_required_mark" style="color:var(--danger);">*</span>
+      Supporting Document(s) <span id="doc_required_mark" style="color:var(--danger); display:none;">*</span>
+      <span id="doc_optional_mark" style="font-weight:400;">(optional)</span>
       <span style="font-weight:400;">(medical certificate / hospital admission note &mdash; PDF, Word, or image)</span>
     </label>
     <div id="doc_file_inputs">
@@ -132,13 +133,13 @@ var DOC_REQUIRED_TYPES = ['Medical Leave', 'Hospitalisation Leave'];
 
 function updateDocRequirement() {
   var leaveType = document.getElementById('leave_type').value;
-  var row = document.getElementById('doc_upload_row');
   var firstInput = document.querySelector('.supporting-doc-input');
   var requiredMark = document.getElementById('doc_required_mark');
+  var optionalMark = document.getElementById('doc_optional_mark');
   var required = DOC_REQUIRED_TYPES.indexOf(leaveType) !== -1;
-  row.style.display = required ? 'block' : 'none';
   if (firstInput) firstInput.required = required;
   requiredMark.style.display = required ? 'inline' : 'none';
+  optionalMark.style.display = required ? 'none' : 'inline';
 
   var reasonLabel = document.getElementById('reason_label');
   var reasonInput = document.getElementById('reason_input');

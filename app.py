@@ -321,6 +321,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/bulk-set-standard-hours-cd-zj",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fix-i001-standard-start",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fix-zj-hours-and-off-saturdays",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/import-shamsury-august",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -5104,6 +5105,47 @@ def hr_fix_zj_hours_and_off_saturdays():
         _sync_daily_to_monthly(db, emp_id, 2026, 8)
     db.commit()
     return f"OK - set standard_end=17:00 and OFF Saturdays for {len(emp_ids)} ZJ employee(s)", 200
+
+
+@app.route("/hr/import-shamsury-august", methods=["POST"])
+def hr_import_shamsury_august():
+    """One-time import: Shamsury bin Azman's (S002) real August 2026
+    attendance from "202608-PASIR GUDANG-ATTN-SHAMSURY (3).xlsx" - a
+    complete day-by-day HR-prepared record, so entered as given (WORKED
+    day_type gets his real 08:30-17:30 punch and Meal Allowance ticked;
+    the UL 8/24-26 and AL 8/27-28 already matched his existing approved
+    leave requests). 8/31 PH matches the real National Day (Merdeka Day)
+    holiday on file. Safe to re-run - always sets an explicit value."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    worked = ("WORKED", "08:30", "17:30", "Y")
+    off = ("OFF", None, None, "N")
+    rest = ("REST", None, None, "N")
+    ul = ("UL", None, None, "N")
+    al = ("AL", None, None, "N")
+    ph = ("PH", None, None, "N")
+    days = {
+        1: off, 2: rest, 3: worked, 4: worked, 5: worked, 6: worked, 7: worked,
+        8: off, 9: rest, 10: worked, 11: worked, 12: worked, 13: worked, 14: worked,
+        15: off, 16: rest, 17: worked, 18: worked, 19: worked, 20: worked, 21: worked,
+        22: off, 23: rest, 24: ul, 25: ul, 26: ul, 27: al, 28: al, 29: off, 30: rest, 31: ph,
+    }
+    for day, (day_type, time_in, time_out, meal_flag) in days.items():
+        date_str = f"2026-08-{day:02d}"
+        db.execute(
+            """INSERT INTO attendance_daily (emp_id, date, day_type, time_in, time_out,
+                   meal_allowance_flag, cewi_flag, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0)
+               VALUES ('S002', ?, ?, ?, ?, ?, 'N', 0, 0, 0)
+               ON CONFLICT(emp_id, date) DO UPDATE SET
+                   day_type=excluded.day_type, time_in=excluded.time_in, time_out=excluded.time_out,
+                   meal_allowance_flag=excluded.meal_allowance_flag""",
+            (date_str, day_type, time_in, time_out, meal_flag),
+        )
+    _sync_daily_to_monthly(db, "S002", 2026, 8)
+    db.commit()
+    return "OK - imported Shamsury's (S002) August 2026 attendance (31 days)", 200
 
 
 if __name__ == "__main__":

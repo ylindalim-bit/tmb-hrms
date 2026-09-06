@@ -326,6 +326,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/fix-cewi-flag-non-eligible",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fill-cd-off-saturdays-blanks",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fix-k002-meal-flag",     # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/replace-i001-ot-with-al",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -5254,6 +5255,45 @@ def hr_fix_k002_meal_flag():
     _sync_daily_to_monthly(db, "K002", 2026, 8)
     db.commit()
     return f"OK - ticked Meal on {cur.rowcount} WORKED day(s) for K002, re-synced August", 200
+
+
+@app.route("/hr/replace-i001-ot-with-al", methods=["POST"])
+def hr_replace_i001_ot_with_al():
+    """One-time fix: Iek Zen Cheng (I001) is only entitled to a
+    replacement day off for OT, not paid OT - his 2 already-Approved OT
+    claims (1.5h normal-day OT on 8/17, 8.0h rest-day OT on 8/23) can't
+    be deleted (Approved claims are refused - see delete_ot_claim), so
+    this zeroes the OT hours those claims already wrote onto his
+    attendance_daily/monthly instead, and credits AL in their place per
+    Linda's conversion rule: rest-day (Sunday) OT = 2 flat AL days;
+    normal-day OT = hours x 1.5 rate / working_hours_day (8.0) = 1.5 x
+    1.5 / 8.0 = 0.28 days. Total credited: 2.28 days, added to
+    al_bf_days since that's this app's only "extra AL on top of
+    entitlement" mechanism. The ot_claims rows themselves are left
+    Approved (unchanged, for audit trail) but get a review_notes
+    explaining the reversal. This is a one-off correction only - not a
+    standing rule for future claims (confirmed with Linda)."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    db.execute(
+        "UPDATE attendance_daily SET ot_hours_1_5=0 WHERE emp_id='I001' AND date='2026-08-17'"
+    )
+    db.execute(
+        "UPDATE attendance_daily SET ot_hours_2_0=0 WHERE emp_id='I001' AND date='2026-08-23'"
+    )
+    _sync_daily_to_monthly(db, "I001", 2026, 8)
+    db.execute(
+        "UPDATE employees SET al_bf_days = COALESCE(al_bf_days,0) + 2.28 WHERE emp_id='I001'"
+    )
+    note = "Replaced with 2.28 AL days instead of OT pay, per Linda (rest-day OT = 2 flat days; normal-day OT = hours x 1.5 / working_hours_day)"
+    db.execute(
+        "UPDATE ot_claims SET review_notes=? WHERE emp_id='I001' AND claim_date IN ('2026-08-17','2026-08-23')",
+        (note,),
+    )
+    db.commit()
+    return "OK - zeroed I001's OT hours for 8/17 and 8/23, credited 2.28 AL days", 200
 
 
 if __name__ == "__main__":

@@ -70,7 +70,7 @@
     <td class="text">{{ r.time_in if r and r.time_in else "-" }}{% if d.late_in %} <span style="color:#1e3a8a; font-weight:600;">(Late)</span>{% endif %}</td>
     <td class="text">{{ r.time_out if r and r.time_out else "-" }}{% if d.early_out %} <span style="color:#1e3a8a; font-weight:600;">(Early)</span>{% endif %}</td>
     <td>{{ "Y" if r and r.meal_allowance_flag == "Y" else "-" }}</td>
-    <td>{{ "Y" if r and r.cewi_flag == "Y" else "-" }}</td>
+    <td>{{ "Y" if r and r.cewi_flag == "Y" and b.emp.cewi_flag == "Y" else "-" }}</td>
     <td>{{ r.ot_hours_1_5 if r else "-" }}</td>
     <td>{{ r.ot_hours_2_0 if r else "-" }}</td>
     <td>{{ r.ot_hours_3_0 if r else "-" }}</td>

@@ -323,6 +323,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/fix-zj-hours-and-off-saturdays",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/import-shamsury-august",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fix-s002-standard-start",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/fix-cewi-flag-non-eligible",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -1511,7 +1512,7 @@ def attendance_daily_all(year, month):
         ).fetchall()
     ]
     employees = db.execute(
-        f"""SELECT emp_id, full_name, standard_start, standard_end FROM employees
+        f"""SELECT emp_id, full_name, standard_start, standard_end, cewi_flag FROM employees
             WHERE emp_id IN ({",".join("?" * len(emp_ids_with_data))}) ORDER BY emp_id""",
         emp_ids_with_data,
     ).fetchall() if emp_ids_with_data else []
@@ -5162,6 +5163,37 @@ def hr_fix_s002_standard_start():
     cur = db.execute("UPDATE employees SET standard_start='08:30' WHERE emp_id='S002'")
     db.commit()
     return f"OK - set S002 standard_start=08:30 ({cur.rowcount} row updated)", 200
+
+
+@app.route("/hr/fix-cewi-flag-non-eligible", methods=["POST"])
+def hr_fix_cewi_flag_non_eligible():
+    """One-time fix: adding the separate cewi_flag column backfilled it
+    from meal_allowance_flag for every existing attendance_daily row, so
+    an employee who isn't CEWI-eligible at all (employees.cewi_flag != 'Y')
+    but had Meal ticked ended up showing a ticked CEWI box too - looked
+    like they were CEWI-eligible even though it never affected payroll
+    (cewi_allowance is already gated to 0 by the profile-level flag).
+    Resets cewi_flag='N' on every such row and re-syncs the affected
+    months' attendance_monthly. Safe to re-run."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    affected = db.execute(
+        """SELECT ad.emp_id, substr(ad.date,1,4) AS y, substr(ad.date,6,2) AS m
+           FROM attendance_daily ad JOIN employees e ON e.emp_id = ad.emp_id
+           WHERE ad.cewi_flag='Y' AND e.cewi_flag != 'Y'
+           GROUP BY ad.emp_id, y, m"""
+    ).fetchall()
+    cur = db.execute(
+        """UPDATE attendance_daily SET cewi_flag='N'
+           WHERE emp_id IN (SELECT emp_id FROM employees WHERE cewi_flag != 'Y')
+             AND cewi_flag='Y'"""
+    )
+    for row in affected:
+        _sync_daily_to_monthly(db, row["emp_id"], int(row["y"]), int(row["m"]))
+    db.commit()
+    return f"OK - reset cewi_flag on {cur.rowcount} row(s), re-synced {len(affected)} employee-month(s)", 200
 
 
 if __name__ == "__main__":

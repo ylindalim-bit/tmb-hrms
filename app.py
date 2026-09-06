@@ -331,6 +331,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/split-i001-ot-claim-notes",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fix-a001-a002-cewi-flag",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/import-halimah-august",   # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/delete-duplicate-m002-doc",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -5442,6 +5443,31 @@ def hr_import_halimah_august():
     _sync_daily_to_monthly(db, "H001", 2026, 8)
     db.commit()
     return "OK - imported Halimah's (H001) August 2026 attendance (31 days)", 200
+
+
+@app.route("/hr/delete-duplicate-m002-doc", methods=["POST"])
+def hr_delete_duplicate_m002_doc():
+    """One-time fix: M002 uploaded the same supporting document twice
+    (double-clicked +Add) onto his Medical Leave request (id 89, 8/14-15,
+    covid-19) - doc ids 75 and 76 are the identical file, ~1 minute
+    apart. Deletes the later duplicate (76), keeping 75. Safe to re-run
+    (no-op once already deleted)."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    doc = db.execute(
+        """SELECT lrd.*, lr.emp_id FROM leave_request_documents lrd
+           JOIN leave_requests lr ON lr.id = lrd.leave_request_id WHERE lrd.id=76""",
+    ).fetchone()
+    if doc is None:
+        return "OK - already deleted (or never existed)", 200
+    file_path = os.path.join(UPLOAD_DIR, doc["emp_id"], doc["stored_name"])
+    if os.path.exists(file_path):
+        os.remove(file_path)
+    db.execute("DELETE FROM leave_request_documents WHERE id=76")
+    db.commit()
+    return "OK - deleted duplicate document (id 76)", 200
 
 
 if __name__ == "__main__":

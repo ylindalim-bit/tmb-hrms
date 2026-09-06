@@ -52,6 +52,7 @@
   </div>
   {% endif %}
 </div>
+<p id="visible-employee-count" style="color:var(--muted); font-size:13px; margin-top:-4px;"></p>
 
 {% for b in blocks %}
 <div class="card employee-block" data-total-flags="{{ b.problem_count + b.unrecorded_count + b.late_early_count }}" data-base="{{ b.emp.base or '' }}">
@@ -119,16 +120,23 @@ function setBaseFilter(base) {
 }
 
 function applyVisibility() {
+  var visibleCount = 0;
+  var totalCount = 0;
   document.querySelectorAll('.employee-block').forEach(function (block) {
+    totalCount++;
     var hasFlags = parseInt(block.dataset.totalFlags, 10) > 0;
     var matchesBase = !selectedBase || block.dataset.base === selectedBase;
     var show = matchesBase && (!problemsOnly || hasFlags);
     block.style.display = show ? '' : 'none';
+    if (show) visibleCount++;
     if (!show) return;
     block.querySelectorAll('tbody tr').forEach(function (row) {
       row.style.display = (!problemsOnly || row.classList.contains('flagged-row')) ? '' : 'none';
     });
   });
+  var countEl = document.getElementById('visible-employee-count');
+  if (countEl) countEl.textContent = 'Showing ' + visibleCount + ' of ' + totalCount + ' employee' + (totalCount !== 1 ? 's' : '');
 }
+applyVisibility();
 </script>
 {% endblock %}

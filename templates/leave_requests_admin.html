@@ -5,46 +5,59 @@
   <a href="{{ url_for('hr_add_leave_request') }}" style="font-size:13px; font-weight:600; margin-left:10px;">+ Add Leave Request (on behalf of employee)</a>
   {% if hr_role != "approver" %}<a href="{{ url_for('leave_application_form') }}" target="_blank" style="font-size:13px; font-weight:600; margin-left:10px;">Print Leave Application Form &rarr;</a>{% endif %}
 </h1>
+<p style="color:var(--muted); font-size:13px; margin-top:-8px;">
+  Includes Movement Notices (Business Trips / Out-Duty / Training / Unrecorded Leave) alongside Leave
+  Requests, so everything needing or having had a decision is in one place. Manage Movement Notice
+  documents/deletion on <a href="{{ url_for('business_trips_admin') }}">Business Trips</a>.
+</p>
 
 <div class="card">
   <h2 style="margin-top:0;">Pending ({{ pending|length }})</h2>
   <div class="table-wrap">
   <table>
     <thead>
-      <tr><th class="text">Employee</th><th class="text">Type</th><th class="text">Dates</th><th>Days</th><th class="text">Reason</th><th class="text">Document</th><th class="text">Submitted</th><th>Action</th></tr>
+      <tr><th class="text">Employee</th><th class="text">Type</th><th class="text">Destination</th><th class="text">Dates</th><th>Days</th><th class="text">Reason</th><th class="text">Document</th><th class="text">Submitted</th><th>Action</th></tr>
     </thead>
     <tbody>
       {% for lr in pending %}
       <tr>
         <td class="text">{{ lr.emp_id }} &mdash; {{ lr.full_name }}</td>
-        <td class="text">{{ lr.leave_type }}</td>
+        <td class="text">{% if lr.type_label == 'Unrecorded Leave' %}<strong>{{ lr.type_label }}</strong>{% else %}{{ lr.type_label }}{% endif %}</td>
+        <td class="text">{{ lr.destination or "-" }}</td>
         <td class="text">{{ lr.start_date }} &ndash; {{ lr.end_date }}</td>
         <td>{{ lr.days }}</td>
         <td class="text">{{ lr.reason or "" }}</td>
         <td class="text">
+          {% if lr.source == "leave" %}
           {% set docs = documents_by_request.get(lr.id, []) %}
           {% if docs %}
             {% for doc in docs %}
             <a href="{{ url_for('leave_request_document', doc_id=doc.id) }}" target="_blank" rel="noopener">{{ doc.original_name }}</a>{% if not loop.last %}<br>{% endif %}
             {% endfor %}
-          {% elif lr.leave_type in ("Medical Leave", "Hospitalisation Leave") %}
+          {% elif lr.type_label in ("Medical Leave", "Hospitalisation Leave") %}
           <span style="color:var(--danger);">Missing</span>
           {% else %}<span style="color:var(--muted);">-</span>{% endif %}
           <form method="post" action="{{ url_for('leave_request_document_add', request_id=lr.id) }}" enctype="multipart/form-data" style="margin-top:6px; display:flex; gap:4px; align-items:center;">
             <input type="file" name="supporting_doc" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple style="font-size:11px; width:140px;">
             <button class="btn secondary" type="submit" style="padding:2px 8px; font-size:11px;">+ Add</button>
           </form>
+          {% else %}
+          {% if lr.supporting_doc_stored %}
+          <a href="{{ url_for('business_trip_document', trip_id=lr.id) }}" target="_blank" rel="noopener">View</a>
+          {% elif lr.type_label == 'Unrecorded Leave' %}<span style="color:var(--danger);">Missing</span>
+          {% else %}<span style="color:var(--muted);">-</span>{% endif %}
+          {% endif %}
         </td>
         <td class="text">{{ lr.submitted_at }}</td>
         <td class="text" style="white-space:nowrap;">
-          <form method="post" action="{{ url_for('review_leave_request', request_id=lr.id) }}">
+          <form method="post" action="{{ url_for('review_leave_request', request_id=lr.id) if lr.source == 'leave' else url_for('review_business_trip', trip_id=lr.id) }}">
             <button class="btn" type="submit" name="decision" value="Approved" style="padding:4px 10px;">Approve</button>
             <button class="btn secondary" type="submit" name="decision" value="Rejected" style="padding:4px 10px;">Reject</button>
           </form>
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="8" class="text" style="color:var(--muted);">No pending requests.</td></tr>
+      <tr><td colspan="9" class="text" style="color:var(--muted);">No pending requests.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -63,13 +76,14 @@
   <div class="table-wrap">
   <table>
     <thead>
-      <tr><th class="text">Employee</th><th class="text">Type</th><th class="text">Dates</th><th>Days</th><th class="text">Reason</th><th class="text">Status</th><th class="text">Document</th><th class="text">Reviewed By</th><th class="text">Reviewed</th>{% if hr_role == "admin" %}<th></th>{% endif %}</tr>
+      <tr><th class="text">Employee</th><th class="text">Type</th><th class="text">Destination</th><th class="text">Dates</th><th>Days</th><th class="text">Reason</th><th class="text">Status</th><th class="text">Document</th><th class="text">Reviewed By</th><th class="text">Reviewed</th>{% if hr_role == "admin" %}<th></th>{% endif %}</tr>
     </thead>
     <tbody>
       {% for lr in reviewed %}
       <tr>
         <td class="text">{{ lr.emp_id }} &mdash; {{ lr.full_name }}</td>
-        <td class="text">{{ lr.leave_type }}</td>
+        <td class="text">{% if lr.type_label == 'Unrecorded Leave' %}<strong>{{ lr.type_label }}</strong>{% else %}{{ lr.type_label }}{% endif %}</td>
+        <td class="text">{{ lr.destination or "-" }}</td>
         <td class="text">{{ lr.start_date }} &ndash; {{ lr.end_date }}</td>
         <td>{{ lr.days }}</td>
         <td class="text">{{ lr.reason or "" }}</td>
@@ -77,25 +91,33 @@
           <span class="pill {% if lr.status == 'Approved' %}finalized{% else %}rejected{% endif %}">{{ lr.status }}</span>
         </td>
         <td class="text">
+          {% if lr.source == "leave" %}
           {% set docs = documents_by_request.get(lr.id, []) %}
           {% if docs %}
             {% for doc in docs %}
             <a href="{{ url_for('leave_request_document', doc_id=doc.id) }}" target="_blank" rel="noopener">{{ doc.original_name }}</a>{% if not loop.last %}<br>{% endif %}
             {% endfor %}
           {% else %}<span style="color:var(--muted);">-</span>{% endif %}
+          {% else %}
+          {% if lr.supporting_doc_stored %}
+          <a href="{{ url_for('business_trip_document', trip_id=lr.id) }}" target="_blank" rel="noopener">View</a>
+          {% else %}<span style="color:var(--muted);">-</span>{% endif %}
+          {% endif %}
         </td>
         <td class="text">{{ lr.reviewed_by or "" }}</td>
         <td class="text">{{ lr.reviewed_at }}</td>
         {% if hr_role == "admin" %}
         <td class="text">
+          {% if lr.source == "leave" %}
           <form method="post" action="{{ url_for('delete_leave_request', request_id=lr.id) }}" onsubmit="return confirm('Delete this leave request record permanently?');">
             <button type="submit" class="btn secondary" style="padding:3px 8px; font-size:11px; color:var(--danger);">Delete</button>
           </form>
+          {% endif %}
         </td>
         {% endif %}
       </tr>
       {% else %}
-      <tr><td colspan="10" class="text" style="color:var(--muted);">None yet.</td></tr>
+      <tr><td colspan="11" class="text" style="color:var(--muted);">None yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

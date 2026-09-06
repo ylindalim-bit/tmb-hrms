@@ -3541,11 +3541,33 @@ def leave_requests_admin():
     if session.get("hr_role") == "approver":
         scope_clause = "AND e.leave_approver_username=?"
         params.append(session["hr_username"])
+
+    # Movement Notices (business_trips) are unioned in alongside Leave
+    # Requests so HR sees everything needing/having had a decision in one
+    # place, rather than needing a separate visit to Business Trips. The
+    # two tables have different shapes (leave_requests: leave_type/reason/
+    # multiple documents; business_trips: notice_type/destination/purpose/
+    # a single document) so they're normalized to a common set of columns
+    # here; "source" tells the template which document-lookup and
+    # approve/reject route to use for that row.
     pending = db.execute(
-        f"""SELECT lr.*, e.full_name FROM leave_requests lr
-           JOIN employees e ON e.emp_id = lr.emp_id
-           WHERE lr.status='Pending' {scope_clause} ORDER BY lr.submitted_at""",
-        params,
+        f"""SELECT 'leave' AS source, lr.id, lr.emp_id, e.full_name, lr.leave_type AS type_label,
+                   NULL AS destination, lr.start_date, lr.end_date, lr.days, lr.reason,
+                   NULL AS supporting_doc_original, NULL AS supporting_doc_stored,
+                   lr.submitted_at
+           FROM leave_requests lr JOIN employees e ON e.emp_id = lr.emp_id
+           WHERE lr.status='Pending' {scope_clause}
+           UNION ALL
+           SELECT 'trip' AS source, bt.id, bt.emp_id, e.full_name, bt.notice_type AS type_label,
+                   bt.destination, bt.start_date, bt.end_date,
+                   CAST(julianday(bt.end_date) - julianday(bt.start_date) + 1 AS INTEGER) AS days,
+                   bt.purpose AS reason,
+                   bt.supporting_doc_original, bt.supporting_doc_stored,
+                   bt.submitted_at
+           FROM business_trips bt JOIN employees e ON e.emp_id = bt.emp_id
+           WHERE bt.status='Pending' {scope_clause}
+           ORDER BY submitted_at""",
+        params + params,
     ).fetchall()
 
     # Reviewed (historical) list is filtered to one month at a time - by the
@@ -3554,12 +3576,25 @@ def leave_requests_admin():
     today = datetime.date.today()
     year = request.args.get("year", type=int) or today.year
     month = request.args.get("month", type=int) or today.month
+    month_prefix = f"{year:04d}-{month:02d}%"
     reviewed = db.execute(
-        f"""SELECT lr.*, e.full_name FROM leave_requests lr
-           JOIN employees e ON e.emp_id = lr.emp_id
+        f"""SELECT 'leave' AS source, lr.id, lr.emp_id, e.full_name, lr.leave_type AS type_label,
+                   NULL AS destination, lr.start_date, lr.end_date, lr.days, lr.reason,
+                   NULL AS supporting_doc_original, NULL AS supporting_doc_stored,
+                   lr.status, lr.reviewed_by, lr.reviewed_at
+           FROM leave_requests lr JOIN employees e ON e.emp_id = lr.emp_id
            WHERE lr.status!='Pending' AND lr.start_date LIKE ? {scope_clause}
-           ORDER BY lr.reviewed_at DESC""",
-        [f"{year:04d}-{month:02d}%"] + params,
+           UNION ALL
+           SELECT 'trip' AS source, bt.id, bt.emp_id, e.full_name, bt.notice_type AS type_label,
+                   bt.destination, bt.start_date, bt.end_date,
+                   CAST(julianday(bt.end_date) - julianday(bt.start_date) + 1 AS INTEGER) AS days,
+                   bt.purpose AS reason,
+                   bt.supporting_doc_original, bt.supporting_doc_stored,
+                   bt.status, bt.reviewed_by, bt.reviewed_at
+           FROM business_trips bt JOIN employees e ON e.emp_id = bt.emp_id
+           WHERE bt.status!='Pending' AND bt.start_date LIKE ? {scope_clause}
+           ORDER BY reviewed_at DESC""",
+        [month_prefix] + params + [month_prefix] + params,
     ).fetchall()
 
     documents_by_request = {}

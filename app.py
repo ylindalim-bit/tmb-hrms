@@ -325,6 +325,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/fix-s002-standard-start",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fix-cewi-flag-non-eligible",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fill-cd-off-saturdays-blanks",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/fix-k002-meal-flag",     # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -5228,6 +5229,27 @@ def hr_fill_cd_off_saturdays_blanks():
         _sync_daily_to_monthly(db, emp_id, 2026, 8)
     db.commit()
     return "OK - filled OFF for genuinely blank CD Saturdays (A006 8/29, M002 8/15)", 200
+
+
+@app.route("/hr/fix-k002-meal-flag", methods=["POST"])
+def hr_fix_k002_meal_flag():
+    """One-time fix: Khairul Anuar (K002) is Meal Allowance-eligible
+    (RM8/day) on his profile, but every WORKED day in his August 2026
+    attendance was entered with the Meal checkbox left unticked - a gap
+    from when his (heavy-OT) hours were recorded, not an intentional
+    exclusion. Ticks Meal for every existing WORKED day and re-syncs
+    August. Safe to re-run."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    cur = db.execute(
+        """UPDATE attendance_daily SET meal_allowance_flag='Y'
+           WHERE emp_id='K002' AND date LIKE '2026-08%' AND day_type='WORKED'"""
+    )
+    _sync_daily_to_monthly(db, "K002", 2026, 8)
+    db.commit()
+    return f"OK - ticked Meal on {cur.rowcount} WORKED day(s) for K002, re-synced August", 200
 
 
 if __name__ == "__main__":

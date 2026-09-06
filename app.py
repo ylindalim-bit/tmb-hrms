@@ -329,6 +329,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/replace-i001-ot-with-al",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/shorten-i001-ot-claim-notes",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/split-i001-ot-claim-notes",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/fix-a001-a002-cewi-flag",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -5375,6 +5376,32 @@ def hr_split_i001_ot_claim_notes():
     )
     db.commit()
     return "OK - split I001's OT claim notes into per-claim replacement amounts", 200
+
+
+@app.route("/hr/fix-a001-a002-cewi-flag", methods=["POST"])
+def hr_fix_a001_a002_cewi_flag():
+    """One-time fix: A001 and A002 are CEWI-eligible (RM7/day) on their
+    profile, but every WORKED day in their August 2026 attendance was
+    entered with the CEWI checkbox left unticked - same gap as K002's
+    Meal Allowance. Ticks CEWI for every existing WORKED day and
+    re-syncs August for both - this also incidentally corrects A002's
+    stale monthly Meal Eligible Days (17, left over from before Meal/
+    CEWI were tracked this way; his profile isn't Meal-eligible at all
+    and no daily row has Meal ticked, so it recomputes to 0, which
+    already matched what actually determined his pay - Meal Allowance
+    is separately gated to 0 by his profile flag regardless)."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    cur = db.execute(
+        """UPDATE attendance_daily SET cewi_flag='Y'
+           WHERE emp_id IN ('A001','A002') AND date LIKE '2026-08%' AND day_type='WORKED'"""
+    )
+    _sync_daily_to_monthly(db, "A001", 2026, 8)
+    _sync_daily_to_monthly(db, "A002", 2026, 8)
+    db.commit()
+    return f"OK - ticked CEWI on {cur.rowcount} WORKED day(s) for A001/A002, re-synced August", 200
 
 
 if __name__ == "__main__":

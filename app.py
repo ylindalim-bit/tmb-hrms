@@ -322,6 +322,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/fix-i001-standard-start",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fix-zj-hours-and-off-saturdays",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/import-shamsury-august",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/fix-s002-standard-start",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -5146,6 +5147,21 @@ def hr_import_shamsury_august():
     _sync_daily_to_monthly(db, "S002", 2026, 8)
     db.commit()
     return "OK - imported Shamsury's (S002) August 2026 attendance (31 days)", 200
+
+
+@app.route("/hr/fix-s002-standard-start", methods=["POST"])
+def hr_fix_s002_standard_start():
+    """One-time fix: Linda confirmed Shamsury bin Azman (S002) personally
+    starts at 08:30, not the 07:30 the Malaysia factory-floor bulk
+    correction had set him to - his consistent 08:30 clock-in in his
+    real August attendance export wasn't lateness."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    cur = db.execute("UPDATE employees SET standard_start='08:30' WHERE emp_id='S002'")
+    db.commit()
+    return f"OK - set S002 standard_start=08:30 ({cur.rowcount} row updated)", 200
 
 
 if __name__ == "__main__":

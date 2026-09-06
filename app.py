@@ -120,13 +120,31 @@ WAGE_BASE_INCLUSION = {
 }
 
 
-def _add_wage_base_composition_block(ws, start_row):
+def _add_wage_base_composition_block(ws, start_row, results):
     """Reference table: which pay components (Basic/Fixed Allow./Var.
     Allow./OT/Transport/Meal/CEWI) count toward each statutory
     contribution's wage base - a fixed policy fact, not employee data,
-    so it's the same every month. EPF excludes OT and Transport;
-    SOCSO/SKBBK/EIS/PCB all use the full gross (everything included).
-    Returns the last row written."""
+    so the Y/- part is the same every month. The Amount (RM) column is
+    this month's actual company-wide total of that wage base, computed
+    from gross_pay/ot_pay/transport_allowance (the only wage-base
+    inputs guaranteed present whether `results` came from a live
+    calculation or a Finalized month's frozen payroll_runs snapshot,
+    which doesn't store epf_wage_base or the SOCSO/SKBBK/EIS gate-reason
+    fields) - so it doesn't separately exclude the rare employee exempt
+    from one particular scheme (e.g. SKBBK-exempt, EIS age out of
+    range); their RM0 contribution just means that scheme's total above
+    already reflects the exemption even though this wage-base total
+    doesn't subtract their pay out of it. EPF excludes OT and Transport;
+    SOCSO/SKBBK/EIS/PCB all use the full gross. Returns the last row
+    written."""
+    epf_wage_base_total = round(
+        sum((r.get("gross_pay") or 0) - (r.get("ot_pay") or 0) - (r.get("transport_allowance") or 0)
+            for r in results), 2
+    )
+    gross_pay_total = round(sum((r.get("gross_pay") or 0) for r in results), 2)
+    amounts = {"EPF": epf_wage_base_total, "SOCSO": gross_pay_total, "SKBBK": gross_pay_total,
+               "EIS": gross_pay_total, "PCB": gross_pay_total}
+
     title_row = start_row
     ws.cell(row=title_row, column=1, value="Wage Base for Statutory Calculations").font = Font(bold=True)
 
@@ -136,6 +154,8 @@ def _add_wage_base_composition_block(ws, start_row):
         cell = ws.cell(row=header_row, column=col_idx, value=comp)
         cell.font = Font(bold=True)
         cell.alignment = Alignment(horizontal="center")
+    amount_col = 2 + len(WAGE_BASE_COMPONENTS)
+    ws.cell(row=header_row, column=amount_col, value="Amount (RM)").font = Font(bold=True)
 
     r_idx = header_row + 1
     for label in ("EPF", "SOCSO", "SKBBK", "EIS", "PCB"):
@@ -144,10 +164,13 @@ def _add_wage_base_composition_block(ws, start_row):
         for col_idx, comp in enumerate(WAGE_BASE_COMPONENTS, start=2):
             cell = ws.cell(row=r_idx, column=col_idx, value="Y" if comp in included else "-")
             cell.alignment = Alignment(horizontal="center")
+        amount_cell = ws.cell(row=r_idx, column=amount_col, value=amounts[label])
+        amount_cell.number_format = "#,##0.00"
+        amount_cell.font = Font(bold=True)
         r_idx += 1
 
     box_last_row = r_idx - 1
-    box_last_col = 1 + len(WAGE_BASE_COMPONENTS)
+    box_last_col = amount_col
     thin = Side(style="thin", color="1D4ED8")
     for row in ws.iter_rows(min_row=title_row, max_row=box_last_row, min_col=1, max_col=box_last_col):
         for cell in row:
@@ -2177,7 +2200,7 @@ def payroll_export(year, month):
             cell.number_format = "#,##0.00"
 
     last_row = _add_headcount_block(ws, row_idx + 2, totals, len(results))
-    last_row = _add_wage_base_composition_block(ws, last_row + 2)
+    last_row = _add_wage_base_composition_block(ws, last_row + 2, results)
     _add_zero_pay_notes(ws, last_row + 2, _zero_pay_notes(results))
 
     ws.freeze_panes = "C3"
@@ -2320,7 +2343,7 @@ def payroll_summary_export(year, month):
         cell.number_format = "#,##0.00"
 
     last_row = _add_headcount_block(ws, row_idx + 2, totals, len(results))
-    last_row = _add_wage_base_composition_block(ws, last_row + 2)
+    last_row = _add_wage_base_composition_block(ws, last_row + 2, results)
     _add_zero_pay_notes(ws, last_row + 2, _zero_pay_notes(results))
 
     if not totals_only:

@@ -18,6 +18,7 @@
 <tr>
   <th class="text sticky-col sticky-col-1">Emp ID</th><th class="text sticky-col sticky-col-2">Name</th>
   <th class="text sticky-col sticky-col-3"></th>
+  <th class="text">Base</th>
   <th>Basic</th><th>Fixed Allow.</th>
   <th>Var. Allow.</th><th>OT 1.5h</th><th>OT 2.0h</th><th>OT 3.0h</th><th>OT Rate</th><th>Total OT</th><th>Transport</th><th>Meal</th><th>CEWI</th>
   <th>Gross</th><th>EPF (Emp)</th><th>SOCSO (Emp)</th><th>EIS (Emp)</th><th>SKBBK</th><th>PCB</th>
@@ -34,6 +35,7 @@
     <a class="emp-link" href="{{ url_for('payslip', emp_id=r.emp_id, year=year, month=month) }}">Payslip</a>
     &nbsp;<a class="emp-link" href="{{ url_for('payroll_detail', emp_id=r.emp_id, year=year, month=month) }}">Details</a>
   </td>
+  <td class="text">{{ base_by_emp.get(r.emp_id) or "-" }}</td>
   <td>{{ "%.2f"|format(r.basic_salary + (r.unpaid_deduction or 0)) }}</td>
   <td>{{ "%.2f"|format(r.fixed_allowance) }}</td>
   <td>{{ "%.2f"|format(r.variable_allowance) }}</td>
@@ -71,7 +73,7 @@
 </tr>
 {% endfor %}
 <tr class="totals-row">
-  <td class="text sticky-col" style="left:0" colspan="14">TOTAL</td>
+  <td class="text sticky-col" style="left:0" colspan="15">TOTAL</td>
   <td>{{ "%.2f"|format(totals.gross_pay + totals.unpaid_deduction) }}</td>
   <td>{{ "%.2f"|format(totals.epf_employee) }}</td>
   <td>{{ "%.2f"|format(totals.socso_employee) }}</td>

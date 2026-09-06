@@ -1990,6 +1990,9 @@ def run_payroll(year, month):
         r["emp_id"]: {"bank_name": r["bank_name"], "bank_account_no": r["bank_account_no"]}
         for r in db.execute("SELECT emp_id, bank_name, bank_account_no FROM employees").fetchall()
     }
+    base_by_emp = {
+        r["emp_id"]: r["base"] for r in db.execute("SELECT emp_id, base FROM employees").fetchall()
+    }
     totals = {
         k: round(sum(r[k] for r in results), 2)
         for k in ["basic_salary", "unpaid_deduction", "gross_pay", "epf_employee", "epf_employer",
@@ -1999,7 +2002,7 @@ def run_payroll(year, month):
     }
     return render_template("payroll.html", results=results, year=year, month=month,
                             finalized=finalized, totals=totals, bank_info=bank_info,
-                            zero_pay_notes=_zero_pay_notes(results))
+                            base_by_emp=base_by_emp, zero_pay_notes=_zero_pay_notes(results))
 
 
 PAYROLL_EXPORT_COLUMNS = [

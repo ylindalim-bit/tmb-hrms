@@ -317,6 +317,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/backfill-unrecorded-leave-attendance",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/bulk-set-standard-hours",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/bulk-set-base",          # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/bulk-set-base-cd",       # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -5008,6 +5009,28 @@ def hr_bulk_set_base():
     )
     db.commit()
     return f"OK - set base=ZJ for {cur.rowcount} employee(s): {', '.join(emp_ids)}", 200
+
+
+@app.route("/hr/bulk-set-base-cd", methods=["POST"])
+def hr_bulk_set_base_cd():
+    """One-time fix: sets Base=CD for the active employees Linda confirmed
+    are Chengdu-based whose Base was still blank (the Johor Bahru-looking
+    names from 新山工厂员工8月打卡明细.xlsx that she confirmed a second
+    time are actually CD, not MY, despite the filename). Only touches
+    rows that are still NULL, so it won't clobber anything already set
+    (e.g. by Linda herself via Employee Edit) - safe to re-run."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    emp_ids = ["A001", "A002", "A005", "A006", "C001", "L001", "M001", "M002", "M004", "M005",
+               "N001", "R001", "S001"]
+    cur = db.executemany(
+        "UPDATE employees SET base='CD' WHERE emp_id=? AND base IS NULL",
+        [(e,) for e in emp_ids],
+    )
+    db.commit()
+    return f"OK - set base=CD for {cur.rowcount} employee(s) (only those still blank)", 200
 
 
 if __name__ == "__main__":

@@ -328,6 +328,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/fix-k002-meal-flag",     # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/replace-i001-ot-with-al",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/shorten-i001-ot-claim-notes",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/split-i001-ot-claim-notes",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -5314,6 +5315,30 @@ def hr_shorten_i001_ot_claim_notes():
     )
     db.commit()
     return f"OK - shortened review_notes on {cur.rowcount} claim(s)", 200
+
+
+@app.route("/hr/split-i001-ot-claim-notes", methods=["POST"])
+def hr_split_i001_ot_claim_notes():
+    """One-time follow-up: replaces the combined "2.28 days" note on both
+    of I001's claims with each claim's own specific replacement amount,
+    per Linda: the Sunday rest-day claim (8/23) replaced with 2 days of
+    AL, the normal-day claim (8/17) replaced with 0.28 days of AL. Does
+    not touch al_bf_days or attendance again, just the note text on each
+    row. Safe to re-run."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    db.execute(
+        """UPDATE ot_claims SET review_notes='Replaced with 2 days of AL instead of OT pay'
+           WHERE emp_id='I001' AND claim_date='2026-08-23'"""
+    )
+    db.execute(
+        """UPDATE ot_claims SET review_notes='Replaced with 0.28 days of AL instead of OT pay'
+           WHERE emp_id='I001' AND claim_date='2026-08-17'"""
+    )
+    db.commit()
+    return "OK - split I001's OT claim notes into per-claim replacement amounts", 200
 
 
 if __name__ == "__main__":

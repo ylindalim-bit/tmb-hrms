@@ -316,6 +316,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/backfill-leave-attendance-daily",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/backfill-unrecorded-leave-attendance",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/bulk-set-standard-hours",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/bulk-set-base",          # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -4986,6 +4987,27 @@ def hr_bulk_set_standard_hours():
     )
     db.commit()
     return f"OK - set standard_start/end=07:30/17:30 for {cur.rowcount} employee(s)", 200
+
+
+@app.route("/hr/bulk-set-base", methods=["POST"])
+def hr_bulk_set_base():
+    """One-time fix: sets Base=ZJ for the 4 employees confirmed against
+    Linda's "8月份考勤.xlsx" attendance export (Imran Hakimi, Muhammad
+    Aminin, Muhammad Asrin Hakimi, Muhammad Haziq Faiz) - these are the
+    same 4 whose clock-in pattern didn't match the Johor Bahru factory
+    floor's 07:30 shift. Safe to re-run since it just sets an explicit
+    value for these emp_ids."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    emp_ids = ["I002", "M006", "M007", "M008"]
+    cur = db.executemany(
+        "UPDATE employees SET base='ZJ' WHERE emp_id=?",
+        [(e,) for e in emp_ids],
+    )
+    db.commit()
+    return f"OK - set base=ZJ for {cur.rowcount} employee(s): {', '.join(emp_ids)}", 200
 
 
 if __name__ == "__main__":

@@ -319,6 +319,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/bulk-set-base",          # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/bulk-set-base-cd",       # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/bulk-set-standard-hours-cd-zj",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/fix-i001-standard-start",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -5051,6 +5052,21 @@ def hr_bulk_set_standard_hours_cd_zj():
     )
     db.commit()
     return f"OK - set standard_start/end=08:00/17:30 for {cur.rowcount} CD/ZJ employee(s)", 200
+
+
+@app.route("/hr/fix-i001-standard-start", methods=["POST"])
+def hr_fix_i001_standard_start():
+    """One-time fix: Linda confirmed Iek Zen Cheng (I001) personally
+    starts at 08:30, not the 08:00 just bulk-set for the rest of
+    CD/ZJ - his consistent 08:30 clock-in every day in August wasn't a
+    lateness pattern, it's his actual normal start time."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    cur = db.execute("UPDATE employees SET standard_start='08:30' WHERE emp_id='I001'")
+    db.commit()
+    return f"OK - set I001 standard_start=08:30 ({cur.rowcount} row updated)", 200
 
 
 if __name__ == "__main__":

@@ -103,56 +103,51 @@ def _add_headcount_block(ws, start_row, totals, employee_count):
     return box_last_row
 
 
-def _add_base_breakdown_block(ws, start_row, results):
-    """SOCSO/SKBBK/EIS/EPF/PCB/HRDCORP broken down by employee Base
-    (MY/ZJ/CD), one group of E'yee/E'yer/Total columns per base, so the
-    company-wide _add_headcount_block totals can be cross-checked
-    against each site's own contribution. Employees with no Base set
-    are grouped under "-" so the by-base figures still reconcile with
-    the company total. Returns the last row written."""
-    bases = sorted({r.get("base") or "-" for r in results})
-    by_base = {b: [r for r in results if (r.get("base") or "-") == b] for b in bases}
+# Which pay components go into each statutory contribution's wage base -
+# matches calculate_payroll() in payroll_calc.py exactly: EPF's wage base is
+# gross_pay minus OT and Transport (epf_wage_base = gross_pay - ot_pay -
+# transport_allowance); SOCSO, SKBBK, EIS, and PCB all use gross_pay as-is
+# (every component included). Kept here as a single source of truth for the
+# export's reference table below - if the wage-base formula in
+# calculate_payroll() ever changes, update this to match.
+WAGE_BASE_COMPONENTS = ["Basic", "Fixed Allow.", "Var. Allow.", "OT", "Transport", "Meal", "CEWI"]
+WAGE_BASE_INCLUSION = {
+    "EPF": {"Basic", "Fixed Allow.", "Var. Allow.", "Meal", "CEWI"},
+    "SOCSO": set(WAGE_BASE_COMPONENTS),
+    "SKBBK": set(WAGE_BASE_COMPONENTS),
+    "EIS": set(WAGE_BASE_COMPONENTS),
+    "PCB": set(WAGE_BASE_COMPONENTS),
+}
 
+
+def _add_wage_base_composition_block(ws, start_row):
+    """Reference table: which pay components (Basic/Fixed Allow./Var.
+    Allow./OT/Transport/Meal/CEWI) count toward each statutory
+    contribution's wage base - a fixed policy fact, not employee data,
+    so it's the same every month. EPF excludes OT and Transport;
+    SOCSO/SKBBK/EIS/PCB all use the full gross (everything included).
+    Returns the last row written."""
     title_row = start_row
-    ws.cell(row=title_row, column=1, value="Statutory Contributions by Base").font = Font(bold=True)
+    ws.cell(row=title_row, column=1, value="Wage Base for Statutory Calculations").font = Font(bold=True)
 
-    base_header_row = title_row + 2
-    field_header_row = base_header_row + 1
-    for i, base in enumerate(bases):
-        col = 2 + i * 3
-        ws.cell(row=base_header_row, column=col, value=base).font = Font(bold=True)
-        ws.merge_cells(start_row=base_header_row, start_column=col, end_row=base_header_row, end_column=col + 2)
-        for j, label in enumerate(["E'yee", "E'yer", "Total"]):
-            ws.cell(row=field_header_row, column=col + j, value=label).font = Font(bold=True)
+    header_row = title_row + 2
+    ws.cell(row=header_row, column=1, value="Included in wage base?").font = Font(bold=True)
+    for col_idx, comp in enumerate(WAGE_BASE_COMPONENTS, start=2):
+        cell = ws.cell(row=header_row, column=col_idx, value=comp)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center")
 
-    rows = [
-        ("Headcount", None, None),
-        ("SOCSO", "socso_employee", "socso_employer"),
-        ("SKBBK", "skbbk_employee", None),
-        ("EIS", "eis_employee", "eis_employer"),
-        ("EPF", "epf_employee", "epf_employer"),
-        ("PCB", "pcb", None),
-        ("HRDCORP", None, "hrd_levy_employer"),
-    ]
-    r_idx = field_header_row + 1
-    for label, eyee_key, eyer_key in rows:
+    r_idx = header_row + 1
+    for label in ("EPF", "SOCSO", "SKBBK", "EIS", "PCB"):
         ws.cell(row=r_idx, column=1, value=label).font = Font(color="1D4ED8")
-        if label == "Headcount":
-            for i, base in enumerate(bases):
-                cell = ws.cell(row=r_idx, column=2 + i * 3, value=len(by_base[base]))
-                ws.merge_cells(start_row=r_idx, start_column=2 + i * 3, end_row=r_idx, end_column=2 + i * 3 + 2)
-        else:
-            for i, base in enumerate(bases):
-                col = 2 + i * 3
-                eyee_val = round(sum((r.get(eyee_key) or 0) for r in by_base[base]), 2) if eyee_key else 0
-                eyer_val = round(sum((r.get(eyer_key) or 0) for r in by_base[base]), 2) if eyer_key else 0
-                for j, val in enumerate([eyee_val, eyer_val, round(eyee_val + eyer_val, 2)]):
-                    cell = ws.cell(row=r_idx, column=col + j, value=val)
-                    cell.number_format = "#,##0.00"
+        included = WAGE_BASE_INCLUSION[label]
+        for col_idx, comp in enumerate(WAGE_BASE_COMPONENTS, start=2):
+            cell = ws.cell(row=r_idx, column=col_idx, value="Y" if comp in included else "-")
+            cell.alignment = Alignment(horizontal="center")
         r_idx += 1
 
     box_last_row = r_idx - 1
-    box_last_col = 1 + len(bases) * 3
+    box_last_col = 1 + len(WAGE_BASE_COMPONENTS)
     thin = Side(style="thin", color="1D4ED8")
     for row in ws.iter_rows(min_row=title_row, max_row=box_last_row, min_col=1, max_col=box_last_col):
         for cell in row:
@@ -162,7 +157,12 @@ def _add_base_breakdown_block(ws, start_row, results):
             right = thin if cell.column == box_last_col else None
             cell.border = Border(top=top, bottom=bottom, left=left, right=right)
 
-    return box_last_row
+    ws.cell(row=box_last_row + 1, column=1).value = (
+        "EPF wage base excludes OT and Transport Allowance; SOCSO/SKBBK/EIS/PCB use the full gross pay."
+    )
+    ws.cell(row=box_last_row + 1, column=1).font = Font(italic=True, size=9, color="6B7280")
+
+    return box_last_row + 1
 
 
 def _add_zero_pay_notes(ws, start_row, notes):
@@ -2177,7 +2177,7 @@ def payroll_export(year, month):
             cell.number_format = "#,##0.00"
 
     last_row = _add_headcount_block(ws, row_idx + 2, totals, len(results))
-    last_row = _add_base_breakdown_block(ws, last_row + 2, results)
+    last_row = _add_wage_base_composition_block(ws, last_row + 2)
     _add_zero_pay_notes(ws, last_row + 2, _zero_pay_notes(results))
 
     ws.freeze_panes = "C3"
@@ -2320,7 +2320,7 @@ def payroll_summary_export(year, month):
         cell.number_format = "#,##0.00"
 
     last_row = _add_headcount_block(ws, row_idx + 2, totals, len(results))
-    last_row = _add_base_breakdown_block(ws, last_row + 2, results)
+    last_row = _add_wage_base_composition_block(ws, last_row + 2)
     _add_zero_pay_notes(ws, last_row + 2, _zero_pay_notes(results))
 
     if not totals_only:

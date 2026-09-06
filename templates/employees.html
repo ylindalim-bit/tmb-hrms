@@ -29,7 +29,11 @@
   {"key": "hospitalisation_leave_entitlement", "label": "Hosp. Entitlement", "type": "text", "default": false},
 ] %}
 <div style="display:flex; justify-content:space-between; align-items:center;">
-  <h1>Employee Master ({{ employees|length }})</h1>
+  <h1>Employee Master ({{ employees|length }})
+    <span id="visible-count-wrap" style="font-size:14px; font-weight:400; color:var(--muted); margin-left:8px; display:none;">
+      Showing <span id="visible-count"></span> of {{ employees|length }}
+    </span>
+  </h1>
   <a class="btn" href="{{ url_for('add_employee') }}">+ Add Employee</a>
 </div>
 <div class="tabs" style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
@@ -219,6 +223,7 @@
         active.push({ key: f.dataset.key, val: val, exact: exact });
       }
     });
+    var visibleCount = 0;
     rows.forEach(function(row) {
       var visible = active.every(function(f) {
         var cell = row.querySelector('[data-key="' + f.key + '"]');
@@ -227,7 +232,13 @@
         return f.exact ? text === f.val : text.indexOf(f.val) !== -1;
       });
       row.style.display = visible ? '' : 'none';
+      if (visible) visibleCount++;
     });
+    var countWrap = document.getElementById('visible-count-wrap');
+    if (countWrap) {
+      countWrap.style.display = active.length ? 'inline' : 'none';
+      document.getElementById('visible-count').textContent = visibleCount;
+    }
   }
 
   filters.forEach(function(f) {

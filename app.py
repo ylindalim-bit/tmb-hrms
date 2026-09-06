@@ -1455,17 +1455,32 @@ def attendance_daily(emp_id, year, month):
                             cewi_incentive=cewi_incentive)
 
 
+LATE_EARLY_GRACE_MINUTES = 5
+
+
+def _hhmm_to_minutes(hhmm):
+    try:
+        h, m = hhmm.split(":")
+        return int(h) * 60 + int(m)
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
 def _late_early_flags(row, emp):
     """Returns (is_late_in, is_early_out) for a WORKED day with both punch
     times recorded, compared against the employee's own Normal Start/End
-    Time (employees.standard_start/standard_end) - no grace period, any
-    time later than standard_start / earlier than standard_end counts.
+    Time (employees.standard_start/standard_end), allowing a
+    LATE_EARLY_GRACE_MINUTES buffer either side before it counts.
     (False, False) if the day isn't WORKED, is missing a punch, or the
     employee has no standard hours on file to compare against."""
     if not row or row["day_type"] != "WORKED" or not row["time_in"] or not row["time_out"]:
         return False, False
-    is_late = bool(emp["standard_start"]) and row["time_in"] > emp["standard_start"]
-    is_early = bool(emp["standard_end"]) and row["time_out"] < emp["standard_end"]
+    time_in = _hhmm_to_minutes(row["time_in"])
+    time_out = _hhmm_to_minutes(row["time_out"])
+    std_start = _hhmm_to_minutes(emp["standard_start"])
+    std_end = _hhmm_to_minutes(emp["standard_end"])
+    is_late = std_start is not None and time_in is not None and time_in > std_start + LATE_EARLY_GRACE_MINUTES
+    is_early = std_end is not None and time_out is not None and time_out < std_end - LATE_EARLY_GRACE_MINUTES
     return is_late, is_early
 
 

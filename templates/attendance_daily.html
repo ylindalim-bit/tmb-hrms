@@ -16,7 +16,8 @@
   for one without the other. Rows shaded <span style="background:#fef3c7; padding:1px 5px;">amber</span> have
   no record at all that day - no attendance, no approved leave, no Movement Notice. Rows shaded
   <span style="background:#dbeafe; padding:1px 5px;">blue</span> clocked in later or out earlier than this
-  employee's Normal Start/End Time ({{ emp.standard_start or "-" }} &ndash; {{ emp.standard_end or "-" }}).
+  employee's Normal Start/End Time ({{ emp.standard_start or "-" }} &ndash; {{ emp.standard_end or "-" }}),
+  beyond a 5-minute grace period either side.
 </p>
 {% if emp.ot_approval_required == "Y" %}
 <div class="card" style="background:#fef9c3; border-color:#eab308;">

@@ -39,12 +39,22 @@
 </div>
 {% endif %}
 
-<div style="margin-bottom:12px;">
+{% set bases = blocks | map(attribute='emp.base') | select | unique | sort | list %}
+<div style="margin-bottom:12px; display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
   <button type="button" class="btn" id="problems-only-btn" onclick="toggleProblemsOnly()">Show only problem days</button>
+  {% if bases %}
+  <div style="display:flex; align-items:center; gap:6px;">
+    <span style="color:var(--muted); font-size:13px;">Base:</span>
+    <button type="button" class="btn base-filter-btn" data-base="" onclick="setBaseFilter('')">All</button>
+    {% for base in bases %}
+    <button type="button" class="btn secondary base-filter-btn" data-base="{{ base }}" onclick="setBaseFilter('{{ base }}')">{{ base }}</button>
+    {% endfor %}
+  </div>
+  {% endif %}
 </div>
 
 {% for b in blocks %}
-<div class="card employee-block" data-total-flags="{{ b.problem_count + b.unrecorded_count + b.late_early_count }}">
+<div class="card employee-block" data-total-flags="{{ b.problem_count + b.unrecorded_count + b.late_early_count }}" data-base="{{ b.emp.base or '' }}">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
     <h2 style="margin:0;">{{ b.emp.emp_id }} &mdash; {{ b.emp.full_name }}
       {% if b.emp.base %}<span class="pill" style="margin-left:6px; background:var(--bg); color:var(--muted); border:1px solid var(--border);">{{ b.emp.base }}</span>{% endif %}
@@ -92,19 +102,31 @@
 {% endif %}
 <script>
 var problemsOnly = false;
+var selectedBase = '';
+
 function toggleProblemsOnly() {
   problemsOnly = !problemsOnly;
-  var btn = document.getElementById('problems-only-btn');
-  btn.textContent = problemsOnly ? 'Show all days' : 'Show only problem days';
+  document.getElementById('problems-only-btn').textContent = problemsOnly ? 'Show all days' : 'Show only problem days';
+  applyVisibility();
+}
+
+function setBaseFilter(base) {
+  selectedBase = base;
+  document.querySelectorAll('.base-filter-btn').forEach(function (btn) {
+    btn.classList.toggle('secondary', btn.dataset.base !== base);
+  });
+  applyVisibility();
+}
+
+function applyVisibility() {
   document.querySelectorAll('.employee-block').forEach(function (block) {
     var hasFlags = parseInt(block.dataset.totalFlags, 10) > 0;
-    block.style.display = (problemsOnly && !hasFlags) ? 'none' : '';
-    if (!problemsOnly) {
-      block.querySelectorAll('tbody tr').forEach(function (row) { row.style.display = ''; });
-      return;
-    }
+    var matchesBase = !selectedBase || block.dataset.base === selectedBase;
+    var show = matchesBase && (!problemsOnly || hasFlags);
+    block.style.display = show ? '' : 'none';
+    if (!show) return;
     block.querySelectorAll('tbody tr').forEach(function (row) {
-      row.style.display = row.classList.contains('flagged-row') ? '' : 'none';
+      row.style.display = (!problemsOnly || row.classList.contains('flagged-row')) ? '' : 'none';
     });
   });
 }

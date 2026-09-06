@@ -320,6 +320,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/bulk-set-base-cd",       # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/bulk-set-standard-hours-cd-zj",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fix-i001-standard-start",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/fix-zj-hours-and-off-saturdays",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -5067,6 +5068,42 @@ def hr_fix_i001_standard_start():
     cur = db.execute("UPDATE employees SET standard_start='08:30' WHERE emp_id='I001'")
     db.commit()
     return f"OK - set I001 standard_start=08:30 ({cur.rowcount} row updated)", 200
+
+
+@app.route("/hr/fix-zj-hours-and-off-saturdays", methods=["POST"])
+def hr_fix_zj_hours_and_off_saturdays():
+    """One-time fix: Linda confirmed ZJ's real hours are 08:00-17:00 (not
+    17:30), and their official OFF Saturdays in August 2026 are the 1st,
+    15th, and 29th (not 8th/22nd like the Malaysia rule) - exactly the 3
+    dates each of the 4 ZJ employees was missing from an otherwise
+    complete August, confirming this. Sets standard_end=17:00, adds the
+    3 OFF rows, then re-syncs each employee's August attendance_monthly
+    from their now-complete daily rows (safe here specifically because
+    every other day of the month already has a real entry - no risk of
+    undercounting a day that's genuinely still unrecorded)."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    emp_ids = ["I002", "M006", "M007", "M008"]
+    db.execute(
+        f"""UPDATE employees SET standard_end='17:00'
+            WHERE emp_id IN ({",".join("?" * len(emp_ids))})""",
+        emp_ids,
+    )
+    off_dates = ["2026-08-01", "2026-08-15", "2026-08-29"]
+    for emp_id in emp_ids:
+        for d in off_dates:
+            db.execute(
+                """INSERT INTO attendance_daily (emp_id, date, day_type, time_in, time_out,
+                       meal_allowance_flag, cewi_flag, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0)
+                   VALUES (?,?, 'OFF', NULL, NULL, 'N', 'N', 0, 0, 0)
+                   ON CONFLICT(emp_id, date) DO UPDATE SET day_type='OFF', time_in=NULL, time_out=NULL""",
+                (emp_id, d),
+            )
+        _sync_daily_to_monthly(db, emp_id, 2026, 8)
+    db.commit()
+    return f"OK - set standard_end=17:00 and OFF Saturdays for {len(emp_ids)} ZJ employee(s)", 200
 
 
 if __name__ == "__main__":

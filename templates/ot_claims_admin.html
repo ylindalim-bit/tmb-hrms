@@ -93,7 +93,7 @@
   <div class="table-wrap">
   <table>
     <thead>
-      <tr><th class="text">Employee</th><th class="text">Date</th><th>1.5x</th><th>2.0x</th><th>3.0x</th><th class="text">Status</th><th class="text">Reviewed By</th><th class="text">Reviewed</th><th>Action</th></tr>
+      <tr><th class="text">Employee</th><th class="text">Date</th><th>1.5x</th><th>2.0x</th><th>3.0x</th><th class="text">Reason</th><th class="text">Status</th><th class="text">Reviewed By</th><th class="text">Reviewed</th><th>Action</th></tr>
     </thead>
     <tbody>
       {% for c in reviewed %}
@@ -103,6 +103,7 @@
         <td>{{ c.ot_hours_1_5 }}</td>
         <td>{{ c.ot_hours_2_0 }}</td>
         <td>{{ c.ot_hours_3_0 }}</td>
+        <td class="text">{{ c.reason or "" }}</td>
         <td class="text">
           <span class="pill {% if c.status == 'Approved' %}finalized{% else %}rejected{% endif %}">{{ c.status }}</span>
         </td>
@@ -119,7 +120,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="9" class="text" style="color:var(--muted);">None yet.</td></tr>
+      <tr><td colspan="10" class="text" style="color:var(--muted);">None yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

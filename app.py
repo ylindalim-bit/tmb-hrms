@@ -3853,13 +3853,17 @@ def business_trips_admin():
         scope_clause = "AND e.leave_approver_username=?"
         params.append(session["hr_username"])
     pending = db.execute(
-        f"""SELECT bt.*, e.full_name FROM business_trips bt
+        f"""SELECT bt.*, e.full_name,
+                   CAST(julianday(bt.end_date) - julianday(bt.start_date) + 1 AS INTEGER) AS days
+           FROM business_trips bt
            JOIN employees e ON e.emp_id = bt.emp_id
            WHERE bt.status='Pending' {scope_clause} ORDER BY bt.submitted_at""",
         params,
     ).fetchall()
     reviewed = db.execute(
-        f"""SELECT bt.*, e.full_name FROM business_trips bt
+        f"""SELECT bt.*, e.full_name,
+                   CAST(julianday(bt.end_date) - julianday(bt.start_date) + 1 AS INTEGER) AS days
+           FROM business_trips bt
            JOIN employees e ON e.emp_id = bt.emp_id
            WHERE bt.status!='Pending' {scope_clause} ORDER BY bt.reviewed_at DESC LIMIT 50""",
         params,

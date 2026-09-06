@@ -417,6 +417,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/fix-a001-a002-cewi-flag",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/import-halimah-august",   # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/delete-duplicate-m002-doc",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/set-i001-pcb-override-august",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/add-september-ul-a007-m005",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
@@ -5566,6 +5567,44 @@ def hr_delete_duplicate_m002_doc():
     db.execute("DELETE FROM leave_request_documents WHERE id=76")
     db.commit()
     return "OK - deleted duplicate document (id 76)", 200
+
+
+@app.route("/hr/set-i001-pcb-override-august", methods=["POST"])
+def hr_set_i001_pcb_override_august():
+    """One-time fix: I001's (Iek Zen Cheng) August 2026 PCB calculated
+    RM72.19, but his official LHDN e-PCB slip (printed 2026-09-07) shows
+    RM72.85 - traced to how our system projects the SOCSO/EIS relief
+    and accumulated YTD PCB forward slightly differently than LHDN's
+    own figures. Sets a Manual PCB Correction (same mechanism as
+    set_pcb_override, which normally requires an HR session) so his
+    August payslip matches the official slip. Safe to re-run."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    existing = db.execute(
+        "SELECT 1 FROM payroll_runs WHERE emp_id='I001' AND year=2026 AND month=8"
+    ).fetchone()
+    if existing is None:
+        return "This month hasn't been finalized yet - finalize it first.", 400
+    reason = "LHDN e-PCB slip (printed 2026-09-07) - official MTD for August RM72.85"
+    db.execute(
+        "UPDATE payroll_runs SET pcb_override=?, pcb_override_reason=? WHERE emp_id='I001' AND year=2026 AND month=8",
+        (72.85, reason),
+    )
+    result = payroll_calc.calculate_payroll(db, "I001", 2026, 8)
+    db.execute(
+        "UPDATE payroll_runs SET pcb=?, total_deductions=?, net_pay=? WHERE emp_id='I001' AND year=2026 AND month=8",
+        (result["pcb"], result["total_deductions"], result["net_pay"]),
+    )
+    db.execute(
+        """INSERT INTO pcb_monthly_record (emp_id, year, month, gross_remun, epf_employee, pcb_deducted)
+           VALUES ('I001', 2026, 8, ?, ?, ?)
+           ON CONFLICT(emp_id, year, month) DO UPDATE SET pcb_deducted=excluded.pcb_deducted""",
+        (result["gross_pay"], result["epf_employee"], result["pcb"]),
+    )
+    db.commit()
+    return f"OK - set I001 August PCB override to RM72.85 (pcb={result['pcb']}, net_pay={result['net_pay']})", 200
 
 
 @app.route("/hr/add-september-ul-a007-m005", methods=["POST"])

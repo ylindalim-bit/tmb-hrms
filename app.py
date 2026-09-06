@@ -314,6 +314,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/bulk-set-al-bf",         # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/backfill-leave-attendance-daily",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/backfill-unrecorded-leave-attendance",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/bulk-set-standard-hours",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -1431,9 +1432,11 @@ def attendance_daily(emp_id, year, month):
         date_iso = date_obj.isoformat()
         row = saved.get(date_iso)
         trip_label = trip_labels.get((emp_id, date_iso))
+        is_late, is_early = _late_early_flags(row, emp)
         days.append({
             "day": day, "date": date_iso, "weekday": date_obj.strftime("%a"),
             "row": row, "unrecorded": row is None and not trip_label,
+            "late_in": is_late, "early_out": is_early,
             "trip_label": trip_label,
         })
     monthly = db.execute(
@@ -1450,6 +1453,20 @@ def attendance_daily(emp_id, year, month):
     return render_template("attendance_daily.html", emp=emp, year=year, month=month,
                             days=days, day_types=DAY_TYPES, monthly=monthly,
                             cewi_incentive=cewi_incentive)
+
+
+def _late_early_flags(row, emp):
+    """Returns (is_late_in, is_early_out) for a WORKED day with both punch
+    times recorded, compared against the employee's own Normal Start/End
+    Time (employees.standard_start/standard_end) - no grace period, any
+    time later than standard_start / earlier than standard_end counts.
+    (False, False) if the day isn't WORKED, is missing a punch, or the
+    employee has no standard hours on file to compare against."""
+    if not row or row["day_type"] != "WORKED" or not row["time_in"] or not row["time_out"]:
+        return False, False
+    is_late = bool(emp["standard_start"]) and row["time_in"] > emp["standard_start"]
+    is_early = bool(emp["standard_end"]) and row["time_out"] < emp["standard_end"]
+    return is_late, is_early
 
 
 @app.route("/attendance-daily-all/<int:year>/<int:month>")
@@ -1471,8 +1488,8 @@ def attendance_daily_all(year, month):
         ).fetchall()
     ]
     employees = db.execute(
-        f"""SELECT emp_id, full_name FROM employees WHERE emp_id IN ({",".join("?" * len(emp_ids_with_data))})
-            ORDER BY emp_id""",
+        f"""SELECT emp_id, full_name, standard_start, standard_end FROM employees
+            WHERE emp_id IN ({",".join("?" * len(emp_ids_with_data))}) ORDER BY emp_id""",
         emp_ids_with_data,
     ).fetchall() if emp_ids_with_data else []
 
@@ -1481,6 +1498,7 @@ def attendance_daily_all(year, month):
     blocks = []
     problem_count = 0
     unrecorded_count = 0
+    late_early_count = 0
     for e in employees:
         saved = {
             r["date"]: r for r in db.execute(
@@ -1491,6 +1509,7 @@ def attendance_daily_all(year, month):
         days = []
         emp_problems = 0
         emp_unrecorded = 0
+        emp_late_early = 0
         for day in range(1, days_in_month + 1):
             date_obj = datetime.date(year, month, day)
             date_iso = date_obj.isoformat()
@@ -1498,21 +1517,28 @@ def attendance_daily_all(year, month):
             trip_label = trip_labels.get((e["emp_id"], date_iso))
             is_problem = bool(row) and row["day_type"] == "WORKED" and (not row["time_in"] or not row["time_out"])
             is_unrecorded = row is None and not trip_label
+            is_late, is_early = _late_early_flags(row, e)
             if is_problem:
                 emp_problems += 1
             if is_unrecorded:
                 emp_unrecorded += 1
+            if is_late or is_early:
+                emp_late_early += 1
             days.append({
                 "day": day, "date": date_iso, "weekday": date_obj.strftime("%a"),
                 "row": row, "problem": is_problem, "unrecorded": is_unrecorded,
+                "late_in": is_late, "early_out": is_early,
                 "trip_label": trip_label,
             })
         problem_count += emp_problems
         unrecorded_count += emp_unrecorded
-        blocks.append({"emp": e, "days": days, "problem_count": emp_problems, "unrecorded_count": emp_unrecorded})
+        late_early_count += emp_late_early
+        blocks.append({"emp": e, "days": days, "problem_count": emp_problems,
+                        "unrecorded_count": emp_unrecorded, "late_early_count": emp_late_early})
 
     return render_template("attendance_daily_all.html", year=year, month=month,
-                            blocks=blocks, problem_count=problem_count, unrecorded_count=unrecorded_count)
+                            blocks=blocks, problem_count=problem_count, unrecorded_count=unrecorded_count,
+                            late_early_count=late_early_count)
 
 
 # ---------------- Payroll History ----------------
@@ -4918,6 +4944,29 @@ def hr_backfill_unrecorded_leave_attendance():
         _sync_days_to_attendance_daily(db, t["emp_id"], t["start_date"], t["end_date"], "OTHER_PAID")
     db.commit()
     return f"OK - backfilled attendance for {len(trips)} approved Unrecorded Leave notice(s)", 200
+
+
+@app.route("/hr/bulk-set-standard-hours", methods=["POST"])
+def hr_bulk_set_standard_hours():
+    """One-time fix: factory-floor employees (work_pattern Manual or 2 Off
+    Day (Saturday)) had Normal Start/End Time stored as 08:00-17:00 for
+    almost everyone, but their actual clock-in/out data consistently
+    shows ~07:30 in / ~17:30 out (83% clock in during the 7am hour, 96%
+    clock out during the 5pm hour) - confirmed with Linda as the real
+    shift. Sets standard_start/standard_end=07:30/17:30 for every
+    active employee on one of those two work patterns, so the late-in/
+    early-out highlight on Daily Attendance checks against the real
+    shift instead of a wrong default."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    cur = db.execute(
+        """UPDATE employees SET standard_start='07:30', standard_end='17:30'
+           WHERE status != 'Inactive' AND work_pattern IN ('Manual', '2 Off Day (Saturday)')"""
+    )
+    db.commit()
+    return f"OK - set standard_start/end=07:30/17:30 for {cur.rowcount} employee(s)", 200
 
 
 if __name__ == "__main__":

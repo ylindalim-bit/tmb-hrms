@@ -13,8 +13,10 @@
   Read-only - shows everyone with at least one Daily Attendance entry this month, so you don't need to open
   each employee one by one. Rows shaded <span style="background:#fee2e2; padding:1px 5px;">red</span> are a
   WORKED day missing Time In or Time Out. Rows shaded <span style="background:#fef3c7; padding:1px 5px;">amber</span>
-  have no record at all that day - no attendance, no approved leave, no Movement Notice. To edit, use the
-  link on each employee's block below to open their own page.
+  have no record at all that day - no attendance, no approved leave, no Movement Notice. Rows shaded
+  <span style="background:#dbeafe; padding:1px 5px;">blue</span> clocked in later or out earlier than the
+  employee's Normal Start/End Time (Employee Edit). To edit, use the link on each employee's block below to
+  open their own page.
 </p>
 
 {% if problem_count %}
@@ -31,6 +33,11 @@
   {{ unrecorded_count }} day{{ "s" if unrecorded_count != 1 }} across {{ blocks|selectattr("unrecorded_count", "greaterthan", 0)|list|length }} employee{{ "s" if blocks|selectattr("unrecorded_count", "greaterthan", 0)|list|length != 1 }} with no record at all this month.
 </div>
 {% endif %}
+{% if late_early_count %}
+<div class="card" style="background:#dbeafe; color:#1e3a8a; border-color:#3b82f6; font-weight:600;">
+  {{ late_early_count }} day{{ "s" if late_early_count != 1 }} across {{ blocks|selectattr("late_early_count", "greaterthan", 0)|list|length }} employee{{ "s" if blocks|selectattr("late_early_count", "greaterthan", 0)|list|length != 1 }} with a late clock-in or early clock-out this month.
+</div>
+{% endif %}
 
 {% for b in blocks %}
 <div class="card">
@@ -38,6 +45,7 @@
     <h2 style="margin:0;">{{ b.emp.emp_id }} &mdash; {{ b.emp.full_name }}
       {% if b.problem_count %}<span class="pill rejected" style="margin-left:6px;">{{ b.problem_count }} problem{{ "s" if b.problem_count != 1 }}</span>{% endif %}
       {% if b.unrecorded_count %}<span class="pill" style="margin-left:6px; background:#fef3c7; color:#92400e;">{{ b.unrecorded_count }} unrecorded</span>{% endif %}
+      {% if b.late_early_count %}<span class="pill" style="margin-left:6px; background:#dbeafe; color:#1e3a8a;">{{ b.late_early_count }} late/early</span>{% endif %}
     </h2>
     <a class="btn secondary" href="{{ url_for('attendance_daily', emp_id=b.emp.emp_id, year=year, month=month) }}">Edit &rarr;</a>
   </div>
@@ -53,14 +61,14 @@
   <tbody>
   {% for d in b.days %}
   {% set r = d.row %}
-  <tr{% if d.problem %} style="background:#fee2e2;"{% elif d.unrecorded %} style="background:#fef3c7;"{% endif %}>
+  <tr{% if d.problem %} style="background:#fee2e2;"{% elif d.unrecorded %} style="background:#fef3c7;"{% elif d.late_in or d.early_out %} style="background:#dbeafe;"{% endif %}>
     <td class="text">{{ d.date }}</td>
     <td class="text">{{ d.weekday }}</td>
     <td class="text">
       {% if d.trip_label %}{{ d.trip_label }}{% else %}{{ r.day_type if r else "-" }}{% endif %}
     </td>
-    <td class="text">{{ r.time_in if r and r.time_in else "-" }}</td>
-    <td class="text">{{ r.time_out if r and r.time_out else "-" }}</td>
+    <td class="text">{{ r.time_in if r and r.time_in else "-" }}{% if d.late_in %} <span style="color:#1e3a8a; font-weight:600;">(Late)</span>{% endif %}</td>
+    <td class="text">{{ r.time_out if r and r.time_out else "-" }}{% if d.early_out %} <span style="color:#1e3a8a; font-weight:600;">(Early)</span>{% endif %}</td>
     <td>{{ "Y" if r and r.meal_allowance_flag == "Y" else "-" }}</td>
     <td>{{ "Y" if r and r.cewi_flag == "Y" else "-" }}</td>
     <td>{{ r.ot_hours_1_5 if r else "-" }}</td>

@@ -327,6 +327,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/fill-cd-off-saturdays-blanks",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fix-k002-meal-flag",     # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/replace-i001-ot-with-al",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/shorten-i001-ot-claim-notes",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -5287,13 +5288,32 @@ def hr_replace_i001_ot_with_al():
     db.execute(
         "UPDATE employees SET al_bf_days = COALESCE(al_bf_days,0) + 2.28 WHERE emp_id='I001'"
     )
-    note = "Replaced with 2.28 AL days instead of OT pay, per Linda (rest-day OT = 2 flat days; normal-day OT = hours x 1.5 / working_hours_day)"
+    note = "Replaced with AL (2.28 days) instead of OT pay"
     db.execute(
         "UPDATE ot_claims SET review_notes=? WHERE emp_id='I001' AND claim_date IN ('2026-08-17','2026-08-23')",
         (note,),
     )
     db.commit()
     return "OK - zeroed I001's OT hours for 8/17 and 8/23, credited 2.28 AL days", 200
+
+
+@app.route("/hr/shorten-i001-ot-claim-notes", methods=["POST"])
+def hr_shorten_i001_ot_claim_notes():
+    """One-time follow-up: shortens the review_notes set by
+    /hr/replace-i001-ot-with-al (already run) to a label short enough to
+    show as a badge in the OT Claims Recently Reviewed table's Action
+    column - does not touch al_bf_days or attendance again, just the
+    note text. Safe to re-run."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    cur = db.execute(
+        """UPDATE ot_claims SET review_notes='Replaced with AL (2.28 days) instead of OT pay'
+           WHERE emp_id='I001' AND claim_date IN ('2026-08-17','2026-08-23')"""
+    )
+    db.commit()
+    return f"OK - shortened review_notes on {cur.rowcount} claim(s)", 200
 
 
 if __name__ == "__main__":

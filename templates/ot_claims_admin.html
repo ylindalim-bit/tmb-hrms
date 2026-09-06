@@ -113,6 +113,8 @@
           <form method="post" action="{{ url_for('delete_ot_claim', claim_id=c.id) }}" onsubmit="return confirm('Delete this OT claim record permanently?');">
             <button class="btn secondary" type="submit" style="padding:4px 10px;">Delete</button>
           </form>
+          {% elif c.review_notes %}
+          <span class="pill" style="background:#dbeafe; color:#1e3a8a; white-space:normal;">{{ c.review_notes }}</span>
           {% endif %}
         </td>
       </tr>

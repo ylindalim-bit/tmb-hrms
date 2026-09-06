@@ -47,6 +47,7 @@
 <div class="card employee-block" data-total-flags="{{ b.problem_count + b.unrecorded_count + b.late_early_count }}">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
     <h2 style="margin:0;">{{ b.emp.emp_id }} &mdash; {{ b.emp.full_name }}
+      {% if b.emp.base %}<span class="pill" style="margin-left:6px; background:var(--bg); color:var(--muted); border:1px solid var(--border);">{{ b.emp.base }}</span>{% endif %}
       {% if b.problem_count %}<span class="pill rejected" style="margin-left:6px;">{{ b.problem_count }} problem{{ "s" if b.problem_count != 1 }}</span>{% endif %}
       {% if b.unrecorded_count %}<span class="pill" style="margin-left:6px; background:#fef3c7; color:#92400e;">{{ b.unrecorded_count }} unrecorded</span>{% endif %}
       {% if b.late_early_count %}<span class="pill" style="margin-left:6px; background:#dbeafe; color:#1e3a8a;">{{ b.late_early_count }} late/early</span>{% endif %}

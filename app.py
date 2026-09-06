@@ -1519,7 +1519,7 @@ def attendance_daily_all(year, month):
         ).fetchall()
     ]
     employees = db.execute(
-        f"""SELECT emp_id, full_name, standard_start, standard_end, cewi_flag FROM employees
+        f"""SELECT emp_id, full_name, base, standard_start, standard_end, cewi_flag FROM employees
             WHERE emp_id IN ({",".join("?" * len(emp_ids_with_data))}) ORDER BY emp_id""",
         emp_ids_with_data,
     ).fetchall() if emp_ids_with_data else []

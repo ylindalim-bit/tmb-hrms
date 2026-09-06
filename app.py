@@ -324,6 +324,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/import-shamsury-august",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fix-s002-standard-start",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fix-cewi-flag-non-eligible",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/fill-cd-off-saturdays-blanks",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -5194,6 +5195,39 @@ def hr_fix_cewi_flag_non_eligible():
         _sync_daily_to_monthly(db, row["emp_id"], int(row["y"]), int(row["m"]))
     db.commit()
     return f"OK - reset cewi_flag on {cur.rowcount} row(s), re-synced {len(affected)} employee-month(s)", 200
+
+
+@app.route("/hr/fill-cd-off-saturdays-blanks", methods=["POST"])
+def hr_fill_cd_off_saturdays_blanks():
+    """One-time fix: Linda confirmed 15 & 29 Aug 2026 are CD's official
+    OFF Saturdays. Most CD employees already have real WORKED/leave data
+    on those dates (they physically worked - any OT/AL-in-lieu for that
+    gets claimed separately via OT Claims/Leave Requests, not by
+    rewriting attendance here), so this only fills OFF for the specific
+    (emp_id, date) cells that were a genuine blank - no attendance_daily
+    row at all. Re-syncs each touched employee's August totals
+    afterward. Safe to re-run."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    blanks = [("A006", "2026-08-29"), ("M002", "2026-08-15")]
+    for emp_id, date_str in blanks:
+        existing = db.execute(
+            "SELECT 1 FROM attendance_daily WHERE emp_id=? AND date=?", (emp_id, date_str)
+        ).fetchone()
+        if existing:
+            continue
+        db.execute(
+            """INSERT INTO attendance_daily (emp_id, date, day_type, time_in, time_out,
+                   meal_allowance_flag, cewi_flag, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0)
+               VALUES (?,?, 'OFF', NULL, NULL, 'N', 'N', 0, 0, 0)""",
+            (emp_id, date_str),
+        )
+    for emp_id in {e for e, _ in blanks}:
+        _sync_daily_to_monthly(db, emp_id, 2026, 8)
+    db.commit()
+    return "OK - filled OFF for genuinely blank CD Saturdays (A006 8/29, M002 8/15)", 200
 
 
 if __name__ == "__main__":

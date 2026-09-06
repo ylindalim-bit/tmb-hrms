@@ -39,8 +39,12 @@
 </div>
 {% endif %}
 
+<div style="margin-bottom:12px;">
+  <button type="button" class="btn" id="problems-only-btn" onclick="toggleProblemsOnly()">Show only problem days</button>
+</div>
+
 {% for b in blocks %}
-<div class="card">
+<div class="card employee-block" data-total-flags="{{ b.problem_count + b.unrecorded_count + b.late_early_count }}">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
     <h2 style="margin:0;">{{ b.emp.emp_id }} &mdash; {{ b.emp.full_name }}
       {% if b.problem_count %}<span class="pill rejected" style="margin-left:6px;">{{ b.problem_count }} problem{{ "s" if b.problem_count != 1 }}</span>{% endif %}
@@ -61,7 +65,7 @@
   <tbody>
   {% for d in b.days %}
   {% set r = d.row %}
-  <tr{% if d.problem %} style="background:#fee2e2;"{% elif d.unrecorded %} style="background:#fef3c7;"{% elif d.late_in or d.early_out %} style="background:#dbeafe;"{% endif %}>
+  <tr{% if d.problem %} class="flagged-row" style="background:#fee2e2;"{% elif d.unrecorded %} class="flagged-row" style="background:#fef3c7;"{% elif d.late_in or d.early_out %} class="flagged-row" style="background:#dbeafe;"{% endif %}>
     <td class="text">{{ d.date }}</td>
     <td class="text">{{ d.weekday }}</td>
     <td class="text">
@@ -85,4 +89,23 @@
 {% if not blocks %}
 <div class="card" style="color:var(--muted);">No employees have any Daily Attendance entries for {{ month_names[month] }} {{ year }}.</div>
 {% endif %}
+<script>
+var problemsOnly = false;
+function toggleProblemsOnly() {
+  problemsOnly = !problemsOnly;
+  var btn = document.getElementById('problems-only-btn');
+  btn.textContent = problemsOnly ? 'Show all days' : 'Show only problem days';
+  document.querySelectorAll('.employee-block').forEach(function (block) {
+    var hasFlags = parseInt(block.dataset.totalFlags, 10) > 0;
+    block.style.display = (problemsOnly && !hasFlags) ? 'none' : '';
+    if (!problemsOnly) {
+      block.querySelectorAll('tbody tr').forEach(function (row) { row.style.display = ''; });
+      return;
+    }
+    block.querySelectorAll('tbody tr').forEach(function (row) {
+      row.style.display = row.classList.contains('flagged-row') ? '' : 'none';
+    });
+  });
+}
+</script>
 {% endblock %}

@@ -121,6 +121,7 @@
 <script>
 (function() {
   var STORAGE_KEY = 'employeeMasterColumns';
+  var KNOWN_KEYS_STORAGE_KEY = 'employeeMasterColumns_knownKeys';
   var defaultVisible = {{ optional_columns | selectattr('default') | map(attribute='key') | list | tojson }};
   var allKeys = {{ optional_columns | map(attribute='key') | list | tojson }};
 
@@ -131,15 +132,41 @@
   var panel = document.getElementById('columns-panel');
   var checkboxes = document.querySelectorAll('.col-toggle');
 
+  // A returning visitor's saved column list predates any column added since
+  // their last visit (e.g. Base) - without this, a newly-added default-visible
+  // column silently never shows for them, since it's simply absent from their
+  // saved list rather than explicitly hidden. Any key in allKeys that wasn't
+  // part of the saved set the last time we recorded it gets its own default
+  // applied, same as a first-time visitor.
   function loadVisible() {
+    var saved = null;
     try {
-      var saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) return JSON.parse(saved);
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) saved = JSON.parse(raw);
     } catch (e) {}
-    return defaultVisible;
+    if (!saved) { saveKnownKeys(allKeys); return defaultVisible.slice(); }
+
+    var knownKeys = [];
+    try {
+      var rawKnown = localStorage.getItem(KNOWN_KEYS_STORAGE_KEY);
+      if (rawKnown) knownKeys = JSON.parse(rawKnown);
+    } catch (e) {}
+    var merged = saved.slice();
+    var changed = false;
+    allKeys.forEach(function(key) {
+      if (knownKeys.indexOf(key) === -1) {
+        changed = true;
+        if (defaultVisible.indexOf(key) !== -1 && merged.indexOf(key) === -1) merged.push(key);
+      }
+    });
+    if (changed) { saveVisible(merged); saveKnownKeys(allKeys); }
+    return merged;
   }
   function saveVisible(visible) {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(visible)); } catch (e) {}
+  }
+  function saveKnownKeys(keys) {
+    try { localStorage.setItem(KNOWN_KEYS_STORAGE_KEY, JSON.stringify(keys)); } catch (e) {}
   }
   function applyColumnVisibility() {
     var visible = loadVisible();

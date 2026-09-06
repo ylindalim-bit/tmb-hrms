@@ -3593,7 +3593,8 @@ def leave_requests_admin():
                    bt.status, bt.reviewed_by, bt.reviewed_at
            FROM business_trips bt JOIN employees e ON e.emp_id = bt.emp_id
            WHERE bt.status!='Pending' AND bt.start_date LIKE ? {scope_clause}
-           ORDER BY reviewed_at DESC""",
+           ORDER BY 7, 3""",
+        # 7, 3 above = start_date, emp_id - SQLite needs ordinal position, not name, to ORDER BY a UNION
         [month_prefix] + params + [month_prefix] + params,
     ).fetchall()
 

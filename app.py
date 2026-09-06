@@ -332,6 +332,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/fix-a001-a002-cewi-flag",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/import-halimah-august",   # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/delete-duplicate-m002-doc",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/add-september-ul-a007-m005",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -5471,6 +5472,36 @@ def hr_delete_duplicate_m002_doc():
     db.execute("DELETE FROM leave_request_documents WHERE id=76")
     db.commit()
     return "OK - deleted duplicate document (id 76)", 200
+
+
+@app.route("/hr/add-september-ul-a007-m005", methods=["POST"])
+def hr_add_september_ul_a007_m005():
+    """One-time fix: Linda confirmed A007 and M005's Unpaid Leave runs
+    1 Aug through 30 Sept 2026 (August was already on file; only
+    September was missing). September's attendance_monthly had
+    defaulted to a full 25/25 days worked with no leave, which would
+    have paid them normally - this adds a matching Approved UL leave
+    request for Sept 1-30 for both, same as August's, and syncs it onto
+    attendance_daily/monthly so September payroll zeroes out too."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    results = []
+    for emp_id in ("A007", "M005"):
+        leave_request_id, error = _validate_and_create_leave_request(
+            db, emp_id, "Unpaid Leave", "2026-09-01", "2026-09-30", None, [], "Approved",
+            reviewed_by="Linda Lim",
+        )
+        if error:
+            results.append(f"{emp_id}: ERROR - {error}")
+            continue
+        leave_request = db.execute("SELECT * FROM leave_requests WHERE id=?", (leave_request_id,)).fetchone()
+        _sync_leave_to_attendance(db, leave_request)
+        _sync_leave_to_attendance_daily(db, leave_request)
+        results.append(f"{emp_id}: leave_request #{leave_request_id} created and synced")
+    db.commit()
+    return "OK - " + "; ".join(results), 200
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ CREATE TABLE employees (
     position                TEXT,
     date_joined             TEXT,          -- ISO date
     status                  TEXT,          -- Active / Resigned / ...
+    base                    TEXT,          -- MY / ZJ / CD - which physical site this employee works at
     holiday_state           TEXT,          -- for public holiday matching
     basic_salary            REAL NOT NULL DEFAULT 0,
     working_days_week       REAL,          -- e.g. 5.5 for a Mon-Fri + half-day Saturday schedule

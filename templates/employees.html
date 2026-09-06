@@ -2,6 +2,7 @@
 {% block title %}Employees - TMB Payroll{% endblock %}
 {% block content %}
 {% set optional_columns = [
+  {"key": "base", "label": "Base", "type": "select", "options": ["MY", "ZJ", "CD"], "default": true},
   {"key": "department", "label": "Dept", "type": "select", "options": depts, "default": true},
   {"key": "position", "label": "Position", "type": "select", "options": positions, "default": true},
   {"key": "date_joined", "label": "Join Date", "type": "text", "default": true},

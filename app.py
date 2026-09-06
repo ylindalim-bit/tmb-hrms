@@ -151,6 +151,7 @@ if not os.path.exists(DB_PATH):
 DOCUMENT_TYPES = ["Job Application Form", "IC / Passport Copy", "Letter of Employment", "Confirmation Letter",
                    "Resignation Letter", "CP22A", "e-Stamping Certificate", "TP3 (Prior Employer Income)", "Other"]
 BUSINESS_TRIP_TYPES = ["Business Trip", "Out-Duty", "Training", "Unrecorded Leave"]
+BASE_OPTIONS = ["MY", "ZJ", "CD"]  # Malaysia, Zhejiang, Chengdu - which physical site this employee works at
 LEAVE_TYPES = ["Annual Leave", "Medical Leave", "Hospitalisation Leave", "Unpaid Leave", "Maternity/Paternity Leave",
                "School Personal Leave"]
 LEAVE_DOC_REQUIRED_TYPES = {"Medical Leave", "Hospitalisation Leave"}
@@ -672,7 +673,7 @@ def hr_change_password():
 
 TEXT_FIELDS = ["full_name", "ic_passport_no", "date_of_birth", "marital_status",
                "race", "religion", "holiday_state", "epf_no", "socso_no", "tax_no", "skbbk_flag", "eis_flag",
-               "department", "position", "status", "work_pattern", "bank_name", "bank_account_no",
+               "department", "position", "status", "base", "work_pattern", "bank_name", "bank_account_no",
                "phone_number", "hp_no", "email", "address",
                "emergency_contact_1_name", "emergency_contact_1_phone", "emergency_contact_1_relationship",
                "emergency_contact_2_name", "emergency_contact_2_phone", "emergency_contact_2_relationship",
@@ -807,7 +808,7 @@ def add_employee():
             return redirect(url_for("edit_employee", emp_id=emp_id))
     return render_template("employee_edit.html", emp={}, is_new=True, error=error,
                             race_options=RACE_OPTIONS, religion_options=RELIGION_OPTIONS,
-                            holiday_state_options=HOLIDAY_STATE_OPTIONS)
+                            holiday_state_options=HOLIDAY_STATE_OPTIONS, base_options=BASE_OPTIONS)
 
 
 @app.route("/employees/<emp_id>/edit", methods=["GET", "POST"])
@@ -894,7 +895,7 @@ def edit_employee(emp_id):
                             al_note=al_note, al_year=al_year, al_entitlement_effective=al_entitlement_effective,
                             al_used=al_used, al_balance=al_balance, al_bf=al_bf, al_total_available=al_total_available,
                             race_options=RACE_OPTIONS, religion_options=RELIGION_OPTIONS,
-                            holiday_state_options=HOLIDAY_STATE_OPTIONS,
+                            holiday_state_options=HOLIDAY_STATE_OPTIONS, base_options=BASE_OPTIONS,
                             appraisal_supervisors=appraisal_supervisors, leave_approvers=leave_approvers,
                             hr_accounts=hr_accounts,
                             tax_profile=tax_profile)
@@ -4398,6 +4399,9 @@ def hr_migrate_schema():
     if "al_bf_days" not in emp_cols:
         db.execute("ALTER TABLE employees ADD COLUMN al_bf_days REAL DEFAULT 0")
         applied.append("employees.al_bf_days")
+    if "base" not in emp_cols:
+        db.execute("ALTER TABLE employees ADD COLUMN base TEXT")
+        applied.append("employees.base")
     for col in ["emergency_contact_1_name", "emergency_contact_1_phone", "emergency_contact_1_relationship",
                 "emergency_contact_2_name", "emergency_contact_2_phone", "emergency_contact_2_relationship",
                 "hr_username"]:

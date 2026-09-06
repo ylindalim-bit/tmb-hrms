@@ -37,6 +37,14 @@
         {% endfor %}
       </select>
     </div>
+    <div><label>Base</label>
+      <select name="base">
+        <option value="" {% if not emp.base %}selected{% endif %}>Select...</option>
+        {% for b in base_options %}
+        <option value="{{ b }}" {% if emp.base == b %}selected{% endif %}>{{ b }}</option>
+        {% endfor %}
+      </select>
+    </div>
   </div>
 
   <h2>Personal / Identification</h2>

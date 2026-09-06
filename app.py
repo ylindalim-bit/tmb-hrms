@@ -318,6 +318,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/bulk-set-standard-hours",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/bulk-set-base",          # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/bulk-set-base-cd",       # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/bulk-set-standard-hours-cd-zj",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -5031,6 +5032,25 @@ def hr_bulk_set_base_cd():
     )
     db.commit()
     return f"OK - set base=CD for {cur.rowcount} employee(s) (only those still blank)", 200
+
+
+@app.route("/hr/bulk-set-standard-hours-cd-zj", methods=["POST"])
+def hr_bulk_set_standard_hours_cd_zj():
+    """One-time fix: Linda confirmed CD and ZJ staff both actually work
+    8:00am-5:30pm, not the 07:30-17:30 Johor Bahru factory shift they'd
+    been bulk-set to (before Base existed to tell them apart). Updates
+    Normal Start/End Time for every active employee whose base is CD or
+    ZJ. Safe to re-run - always sets an explicit value."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    cur = db.execute(
+        """UPDATE employees SET standard_start='08:00', standard_end='17:30'
+           WHERE status != 'Inactive' AND base IN ('CD', 'ZJ')"""
+    )
+    db.commit()
+    return f"OK - set standard_start/end=08:00/17:30 for {cur.rowcount} CD/ZJ employee(s)", 200
 
 
 if __name__ == "__main__":

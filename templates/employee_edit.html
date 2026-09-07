@@ -201,8 +201,8 @@
         <option value="Y" {% if emp.mobile_clockin_enabled=="Y" %}selected{% endif %}>Yes</option>
       </select>
     </div>
-    <div><label>Date Joined</label><input type="date" id="date_joined" name="date_joined" value="{{ emp.date_joined or '' }}" onchange="calcProbationEnd()"></div>
-    <div><label>Last Working Day (if Resigned)</label><input type="date" name="last_working_day" value="{{ emp.last_working_day or '' }}"></div>
+    <div><label>Date Joined <span id="service_display" style="font-weight:400;"></span></label><input type="date" id="date_joined" name="date_joined" value="{{ emp.date_joined or '' }}" onchange="calcProbationEnd(); calcYearsOfService();"></div>
+    <div><label>Last Working Day (if Resigned)</label><input type="date" id="last_working_day" name="last_working_day" value="{{ emp.last_working_day or '' }}" onchange="calcYearsOfService()"></div>
     <div><label>Probation Period</label>
       <select id="probation_period_select" onchange="onProbationPeriodChange()">
         <option value="">-- set Probation End Date manually --</option>
@@ -690,6 +690,31 @@ if (!document.getElementById('date_of_birth').value) {
   calcDobFromIc();
 }
 calcAge();
+
+function calcYearsOfService() {
+  var joinedStr = document.getElementById('date_joined').value;
+  var display = document.getElementById('service_display');
+  if (!joinedStr) { display.textContent = ''; return; }
+  var jp = joinedStr.split('-').map(Number);
+  var joined = new Date(jp[0], jp[1] - 1, jp[2]);
+  // Uses Last Working Day if set (a resigned employee's final tenure length),
+  // otherwise today (ongoing service) - same logic either way.
+  var lastWorkingStr = document.getElementById('last_working_day').value;
+  var asOf = lastWorkingStr ? (function () {
+    var lp = lastWorkingStr.split('-').map(Number);
+    return new Date(lp[0], lp[1] - 1, lp[2]);
+  })() : new Date();
+  if (asOf < joined) { display.textContent = ''; return; }
+  var years = asOf.getFullYear() - joined.getFullYear();
+  var months = asOf.getMonth() - joined.getMonth();
+  if (asOf.getDate() < joined.getDate()) months--;
+  if (months < 0) { years--; months += 12; }
+  var parts = [];
+  if (years > 0) parts.push(years + (years === 1 ? ' year' : ' years'));
+  parts.push(months + (months === 1 ? ' month' : ' months'));
+  display.textContent = '(' + parts.join(' ') + (lastWorkingStr ? ' - final' : '') + ')';
+}
+calcYearsOfService();
 
 // The Probation Period dropdown itself is never saved - only the resulting
 // Probation End Date is. So on page load, re-derive which option it should

@@ -1,0 +1,51 @@
+{% extends "portal_base.html" %}
+{% block title %}Clock In / Out - Staff Portal{% endblock %}
+{% block content %}
+<h1>Clock In / Out</h1>
+
+{% if error %}
+<div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger);">{{ error }}</div>
+{% endif %}
+
+<div class="card" style="max-width:420px; text-align:center;">
+  {% if today_row and today_row.time_in and today_row.time_out %}
+    <p style="font-size:15px;">Clocked in at <strong>{{ today_row.time_in }}</strong>, clocked out at <strong>{{ today_row.time_out }}</strong>.</p>
+    <p style="color:var(--muted); font-size:13px;">You're done for today.</p>
+  {% elif today_row and today_row.time_in %}
+    <p style="font-size:15px;">Clocked in at <strong>{{ today_row.time_in }}</strong>.</p>
+    <button class="btn" id="clock-btn" type="button" onclick="doClock('out')" style="font-size:16px; padding:14px 32px;">Clock Out</button>
+  {% else %}
+    <p style="color:var(--muted); font-size:13px;">Not clocked in yet today.</p>
+    <button class="btn" id="clock-btn" type="button" onclick="doClock('in')" style="font-size:16px; padding:14px 32px;">Clock In</button>
+  {% endif %}
+  <p id="clock-status" style="margin-top:10px; font-size:12px; color:var(--muted);"></p>
+</div>
+
+<form id="clock-form" method="post" style="display:none;">
+  <input type="hidden" name="action" id="clock-action">
+  <input type="hidden" name="lat" id="clock-lat">
+  <input type="hidden" name="lng" id="clock-lng">
+</form>
+
+<script>
+function doClock(action) {
+  var statusEl = document.getElementById('clock-status');
+  var btn = document.getElementById('clock-btn');
+  if (!navigator.geolocation) {
+    statusEl.textContent = 'Your browser does not support location - cannot clock in/out.';
+    return;
+  }
+  btn.disabled = true;
+  statusEl.textContent = 'Checking your location...';
+  navigator.geolocation.getCurrentPosition(function (pos) {
+    document.getElementById('clock-action').value = action;
+    document.getElementById('clock-lat').value = pos.coords.latitude;
+    document.getElementById('clock-lng').value = pos.coords.longitude;
+    document.getElementById('clock-form').submit();
+  }, function (err) {
+    btn.disabled = false;
+    statusEl.textContent = 'Could not get your location: ' + err.message + '. Please allow location access.';
+  }, { enableHighAccuracy: true, timeout: 10000 });
+}
+</script>
+{% endblock %}

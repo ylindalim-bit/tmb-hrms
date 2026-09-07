@@ -791,7 +791,7 @@ TEXT_FIELDS = ["full_name", "ic_passport_no", "date_of_birth", "marital_status",
                "passport_expiry", "work_permit_expiry", "termination_notice_period",
                "confirmation_date", "resignation_date", "appraisal_supervisor_username",
                "leave_approver_username", "hr_username", "ot_approval_required",
-               "standard_start", "standard_end"]
+               "standard_start", "standard_end", "mobile_clockin_enabled"]
 NUM_FIELDS = ["basic_salary", "working_days_week", "working_hours_day",
               "additional_epf_employee", "annual_leave_entitlement", "al_bf_days", "mc_entitlement",
               "hospitalisation_leave_entitlement", "medical_claim_limit"]
@@ -1567,6 +1567,16 @@ def attendance_daily(emp_id, year, month):
 
 
 LATE_EARLY_GRACE_MINUTES = 5
+
+
+def _haversine_meters(lat1, lon1, lat2, lon2):
+    """Great-circle distance between two lat/lng points, in meters."""
+    r = 6371000
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
 def _hhmm_to_minutes(hhmm):
@@ -2632,6 +2642,42 @@ def payroll_settings_page():
                             payment_day=PAYMENT_DAY)
 
 
+# ---------------- Mobile Clock-In ----------------
+
+@app.route("/hr/clockin-locations", methods=["GET", "POST"])
+def clockin_locations_page():
+    """One geofence location per Base (MY/ZJ/CD) for the mobile Clock
+    In/Out feature - staff clocking in via the Staff Portal must be
+    within `radius_meters` of their own Base's point here. Each row can
+    be filled in by typing coordinates, or by standing at the location
+    and clicking "Use my current location" (browser geolocation)."""
+    db = get_db()
+    if request.method == "POST":
+        for base in BASE_OPTIONS:
+            label = request.form.get(f"label_{base}", "").strip()
+            lat_raw = request.form.get(f"lat_{base}", "").strip()
+            lng_raw = request.form.get(f"lng_{base}", "").strip()
+            radius_raw = request.form.get(f"radius_{base}", "").strip()
+            lat = float(lat_raw) if lat_raw else None
+            lng = float(lng_raw) if lng_raw else None
+            radius = float(radius_raw) if radius_raw else 300
+            db.execute(
+                """INSERT INTO clockin_locations (base, label, latitude, longitude, radius_meters)
+                   VALUES (?,?,?,?,?)
+                   ON CONFLICT(base) DO UPDATE SET label=excluded.label, latitude=excluded.latitude,
+                       longitude=excluded.longitude, radius_meters=excluded.radius_meters""",
+                (base, label, lat, lng, radius),
+            )
+        db.commit()
+        return redirect(url_for("clockin_locations_page"))
+
+    rows = {r["base"]: r for r in db.execute("SELECT * FROM clockin_locations").fetchall()}
+    pilot_count = db.execute(
+        "SELECT COUNT(*) AS c FROM employees WHERE mobile_clockin_enabled='Y'"
+    ).fetchone()["c"]
+    return render_template("clockin_locations.html", bases=BASE_OPTIONS, rows=rows, pilot_count=pilot_count)
+
+
 # ---------------- Public Holidays ----------------
 
 @app.route("/holidays", methods=["GET", "POST"])
@@ -2934,6 +2980,78 @@ def portal_attendance():
         al_used=al_used, mc_used=mc_used, al_balance=al_balance, mc_balance=mc_balance,
         hl_used=hl_used, hl_balance=hl_balance,
     )
+
+
+@app.route("/portal/clock", methods=["GET", "POST"])
+@portal_login_required
+def portal_clock():
+    """Pilot mobile clock-in/out feature - only shown to employees with
+    mobile_clockin_enabled='Y'. Requires GPS coordinates within the
+    radius configured for the employee's Base (see clockin_locations
+    admin page); writes straight into today's attendance_daily Time
+    In/Out, same field HR fills in manually, with no separate approval
+    step. Every attempt (accepted or rejected) is logged to
+    clockin_events for an audit trail."""
+    db = get_db()
+    emp = current_portal_employee(db)
+    if emp["mobile_clockin_enabled"] != "Y":
+        return "Mobile clock-in isn't enabled for your account yet.", 403
+
+    location = db.execute(
+        "SELECT * FROM clockin_locations WHERE base=?", (emp["base"],)
+    ).fetchone() if emp["base"] else None
+
+    error = None
+    if request.method == "POST":
+        action = request.form.get("action")
+        lat_raw = request.form.get("lat")
+        lng_raw = request.form.get("lng")
+        if action not in ("in", "out"):
+            error = "Invalid request."
+        elif not lat_raw or not lng_raw:
+            error = "Couldn't read your phone's location. Please allow location access and try again."
+        elif location is None or location["latitude"] is None or location["longitude"] is None:
+            error = "No clock-in location has been set up for your Base yet - ask HR to configure it."
+        else:
+            lat, lng = float(lat_raw), float(lng_raw)
+            distance = _haversine_meters(lat, lng, location["latitude"], location["longitude"])
+            accepted = distance <= location["radius_meters"]
+            now = datetime.datetime.now()
+            date_str = now.date().isoformat()
+            time_str = now.strftime("%H:%M")
+            db.execute(
+                """INSERT INTO clockin_events (emp_id, event_type, event_at, accepted, latitude, longitude, distance_meters)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (emp["emp_id"], action, now.isoformat(timespec="seconds"), "Y" if accepted else "N",
+                 lat, lng, round(distance, 1)),
+            )
+            if not accepted:
+                error = f"You're about {round(distance)}m from {location['label'] or 'your work site'} - move closer and try again (allowed: {int(location['radius_meters'])}m)."
+            elif action == "in":
+                db.execute(
+                    """INSERT INTO attendance_daily (emp_id, date, day_type, time_in)
+                       VALUES (?,?,'WORKED',?)
+                       ON CONFLICT(emp_id, date) DO UPDATE SET time_in=excluded.time_in""",
+                    (emp["emp_id"], date_str, time_str),
+                )
+                _sync_daily_to_monthly(db, emp["emp_id"], now.year, now.month)
+            else:
+                db.execute(
+                    """INSERT INTO attendance_daily (emp_id, date, day_type, time_out)
+                       VALUES (?,?,'WORKED',?)
+                       ON CONFLICT(emp_id, date) DO UPDATE SET time_out=excluded.time_out""",
+                    (emp["emp_id"], date_str, time_str),
+                )
+                _sync_daily_to_monthly(db, emp["emp_id"], now.year, now.month)
+            db.commit()
+            if accepted:
+                return redirect(url_for("portal_clock"))
+
+    today_str = datetime.date.today().isoformat()
+    today_row = db.execute(
+        "SELECT * FROM attendance_daily WHERE emp_id=? AND date=?", (emp["emp_id"], today_str)
+    ).fetchone()
+    return render_template("portal_clock.html", emp=emp, location=location, today_row=today_row, error=error)
 
 
 def _validate_and_create_leave_request(db, emp_id, leave_type, start_date, end_date, reason, files, status,
@@ -4698,6 +4816,23 @@ def hr_migrate_schema():
             if col not in ot_claim_cols:
                 db.execute(f"ALTER TABLE ot_claims ADD COLUMN {col} TEXT")
                 applied.append(f"ot_claims.{col}")
+
+    if "mobile_clockin_enabled" not in emp_cols:
+        db.execute("ALTER TABLE employees ADD COLUMN mobile_clockin_enabled TEXT NOT NULL DEFAULT 'N'")
+        applied.append("employees.mobile_clockin_enabled")
+
+    if "clockin_locations" not in existing_tables:
+        db.execute("""CREATE TABLE clockin_locations (
+            base TEXT PRIMARY KEY, label TEXT, latitude REAL, longitude REAL,
+            radius_meters REAL NOT NULL DEFAULT 300)""")
+        applied.append("table: clockin_locations")
+
+    if "clockin_events" not in existing_tables:
+        db.execute("""CREATE TABLE clockin_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),
+            event_type TEXT NOT NULL, event_at TEXT NOT NULL, accepted TEXT NOT NULL,
+            latitude REAL NOT NULL, longitude REAL NOT NULL, distance_meters REAL NOT NULL)""")
+        applied.append("table: clockin_events")
 
     db.execute("UPDATE hr_users SET can_approve_leave='Y', can_approve_appraisal='Y' WHERE username='kee'")
     yang_password = request.form.get("yang_password", "")

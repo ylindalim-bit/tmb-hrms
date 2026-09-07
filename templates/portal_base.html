@@ -28,6 +28,9 @@
     <a href="{{ url_for('portal_leave') }}">Apply Leave</a>
     <a href="{{ url_for('portal_medical_claim') }}">Medical Claim</a>
     <a href="{{ url_for('portal_business_trip') }}">Movement Notice</a>
+    {% if emp and emp.mobile_clockin_enabled == "Y" %}
+    <a href="{{ url_for('portal_clock') }}">Clock In / Out</a>
+    {% endif %}
     {% if emp and emp.ot_approval_required == "Y" %}
     <a href="{{ url_for('portal_ot_claim') }}">OT Claim</a>
     {% endif %}

@@ -195,6 +195,12 @@
         <option value="N" {% if emp.skbbk_flag=="N" %}selected{% endif %}>No</option>
       </select>
     </div>
+    <div><label>Mobile Clock-In</label>
+      <select name="mobile_clockin_enabled">
+        <option value="N" {% if not emp.mobile_clockin_enabled or emp.mobile_clockin_enabled=="N" %}selected{% endif %}>No</option>
+        <option value="Y" {% if emp.mobile_clockin_enabled=="Y" %}selected{% endif %}>Yes</option>
+      </select>
+    </div>
     <div><label>Date Joined</label><input type="date" id="date_joined" name="date_joined" value="{{ emp.date_joined or '' }}" onchange="calcProbationEnd()"></div>
     <div><label>Last Working Day (if Resigned)</label><input type="date" name="last_working_day" value="{{ emp.last_working_day or '' }}"></div>
     <div><label>Probation Period</label>

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Clock-In Locations - TMB Payroll{% endblock %}
+{% block content %}
+<h1>Mobile Clock-In Locations</h1>
+<p style="color:var(--muted); font-size:13px; margin-top:-8px; max-width:640px;">
+  One geofence per Base. Staff clocking in via the Staff Portal must be within the radius shown of
+  their own Base's point below, or the clock-in/out is rejected. Stand at the actual work site on your
+  phone/laptop and click "Use my current location" to fill in the coordinates, or type them in directly.
+</p>
+
+<div class="card" style="max-width:480px;">
+  <strong>{{ pilot_count }}</strong> employee{{ "s" if pilot_count != 1 }} currently enabled for mobile clock-in.
+  <a href="{{ url_for('employees') }}">Manage on the Employees page &rarr;</a>
+</div>
+
+<form method="post">
+{% for base in bases %}
+{% set row = rows.get(base) %}
+<div class="card" style="max-width:560px;">
+  <h2 style="margin-top:0;">{{ base }}</h2>
+  <div class="form-grid">
+    <div><label>Label (e.g. "Pasir Gudang Factory")</label>
+      <input type="text" name="label_{{ base }}" value="{{ row.label if row else '' }}">
+    </div>
+    <div><label>Radius (meters)</label>
+      <input type="number" name="radius_{{ base }}" value="{{ row.radius_meters if row else 300 }}" min="20" step="10">
+    </div>
+    <div><label>Latitude</label>
+      <input type="text" id="lat_{{ base }}" name="lat_{{ base }}" value="{{ row.latitude if row and row.latitude is not none else '' }}">
+    </div>
+    <div><label>Longitude</label>
+      <input type="text" id="lng_{{ base }}" name="lng_{{ base }}" value="{{ row.longitude if row and row.longitude is not none else '' }}">
+    </div>
+  </div>
+  <button type="button" class="btn secondary" style="margin-top:8px;" onclick="useMyLocation('{{ base }}')">Use my current location</button>
+  <span id="status_{{ base }}" style="margin-left:8px; font-size:12px; color:var(--muted);"></span>
+</div>
+{% endfor %}
+<div class="form-actions">
+  <button class="btn" type="submit">Save All</button>
+</div>
+</form>
+
+<script>
+function useMyLocation(base) {
+  var statusEl = document.getElementById('status_' + base);
+  if (!navigator.geolocation) {
+    statusEl.textContent = 'Geolocation not supported on this browser.';
+    return;
+  }
+  statusEl.textContent = 'Getting location...';
+  navigator.geolocation.getCurrentPosition(function (pos) {
+    document.getElementById('lat_' + base).value = pos.coords.latitude.toFixed(6);
+    document.getElementById('lng_' + base).value = pos.coords.longitude.toFixed(6);
+    statusEl.textContent = 'Location captured (accuracy ~' + Math.round(pos.coords.accuracy) + 'm). Click Save All to keep it.';
+  }, function (err) {
+    statusEl.textContent = 'Could not get location: ' + err.message;
+  }, { enableHighAccuracy: true, timeout: 10000 });
+}
+</script>
+{% endblock %}

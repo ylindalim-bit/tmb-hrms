@@ -135,13 +135,19 @@ def _add_wage_base_composition_block(ws, start_row, results):
     range); their RM0 contribution just means that scheme's total above
     already reflects the exemption even though this wage-base total
     doesn't subtract their pay out of it. EPF excludes OT and Transport;
-    SOCSO/SKBBK/EIS/PCB all use the full gross. Returns the last row
-    written."""
+    SOCSO/SKBBK/EIS/PCB all use the full gross. gross_pay already
+    excludes unpaid leave (it's the actual reduced wage, not the
+    pre-deduction reference figure shown in the Gross column), so it's
+    only Other Ded. that needs subtracting separately here. Returns the
+    last row written."""
     epf_wage_base_total = round(
         sum((r.get("gross_pay") or 0) - (r.get("ot_pay") or 0) - (r.get("transport_allowance") or 0)
+            - (r.get("other_deduction") or 0)
             for r in results), 2
     )
-    gross_pay_total = round(sum((r.get("gross_pay") or 0) for r in results), 2)
+    gross_pay_total = round(
+        sum((r.get("gross_pay") or 0) - (r.get("other_deduction") or 0) for r in results), 2
+    )
     amounts = {"EPF": epf_wage_base_total, "SOCSO": gross_pay_total, "SKBBK": gross_pay_total,
                "EIS": gross_pay_total, "PCB": gross_pay_total}
 

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My Location - TIANMA PRECISION SDN BHD</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+         background: #f3f4f6; margin: 0; padding: 24px 16px; text-align: center; }
+  h1 { font-size: 18px; margin-bottom: 4px; }
+  p.sub { color: #6b7280; font-size: 13px; margin-top: 0; }
+  button { font-size: 18px; padding: 16px 32px; background: #1D4ED8; color: #fff; border: none;
+           border-radius: 8px; margin-top: 16px; }
+  button:disabled { background: #9ca3af; }
+  .result { margin-top: 24px; background: #fff; border-radius: 8px; padding: 20px; max-width: 360px;
+            margin-left: auto; margin-right: auto; display: none; }
+  .coord { font-size: 22px; font-weight: 700; font-family: monospace; margin: 6px 0; user-select: all; }
+  .label { color: #6b7280; font-size: 12px; }
+  .status { color: #6b7280; font-size: 13px; margin-top: 12px; }
+</style>
+</head>
+<body>
+  <h1>TIANMA PRECISION SDN BHD</h1>
+  <p class="sub">Tap the button, then screenshot or copy the numbers below and send them to HR.</p>
+  <button id="btn" onclick="getLocation()">Get My Location</button>
+  <p class="status" id="status"></p>
+  <div class="result" id="result">
+    <div class="label">Latitude</div>
+    <div class="coord" id="lat"></div>
+    <div class="label">Longitude</div>
+    <div class="coord" id="lng"></div>
+    <div class="label" style="margin-top:10px;" id="accuracy"></div>
+  </div>
+
+  <script>
+    function getLocation() {
+      var btn = document.getElementById('btn');
+      var status = document.getElementById('status');
+      if (!navigator.geolocation) {
+        status.textContent = 'Your browser/device does not support location.';
+        return;
+      }
+      btn.disabled = true;
+      status.textContent = 'Getting your location...';
+      navigator.geolocation.getCurrentPosition(function (pos) {
+        btn.disabled = false;
+        status.textContent = '';
+        document.getElementById('lat').textContent = pos.coords.latitude.toFixed(6);
+        document.getElementById('lng').textContent = pos.coords.longitude.toFixed(6);
+        document.getElementById('accuracy').textContent = 'Accuracy: ~' + Math.round(pos.coords.accuracy) + ' meters';
+        document.getElementById('result').style.display = 'block';
+      }, function (err) {
+        btn.disabled = false;
+        status.textContent = 'Could not get location: ' + err.message + '. Please allow location access and try again.';
+      }, { enableHighAccuracy: true, timeout: 10000 });
+    }
+  </script>
+</body>
+</html>

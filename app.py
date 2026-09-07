@@ -386,6 +386,7 @@ def close_db(exception=None):
 HR_LOGIN_EXEMPT_PREFIXES = (
     "/static/",
     "/portal",       # Staff Portal has its own separate @portal_login_required gate
+    "/where-am-i",   # public no-login GPS helper for staff to send HR their coordinates
     "/api/",         # read-only payroll-export feed consumed by another local process
     "/hr/login",
     "/hr/logout",
@@ -2676,6 +2677,16 @@ def clockin_locations_page():
         "SELECT COUNT(*) AS c FROM employees WHERE mobile_clockin_enabled='Y'"
     ).fetchone()["c"]
     return render_template("clockin_locations.html", bases=BASE_OPTIONS, rows=rows, pilot_count=pilot_count)
+
+
+@app.route("/where-am-i")
+def where_am_i():
+    """Public, no-login GPS helper - a staff member (e.g. at a China Base
+    HR can't visit in person to set up) opens this on their own phone,
+    taps the button, and gets their coordinates in large text to
+    screenshot/copy and send back to HR for the Clock-In Locations
+    page. Reads nothing, saves nothing - purely client-side."""
+    return render_template("where_am_i.html")
 
 
 # ---------------- Public Holidays ----------------

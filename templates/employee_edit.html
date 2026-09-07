@@ -302,7 +302,9 @@
     Set this once the employee is actually confirmed, then Save &mdash; this also removes them from the Alerts
     "due for confirmation" list. Confirming with a pay rise? Use <strong>Confirmation &amp; Salary Update</strong>
     above instead of Save here &mdash; it sets this same date for you, updates Basic Salary, and keeps a record,
-    all in one step.
+    all in one step. Once set, use
+    {% if not is_new %}<a href="{{ url_for('confirmation_letter', emp_id=emp.emp_id) }}" target="_blank">Print Confirmation Letter</a>{% else %}"Print Confirmation Letter" (available after saving){% endif %}
+    &mdash; it automatically includes the salary increment if one was recorded via Confirmation &amp; Salary Update above.
   </p>
 </div>
 

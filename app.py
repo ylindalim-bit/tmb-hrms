@@ -2094,7 +2094,7 @@ def run_payroll(year, month):
 
 PAYROLL_EXPORT_COLUMNS = [
     ("Emp ID", "emp_id"), ("Name", "full_name"), ("Base", "base"), ("Basic", "basic"),
-    ("Fixed Allow.", "fixed_allowance"), ("Var. Allow.", "variable_allowance"),
+    ("Fixed Allow.", "fixed_allowance"),
     ("OT 1.5h", "ot_hours_1_5"), ("OT 2.0h", "ot_hours_2_0"), ("OT 3.0h", "ot_hours_3_0"),
     ("Total OT", "ot_pay"), ("Transport", "transport_allowance"),
     ("Meal", "meal_allowance"), ("CEWI", "cewi_allowance"), ("Gross", "gross"),
@@ -2144,7 +2144,7 @@ def payroll_export(year, month):
         cell.font = header_font
         cell.fill = header_fill
 
-    money_cols = {"Basic", "Fixed Allow.", "Var. Allow.", "Total OT", "Transport", "Meal", "CEWI",
+    money_cols = {"Basic", "Fixed Allow.", "Total OT", "Transport", "Meal", "CEWI",
                   "Gross", "EPF (Emp)", "EPF (Er)", "SOCSO (Emp)", "SOCSO (Er)", "EIS (Emp)",
                   "EIS (Er)", "PCB", "SKBBK", "HRD Levy", "UL Deduction", "Other Ded.",
                   "Total Ded.", "NET PAY"}

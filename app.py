@@ -424,6 +424,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/import-halimah-august",   # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/delete-duplicate-m002-doc",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/set-i001-pcb-override-august",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/lock-pcb-l001-n001-s001-august",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/add-september-ul-a007-m005",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
@@ -5634,6 +5635,52 @@ def hr_set_i001_pcb_override_august():
     )
     db.commit()
     return f"OK - set I001 August PCB override to RM72.85 (pcb={result['pcb']}, net_pay={result['net_pay']})", 200
+
+
+@app.route("/hr/lock-pcb-l001-n001-s001-august", methods=["POST"])
+def hr_lock_pcb_l001_n001_s001_august():
+    """One-time fix: re-Finalizing August 2026 after the SOCSO/EIS/SKBBK
+    wage-base fix (Other Ded. now correctly reduces the contribution
+    wage base) also shifted these 3 employees' PCB slightly, since PCB's
+    SOCSO/EIS relief input changed too. Linda wants the corrected
+    SOCSO/EIS/SKBBK kept but PCB locked back to its original pre-fix
+    value for these 3, via a Manual PCB Correction (same mechanism as
+    set_pcb_override). Safe to re-run."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    original_pcb = {"L001": 134.26, "N001": 114.56, "S001": 165.03}
+    reason = "Locked to original pre-SOCSO/EIS-wage-base-fix PCB per Linda's request 2026-09-07"
+    results = {}
+    for emp_id, pcb_value in original_pcb.items():
+        existing = db.execute(
+            "SELECT 1 FROM payroll_runs WHERE emp_id=? AND year=2026 AND month=8", (emp_id,)
+        ).fetchone()
+        if existing is None:
+            return f"{emp_id}: not finalized for August 2026 yet.", 400
+        db.execute(
+            "UPDATE payroll_runs SET pcb_override=?, pcb_override_reason=? WHERE emp_id=? AND year=2026 AND month=8",
+            (pcb_value, reason, emp_id),
+        )
+        result = payroll_calc.calculate_payroll(db, emp_id, 2026, 8)
+        db.execute(
+            """UPDATE payroll_runs SET socso_employee=?, socso_employer=?, eis_employee=?,
+               eis_employer=?, skbbk_employee=?, pcb=?, total_deductions=?, net_pay=?
+               WHERE emp_id=? AND year=2026 AND month=8""",
+            (result["socso_employee"], result["socso_employer"], result["eis_employee"],
+             result["eis_employer"], result["skbbk_employee"], result["pcb"],
+             result["total_deductions"], result["net_pay"], emp_id),
+        )
+        db.execute(
+            """INSERT INTO pcb_monthly_record (emp_id, year, month, gross_remun, epf_employee, pcb_deducted)
+               VALUES (?, 2026, 8, ?, ?, ?)
+               ON CONFLICT(emp_id, year, month) DO UPDATE SET pcb_deducted=excluded.pcb_deducted""",
+            (emp_id, result["gross_pay"], result["epf_employee"], result["pcb"]),
+        )
+        results[emp_id] = (result["pcb"], result["net_pay"])
+    db.commit()
+    return f"OK - locked PCB for L001/N001/S001: {results}", 200
 
 
 @app.route("/hr/add-september-ul-a007-m005", methods=["POST"])

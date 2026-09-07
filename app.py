@@ -2180,15 +2180,21 @@ def payroll_export(year, month):
 
     totals = {
         k: round(sum(r[k] for r in results), 2)
-        for k in ["gross_pay", "epf_employee", "epf_employer", "socso_employee", "socso_employer",
+        for k in ["gross_pay", "basic_salary", "fixed_allowance", "ot_hours_1_5", "ot_hours_2_0",
+                   "ot_hours_3_0", "ot_pay", "transport_allowance", "meal_allowance", "cewi_allowance",
+                   "epf_employee", "epf_employer", "socso_employee", "socso_employer",
                    "eis_employee", "eis_employer", "pcb", "skbbk_employee", "hrd_levy_employer",
                    "unpaid_deduction", "other_deduction", "total_deductions", "net_pay"]
     }
     total_row = {
-        "emp_id": "TOTAL", "full_name": "", "base": "", "basic": "", "fixed_allowance": "",
-        "variable_allowance": "", "ot_hours_1_5": "", "ot_hours_2_0": "", "ot_hours_3_0": "",
-        "ot_hourly_rate": "", "ot_pay": "", "transport_allowance": "", "meal_allowance": "",
-        "cewi_allowance": "", "gross": round(totals["gross_pay"] + totals["unpaid_deduction"], 2),
+        "emp_id": "TOTAL", "full_name": "", "base": "",
+        "basic": round(totals["basic_salary"] + totals["unpaid_deduction"], 2),
+        "fixed_allowance": totals["fixed_allowance"],
+        "ot_hours_1_5": totals["ot_hours_1_5"], "ot_hours_2_0": totals["ot_hours_2_0"],
+        "ot_hours_3_0": totals["ot_hours_3_0"],
+        "ot_pay": totals["ot_pay"], "transport_allowance": totals["transport_allowance"],
+        "meal_allowance": totals["meal_allowance"],
+        "cewi_allowance": totals["cewi_allowance"], "gross": round(totals["gross_pay"] + totals["unpaid_deduction"], 2),
         "epf_employee": totals["epf_employee"], "epf_employer": totals["epf_employer"],
         "socso_employee": totals["socso_employee"], "socso_employer": totals["socso_employer"],
         "eis_employee": totals["eis_employee"], "eis_employer": totals["eis_employer"],

@@ -2131,13 +2131,16 @@ def payroll_export(year, month):
     ws = wb.active
     ws.title = f"{MONTH_NAMES[month]} {year}"[:31]
 
-    ws.cell(row=1, column=1, value=f"Payroll: {year:04d}{month:02d} End Month").font = Font(bold=True, size=14)
+    ws.cell(row=1, column=1, value="TIANMA PRECISION SDN BHD").font = Font(bold=True, size=16)
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(PAYROLL_EXPORT_COLUMNS))
+
+    ws.cell(row=2, column=1, value=f"Payroll: {year:04d}{month:02d} End Month").font = Font(bold=True, size=14)
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(PAYROLL_EXPORT_COLUMNS))
 
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", fgColor="1D4ED8")
     for col_idx, (label, _) in enumerate(PAYROLL_EXPORT_COLUMNS, start=1):
-        cell = ws.cell(row=2, column=col_idx, value=label)
+        cell = ws.cell(row=3, column=col_idx, value=label)
         cell.font = header_font
         cell.fill = header_fill
 
@@ -2146,7 +2149,7 @@ def payroll_export(year, month):
                   "EIS (Er)", "PCB", "SKBBK", "HRD Levy", "UL Deduction", "Other Ded.",
                   "Total Ded.", "NET PAY"}
 
-    row_idx = 3
+    row_idx = 4
     for r in results:
         row = {
             "emp_id": r["emp_id"], "full_name": r["full_name"],

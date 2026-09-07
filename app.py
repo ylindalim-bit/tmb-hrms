@@ -2093,7 +2093,7 @@ def run_payroll(year, month):
 
 
 PAYROLL_EXPORT_COLUMNS = [
-    ("Emp ID", "emp_id"), ("Name", "full_name"), ("Basic", "basic"),
+    ("Emp ID", "emp_id"), ("Name", "full_name"), ("Base", "base"), ("Basic", "basic"),
     ("Fixed Allow.", "fixed_allowance"), ("Var. Allow.", "variable_allowance"),
     ("OT 1.5h", "ot_hours_1_5"), ("OT 2.0h", "ot_hours_2_0"), ("OT 3.0h", "ot_hours_3_0"),
     ("Total OT", "ot_pay"), ("Transport", "transport_allowance"),
@@ -2120,10 +2120,10 @@ def payroll_export(year, month):
     bank_info = {
         r["emp_id"]: {
             "bank_name": r["bank_name"], "bank_account_no": r["bank_account_no"],
-            "ic_passport_no": r["ic_passport_no"],
+            "ic_passport_no": r["ic_passport_no"], "base": r["base"],
         }
         for r in db.execute(
-            "SELECT emp_id, bank_name, bank_account_no, ic_passport_no FROM employees"
+            "SELECT emp_id, bank_name, bank_account_no, ic_passport_no, base FROM employees"
         ).fetchall()
     }
 
@@ -2153,6 +2153,7 @@ def payroll_export(year, month):
     for r in results:
         row = {
             "emp_id": r["emp_id"], "full_name": r["full_name"],
+            "base": bank_info.get(r["emp_id"], {}).get("base") or "",
             "basic": round(r["basic_salary"] + (r["unpaid_deduction"] or 0), 2),
             "fixed_allowance": r["fixed_allowance"], "variable_allowance": r["variable_allowance"],
             "ot_hours_1_5": r["ot_hours_1_5"], "ot_hours_2_0": r["ot_hours_2_0"],
@@ -2184,7 +2185,7 @@ def payroll_export(year, month):
                    "unpaid_deduction", "other_deduction", "total_deductions", "net_pay"]
     }
     total_row = {
-        "emp_id": "TOTAL", "full_name": "", "basic": "", "fixed_allowance": "",
+        "emp_id": "TOTAL", "full_name": "", "base": "", "basic": "", "fixed_allowance": "",
         "variable_allowance": "", "ot_hours_1_5": "", "ot_hours_2_0": "", "ot_hours_3_0": "",
         "ot_hourly_rate": "", "ot_pay": "", "transport_allowance": "", "meal_allowance": "",
         "cewi_allowance": "", "gross": round(totals["gross_pay"] + totals["unpaid_deduction"], 2),

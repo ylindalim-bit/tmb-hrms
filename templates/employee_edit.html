@@ -300,7 +300,8 @@
     The one place for any salary change &mdash; confirmation increment, ad-hoc adjustment, or yearly review.
     Fill in the 3 fields below and click Update: it changes Basic Salary, keeps a permanent record (old salary,
     new salary, reason, date), and &mdash; if the reason is Confirmation &mdash; also sets the Confirmation Date
-    used by the printed letter. Current Basic Salary: <strong>RM {{ "%.2f"|format(emp.basic_salary) }}</strong>.
+    below for you. Current Basic Salary: <strong>RM {{ "%.2f"|format(emp.basic_salary) }}</strong>.
+    Confirming with <strong>no</strong> pay change? Skip this and set Confirmation Date directly, below.
   </p>
   <form method="post" action="{{ url_for('update_salary', emp_id=emp.emp_id) }}">
     <div class="form-grid">
@@ -406,7 +407,7 @@
   <p style="color:var(--muted); font-size:12px; margin-top:6px;">
     Set this once the employee is actually confirmed, then Save &mdash; this also removes them from the Alerts
     "due for confirmation" list. Confirming with a pay rise? Use <strong>Confirmation &amp; Salary Update</strong>
-    below instead of Save here &mdash; it sets this same date for you, updates Basic Salary, and keeps a record,
+    above instead of Save here &mdash; it sets this same date for you, updates Basic Salary, and keeps a record,
     all in one step.
   </p>
 

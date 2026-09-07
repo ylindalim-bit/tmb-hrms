@@ -375,7 +375,7 @@
   </script>
 
   {% if salary_history %}
-  <details style="margin-top:16px;">
+  <details style="margin-top:16px;" open>
   <summary style="cursor:pointer; font-size:13px; font-weight:600; color:var(--muted);">Salary History ({{ salary_history|length }})</summary>
   <div class="table-wrap" style="margin-top:10px;">
   {% for h in salary_history %}

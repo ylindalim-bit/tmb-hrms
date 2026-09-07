@@ -384,13 +384,20 @@ def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: i
     additional_epf = round(epf_wage_base * (additional_epf_pct / 100), 2)
     epf_employee += additional_epf
 
+    # SOCSO/SKBBK/EIS are contributed on wages actually paid out, so Other
+    # Deduction (e.g. an overpayment clawback from a prior month) comes off
+    # this wage base too, same as it already does for Net Pay - unlike
+    # unpaid leave, which is baked into gross_pay itself rather than
+    # tracked as a separate deduction.
+    socso_eis_wage_base = max(gross_pay - other_deduction, 0)
+
     socso_rows = [dict(r) for r in conn.execute("SELECT * FROM socso_table ORDER BY wage_lower_bound")]
-    if gross_pay <= 0:
+    if socso_eis_wage_base <= 0:
         socso_gate_reason = "No wages paid this month (gross pay RM0) - no contribution due"
     else:
         socso_gate_reason = None
-    socso_employee, socso_employer = lookup_socso(gross_pay, age, socso_rows)
-    socso_bracket_label = _vlookup_bracket_label(socso_rows, gross_pay) if gross_pay > 0 else None
+    socso_employee, socso_employer = lookup_socso(socso_eis_wage_base, age, socso_rows)
+    socso_bracket_label = _vlookup_bracket_label(socso_rows, socso_eis_wage_base) if socso_eis_wage_base > 0 else None
     # SKBBK is a new deduction the company only started charging from
     # June 2026 onward (confirmed absent from Jan/Feb/Apr/May payroll
     # records) - gated by a start date, not applied retroactively.
@@ -400,13 +407,13 @@ def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: i
         skbbk_gate_reason = "Employee's SKBBK flag is set to N"
     elif skbbk_start and f"{year:04d}-{month:02d}-01" < skbbk_start:
         skbbk_gate_reason = f"SKBBK not yet in effect this month (starts {skbbk_start})"
-    elif gross_pay <= 0:
+    elif socso_eis_wage_base <= 0:
         skbbk_gate_reason = "No wages paid this month (gross pay RM0) - no contribution due"
     else:
         skbbk_gate_reason = None
     if skbbk_gate_reason is None:
-        skbbk_employee = lookup_skbbk(gross_pay, age, socso_rows)
-        skbbk_bracket_label = _vlookup_bracket_label(socso_rows, gross_pay)
+        skbbk_employee = lookup_skbbk(socso_eis_wage_base, age, socso_rows)
+        skbbk_bracket_label = _vlookup_bracket_label(socso_rows, socso_eis_wage_base)
     else:
         skbbk_employee = 0.0
         skbbk_bracket_label = None
@@ -416,12 +423,12 @@ def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: i
         eis_gate_reason = "Employee's EIS flag is set to N"
     elif age >= 60 or age < 18:
         eis_gate_reason = f"Outside the 18-59 EIS working-age range (age {age})"
-    elif gross_pay <= 0:
+    elif socso_eis_wage_base <= 0:
         eis_gate_reason = "No wages paid this month (gross pay RM0) - no contribution due"
     else:
         eis_gate_reason = None
-    eis_employee, eis_employer = calc_eis(gross_pay, age, eis_rows, emp["eis_flag"])
-    eis_bracket_label = _vlookup_bracket_label(eis_rows, gross_pay) if eis_gate_reason is None else None
+    eis_employee, eis_employer = calc_eis(socso_eis_wage_base, age, eis_rows, emp["eis_flag"])
+    eis_bracket_label = _vlookup_bracket_label(eis_rows, socso_eis_wage_base) if eis_gate_reason is None else None
 
     hrd_levy = calc_hrd_levy(gross_pay, hrd_registered, hrd_rate)
 

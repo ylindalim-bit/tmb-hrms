@@ -372,7 +372,10 @@ def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: i
     today = datetime.date(year, month, min(calendar.monthrange(year, month)[1], 28))
     age = (today - dob).days // 365 if dob else 30
 
-    epf_wage_base = gross_pay - ot_pay - transport_allowance
+    # Other Deduction (e.g. an overpayment clawback from a prior month)
+    # comes off the EPF wage base too, same as SOCSO/EIS/SKBBK below -
+    # confirmed against Linda's actual KWSP contribution submission.
+    epf_wage_base = max(gross_pay - ot_pay - transport_allowance - other_deduction, 0)
     epf_rows = [dict(r) for r in conn.execute("SELECT * FROM epf_table ORDER BY wage_lower_bound")]
     epf_employee, epf_employer = lookup_epf(epf_wage_base, age, epf_rows)
     epf_bracket_label = _vlookup_bracket_label(epf_rows, epf_wage_base)

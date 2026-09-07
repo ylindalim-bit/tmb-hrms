@@ -2111,6 +2111,7 @@ PAYROLL_EXPORT_COLUMNS = [
     ("UL Deduction", "unpaid_deduction"), ("Other Ded.", "other_deduction"),
     ("Total Ded.", "total_deduction"), ("NET PAY", "net_pay"), ("I/C", "ic_passport_no"),
     ("Bank", "bank_name"), ("Acct No.", "bank_account_no"),
+    ("SOCSO Base", "socso_base"), ("EPF Base", "epf_base"), ("PCB Base", "pcb_base"),
 ]
 
 
@@ -2153,10 +2154,15 @@ def payroll_export(year, month):
     money_cols = {"Basic", "Fixed Allow.", "Total OT", "Transport", "Meal", "CEWI",
                   "Gross", "EPF (EE)", "EPF (Er)", "SOCSO (EE)", "SOCSO (Er)", "EIS (EE)",
                   "EIS (Er)", "PCB", "SKBBK", "HRD Levy", "UL Deduction", "Other Ded.",
-                  "Total Ded.", "NET PAY"}
+                  "Total Ded.", "NET PAY", "SOCSO Base", "EPF Base", "PCB Base"}
 
     row_idx = 4
     for r in results:
+        socso_base = round((r["gross_pay"] or 0) - (r["other_deduction"] or 0), 2)
+        epf_base = round(
+            (r["gross_pay"] or 0) - (r["ot_pay"] or 0) - (r["transport_allowance"] or 0)
+            - (r["other_deduction"] or 0), 2
+        )
         row = {
             "emp_id": r["emp_id"], "full_name": r["full_name"],
             "base": bank_info.get(r["emp_id"], {}).get("base") or "",
@@ -2174,6 +2180,7 @@ def payroll_export(year, month):
             "unpaid_deduction": r["unpaid_deduction"] or 0, "other_deduction": r["other_deduction"],
             "total_deduction": round(r["total_deductions"] + (r["unpaid_deduction"] or 0), 2),
             "net_pay": r["net_pay"],
+            "socso_base": socso_base, "epf_base": epf_base, "pcb_base": socso_base,
             "ic_passport_no": bank_info.get(r["emp_id"], {}).get("ic_passport_no") or "",
             "bank_name": bank_info.get(r["emp_id"], {}).get("bank_name") or "",
             "bank_account_no": bank_info.get(r["emp_id"], {}).get("bank_account_no") or "",
@@ -2209,6 +2216,12 @@ def payroll_export(year, month):
         "other_deduction": totals["other_deduction"],
         "total_deduction": round(totals["total_deductions"] + totals["unpaid_deduction"], 2),
         "net_pay": totals["net_pay"], "ic_passport_no": "", "bank_name": "", "bank_account_no": "",
+        "socso_base": round(totals["gross_pay"] - totals["other_deduction"], 2),
+        "epf_base": round(
+            totals["gross_pay"] - totals["ot_pay"] - totals["transport_allowance"]
+            - totals["other_deduction"], 2
+        ),
+        "pcb_base": round(totals["gross_pay"] - totals["other_deduction"], 2),
     }
     for col_idx, (label, key) in enumerate(PAYROLL_EXPORT_COLUMNS, start=1):
         cell = ws.cell(row=row_idx, column=col_idx, value=total_row[key])

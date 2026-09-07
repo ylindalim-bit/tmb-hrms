@@ -293,107 +293,6 @@
 </div>
 {% endif %}
 
-<div class="card">
-  <h2 style="margin-top:0;">Confirmation</h2>
-  <div class="form-grid">
-    <div><label>Confirmation Date</label><input type="date" id="confirmation_date" form="employee-form" name="confirmation_date" value="{{ emp.confirmation_date or '' }}"></div>
-  </div>
-  <p style="color:var(--muted); font-size:12px; margin-top:6px;">
-    Set this once the employee is actually confirmed, then Save &mdash; this also removes them from the Alerts
-    "due for confirmation" list. Confirming with a pay rise? Use <strong>Confirmation &amp; Salary Update</strong>
-    below instead of Save here &mdash; it sets this same date for you, updates Basic Salary, and keeps a record,
-    all in one step.
-  </p>
-
-  <h2>Resignation</h2>
-  <div class="form-grid">
-    <div><label>Resignation Date (date notice was given)</label><input type="date" form="employee-form" name="resignation_date" value="{{ emp.resignation_date or '' }}"></div>
-  </div>
-  <p style="color:var(--muted); font-size:12px; margin-top:6px;">
-    Fill this in along with Last Working Day above once the employee has given notice, then use
-    {% if not is_new %}<a href="{{ url_for('resignation_letter', emp_id=emp.emp_id) }}">Print Resignation Letter</a>{% else %}"Print Resignation Letter" (available after saving){% endif %}
-    &mdash; it reads Resignation Date and Last Working Day from here automatically.
-    {% if not is_new %}Also need to notify LHDN? Use <a href="{{ url_for('cp22a_form', emp_id=emp.emp_id) }}">CP22A Reference Sheet</a>
-    to gather everything needed for the MyTax e-SPC filing.{% endif %}
-  </p>
-
-  <h2>Allowances</h2>
-  <p style="color:var(--muted); font-size:12px; margin:-4px 0 10px;">
-    Effective Date: leave blank to always apply (as long as the flag is Y). Set a date to start the
-    allowance from that day &mdash; a mid-month date is prorated for that first month automatically.
-  </p>
-  <div class="table-wrap">
-  <table>
-    <thead>
-      <tr><th class="text">Allowance</th><th>Amount (RM)</th><th>Flag</th><th>Effective Date</th></tr>
-    </thead>
-    <tbody>
-      {% for label, amount_field, flag_field, date_field in [
-        ("Transport Allowance", "transport_allowance", "transport_allowance_flag", "transport_allowance_effective_date"),
-        ("Meal Allowance Rate (RM/day)", "meal_allowance_rate", "meal_allowance_flag", "meal_allowance_effective_date"),
-        ("Position Allowance", "position_allowance", "position_allowance_flag", "position_allowance_effective_date"),
-        ("CEWI Rate (RM/day)", "cewi_rate", "cewi_flag", "cewi_effective_date"),
-        ("Training Incentive", "training_incentive", "training_incentive_flag", "training_incentive_effective_date"),
-        ("Oversea Incentive", "oversea_incentive", "oversea_incentive_flag", "oversea_incentive_effective_date"),
-      ] %}
-      <tr>
-        <td class="text allowance-label" style="{% if emp[flag_field]=='Y' %}color:var(--accent); font-weight:600;{% endif %}">{{ label }}</td>
-        <td><input type="number" step="0.01" form="employee-form" name="{{ amount_field }}" value="{{ "%.2f"|format(emp[amount_field] or 0) }}"></td>
-        <td>
-          <select name="{{ flag_field }}" form="employee-form" onchange="toggleAllowanceLabel(this)">
-            <option value="Y" {% if emp[flag_field]=="Y" %}selected{% endif %}>Y</option>
-            <option value="N" {% if not emp[flag_field] or emp[flag_field]=="N" %}selected{% endif %}>N</option>
-          </select>
-        </td>
-        <td><input type="date" form="employee-form" name="{{ date_field }}" value="{{ emp[date_field] or '' }}"></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  </div>
-
-  <h2 style="color:var(--accent);">Leave Entitlements</h2>
-  <div class="form-grid">
-    <div><label>Annual Leave (days/year)</label>
-      <input type="number" step="1" form="employee-form" name="annual_leave_entitlement" value="{{ emp.annual_leave_entitlement or 0 }}" style="color:var(--accent); border-color:var(--accent); font-weight:600;">
-    </div>
-    <div><label>AL Brought Forward (days, this year only)</label>
-      <input type="number" step="0.5" form="employee-form" name="al_bf_days" value="{{ emp.al_bf_days or 0 }}" style="color:var(--accent); border-color:var(--accent); font-weight:600;">
-    </div>
-    <div><label>Medical Leave (days/year)</label>
-      <input type="number" step="1" form="employee-form" name="mc_entitlement" value="{{ emp.mc_entitlement or 0 }}" style="color:var(--accent); border-color:var(--accent); font-weight:600;">
-    </div>
-    <div><label>Hospitalisation Leave (days/year)</label>
-      <input type="number" step="1" form="employee-form" name="hospitalisation_leave_entitlement" value="{{ emp.hospitalisation_leave_entitlement or 0 }}" style="color:var(--accent); border-color:var(--accent); font-weight:600;">
-    </div>
-    <div><label>Medical Claim Limit (RM/year)</label>
-      <input type="number" step="0.01" form="employee-form" name="medical_claim_limit" value="{{ "%.2f"|format(500 if is_new else (emp.medical_claim_limit or 0)) }}" style="color:var(--accent); border-color:var(--accent); font-weight:600;">
-    </div>
-  </div>
-  <p style="color:var(--muted); font-size:12px; margin-top:6px;">
-    Sets each employee's yearly leave entitlement, used to calculate their Leave Balance on the Staff Portal (Entitlement minus days already taken this year).
-    AL Brought Forward is keyed in once a year and only applies to the current year's balance &mdash; it does not carry over automatically to next year.
-    Medical Claim Limit works the same way, but in RM instead of days &mdash; against approved Medical Claims submitted this year.
-  </p>
-  {% if al_note or al_bf %}
-  <div class="card" style="background:#fef3c7; border-color:#fcd34d; padding:10px 14px; margin-top:10px;">
-    {% if al_note %}<strong>Prorated AL ({{ al_year }}):</strong> {{ al_note }}<br>{% endif %}
-    {% if al_entitlement_effective is not none %}
-    AL Entitlement: <strong>{{ al_entitlement_effective }} days</strong> &mdash;
-    B/F: <strong>{{ al_bf }} days</strong> &mdash;
-    Total Available: <strong>{{ al_total_available }} days</strong> &mdash;
-    Used: {{ al_used }} days &mdash;
-    Balance: <strong{% if al_balance < 0 %} style="color:var(--danger);"{% endif %}>{{ al_balance }} days</strong>
-    {% endif %}
-  </div>
-  {% endif %}
-
-  <div class="form-actions">
-    <button class="btn" type="submit" form="employee-form">Save</button>
-    <a class="btn secondary" href="{{ url_for('employees') }}">Cancel</a>
-  </div>
-</div>
-
 {% if not is_new %}
 <div class="card">
   <h2 style="margin-top:0;">Confirmation &amp; Salary Update</h2>
@@ -497,6 +396,110 @@
   </details>
   {% endif %}
 </div>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0;">Confirmation</h2>
+  <div class="form-grid">
+    <div><label>Confirmation Date</label><input type="date" id="confirmation_date" form="employee-form" name="confirmation_date" value="{{ emp.confirmation_date or '' }}"></div>
+  </div>
+  <p style="color:var(--muted); font-size:12px; margin-top:6px;">
+    Set this once the employee is actually confirmed, then Save &mdash; this also removes them from the Alerts
+    "due for confirmation" list. Confirming with a pay rise? Use <strong>Confirmation &amp; Salary Update</strong>
+    below instead of Save here &mdash; it sets this same date for you, updates Basic Salary, and keeps a record,
+    all in one step.
+  </p>
+
+  <h2>Resignation</h2>
+  <div class="form-grid">
+    <div><label>Resignation Date (date notice was given)</label><input type="date" form="employee-form" name="resignation_date" value="{{ emp.resignation_date or '' }}"></div>
+  </div>
+  <p style="color:var(--muted); font-size:12px; margin-top:6px;">
+    Fill this in along with Last Working Day above once the employee has given notice, then use
+    {% if not is_new %}<a href="{{ url_for('resignation_letter', emp_id=emp.emp_id) }}">Print Resignation Letter</a>{% else %}"Print Resignation Letter" (available after saving){% endif %}
+    &mdash; it reads Resignation Date and Last Working Day from here automatically.
+    {% if not is_new %}Also need to notify LHDN? Use <a href="{{ url_for('cp22a_form', emp_id=emp.emp_id) }}">CP22A Reference Sheet</a>
+    to gather everything needed for the MyTax e-SPC filing.{% endif %}
+  </p>
+
+  <h2>Allowances</h2>
+  <p style="color:var(--muted); font-size:12px; margin:-4px 0 10px;">
+    Effective Date: leave blank to always apply (as long as the flag is Y). Set a date to start the
+    allowance from that day &mdash; a mid-month date is prorated for that first month automatically.
+  </p>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th class="text">Allowance</th><th>Amount (RM)</th><th>Flag</th><th>Effective Date</th></tr>
+    </thead>
+    <tbody>
+      {% for label, amount_field, flag_field, date_field in [
+        ("Transport Allowance", "transport_allowance", "transport_allowance_flag", "transport_allowance_effective_date"),
+        ("Meal Allowance Rate (RM/day)", "meal_allowance_rate", "meal_allowance_flag", "meal_allowance_effective_date"),
+        ("Position Allowance", "position_allowance", "position_allowance_flag", "position_allowance_effective_date"),
+        ("CEWI Rate (RM/day)", "cewi_rate", "cewi_flag", "cewi_effective_date"),
+        ("Training Incentive", "training_incentive", "training_incentive_flag", "training_incentive_effective_date"),
+        ("Oversea Incentive", "oversea_incentive", "oversea_incentive_flag", "oversea_incentive_effective_date"),
+      ] %}
+      <tr>
+        <td class="text allowance-label" style="{% if emp[flag_field]=='Y' %}color:var(--accent); font-weight:600;{% endif %}">{{ label }}</td>
+        <td><input type="number" step="0.01" form="employee-form" name="{{ amount_field }}" value="{{ "%.2f"|format(emp[amount_field] or 0) }}"></td>
+        <td>
+          <select name="{{ flag_field }}" form="employee-form" onchange="toggleAllowanceLabel(this)">
+            <option value="Y" {% if emp[flag_field]=="Y" %}selected{% endif %}>Y</option>
+            <option value="N" {% if not emp[flag_field] or emp[flag_field]=="N" %}selected{% endif %}>N</option>
+          </select>
+        </td>
+        <td><input type="date" form="employee-form" name="{{ date_field }}" value="{{ emp[date_field] or '' }}"></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <h2 style="color:var(--accent);">Leave Entitlements</h2>
+  <div class="form-grid">
+    <div><label>Annual Leave (days/year)</label>
+      <input type="number" step="1" form="employee-form" name="annual_leave_entitlement" value="{{ emp.annual_leave_entitlement or 0 }}" style="color:var(--accent); border-color:var(--accent); font-weight:600;">
+    </div>
+    <div><label>AL Brought Forward (days, this year only)</label>
+      <input type="number" step="0.5" form="employee-form" name="al_bf_days" value="{{ emp.al_bf_days or 0 }}" style="color:var(--accent); border-color:var(--accent); font-weight:600;">
+    </div>
+    <div><label>Medical Leave (days/year)</label>
+      <input type="number" step="1" form="employee-form" name="mc_entitlement" value="{{ emp.mc_entitlement or 0 }}" style="color:var(--accent); border-color:var(--accent); font-weight:600;">
+    </div>
+    <div><label>Hospitalisation Leave (days/year)</label>
+      <input type="number" step="1" form="employee-form" name="hospitalisation_leave_entitlement" value="{{ emp.hospitalisation_leave_entitlement or 0 }}" style="color:var(--accent); border-color:var(--accent); font-weight:600;">
+    </div>
+    <div><label>Medical Claim Limit (RM/year)</label>
+      <input type="number" step="0.01" form="employee-form" name="medical_claim_limit" value="{{ "%.2f"|format(500 if is_new else (emp.medical_claim_limit or 0)) }}" style="color:var(--accent); border-color:var(--accent); font-weight:600;">
+    </div>
+  </div>
+  <p style="color:var(--muted); font-size:12px; margin-top:6px;">
+    Sets each employee's yearly leave entitlement, used to calculate their Leave Balance on the Staff Portal (Entitlement minus days already taken this year).
+    AL Brought Forward is keyed in once a year and only applies to the current year's balance &mdash; it does not carry over automatically to next year.
+    Medical Claim Limit works the same way, but in RM instead of days &mdash; against approved Medical Claims submitted this year.
+  </p>
+  {% if al_note or al_bf %}
+  <div class="card" style="background:#fef3c7; border-color:#fcd34d; padding:10px 14px; margin-top:10px;">
+    {% if al_note %}<strong>Prorated AL ({{ al_year }}):</strong> {{ al_note }}<br>{% endif %}
+    {% if al_entitlement_effective is not none %}
+    AL Entitlement: <strong>{{ al_entitlement_effective }} days</strong> &mdash;
+    B/F: <strong>{{ al_bf }} days</strong> &mdash;
+    Total Available: <strong>{{ al_total_available }} days</strong> &mdash;
+    Used: {{ al_used }} days &mdash;
+    Balance: <strong{% if al_balance < 0 %} style="color:var(--danger);"{% endif %}>{{ al_balance }} days</strong>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="form-actions">
+    <button class="btn" type="submit" form="employee-form">Save</button>
+    <a class="btn secondary" href="{{ url_for('employees') }}">Cancel</a>
+  </div>
+</div>
+
+{% if not is_new %}
 
 <div class="card">
   <h2 style="margin-top:0;">Tax Profile (PCB)</h2>

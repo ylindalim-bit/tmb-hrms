@@ -2103,7 +2103,7 @@ PAYROLL_EXPORT_COLUMNS = [
     ("EPF (Er)", "epf_employer"), ("SOCSO (Er)", "socso_employer"),
     ("EIS (Er)", "eis_employer"), ("HRD Levy", "hrd_levy_employer"),
     ("UL Deduction", "unpaid_deduction"), ("Other Ded.", "other_deduction"),
-    ("Total Ded.", "total_deduction"), ("NET PAY", "net_pay"), ("Status", "status"),
+    ("Total Ded.", "total_deduction"), ("NET PAY", "net_pay"), ("I/C", "ic_passport_no"),
     ("Bank", "bank_name"), ("Acct No.", "bank_account_no"),
 ]
 
@@ -2117,14 +2117,14 @@ def payroll_export(year, month):
     db = get_db()
     emps = employed_this_month(db, year, month)
     results = [payroll_calc.get_payroll_result(db, r["emp_id"], year, month) for r in emps]
-    finalized = {
-        r["emp_id"] for r in db.execute(
-            "SELECT emp_id FROM payroll_runs WHERE year=? AND month=?", (year, month)
-        ).fetchall()
-    }
     bank_info = {
-        r["emp_id"]: {"bank_name": r["bank_name"], "bank_account_no": r["bank_account_no"]}
-        for r in db.execute("SELECT emp_id, bank_name, bank_account_no FROM employees").fetchall()
+        r["emp_id"]: {
+            "bank_name": r["bank_name"], "bank_account_no": r["bank_account_no"],
+            "ic_passport_no": r["ic_passport_no"],
+        }
+        for r in db.execute(
+            "SELECT emp_id, bank_name, bank_account_no, ic_passport_no FROM employees"
+        ).fetchall()
     }
 
     wb = openpyxl.Workbook()
@@ -2167,7 +2167,7 @@ def payroll_export(year, month):
             "unpaid_deduction": r["unpaid_deduction"] or 0, "other_deduction": r["other_deduction"],
             "total_deduction": round(r["total_deductions"] + (r["unpaid_deduction"] or 0), 2),
             "net_pay": r["net_pay"],
-            "status": "Finalized" if r["emp_id"] in finalized else "Draft",
+            "ic_passport_no": bank_info.get(r["emp_id"], {}).get("ic_passport_no") or "",
             "bank_name": bank_info.get(r["emp_id"], {}).get("bank_name") or "",
             "bank_account_no": bank_info.get(r["emp_id"], {}).get("bank_account_no") or "",
         }
@@ -2195,7 +2195,7 @@ def payroll_export(year, month):
         "hrd_levy_employer": totals["hrd_levy_employer"], "unpaid_deduction": totals["unpaid_deduction"],
         "other_deduction": totals["other_deduction"],
         "total_deduction": round(totals["total_deductions"] + totals["unpaid_deduction"], 2),
-        "net_pay": totals["net_pay"], "status": "", "bank_name": "", "bank_account_no": "",
+        "net_pay": totals["net_pay"], "ic_passport_no": "", "bank_name": "", "bank_account_no": "",
     }
     for col_idx, (label, key) in enumerate(PAYROLL_EXPORT_COLUMNS, start=1):
         cell = ws.cell(row=row_idx, column=col_idx, value=total_row[key])
@@ -2207,7 +2207,7 @@ def payroll_export(year, month):
     last_row = _add_wage_base_composition_block(ws, last_row + 2, results)
     _add_zero_pay_notes(ws, last_row + 2, _zero_pay_notes(results))
 
-    ws.freeze_panes = "C3"
+    ws.freeze_panes = "C4"
     ws.column_dimensions["A"].width = 10
     ws.column_dimensions["B"].width = 26
     for col_idx in range(3, len(PAYROLL_EXPORT_COLUMNS) + 1):

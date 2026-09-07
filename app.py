@@ -2098,8 +2098,8 @@ PAYROLL_EXPORT_COLUMNS = [
     ("OT 1.5h", "ot_hours_1_5"), ("OT 2.0h", "ot_hours_2_0"), ("OT 3.0h", "ot_hours_3_0"),
     ("Total OT", "ot_pay"), ("Transport", "transport_allowance"),
     ("Meal", "meal_allowance"), ("CEWI", "cewi_allowance"), ("Gross", "gross"),
-    ("EPF (Emp)", "epf_employee"), ("SOCSO (Emp)", "socso_employee"),
-    ("EIS (Emp)", "eis_employee"), ("SKBBK", "skbbk_employee"), ("PCB", "pcb"),
+    ("EPF (EE)", "epf_employee"), ("SOCSO (EE)", "socso_employee"),
+    ("EIS (EE)", "eis_employee"), ("SKBBK", "skbbk_employee"), ("PCB", "pcb"),
     ("EPF (Er)", "epf_employer"), ("SOCSO (Er)", "socso_employer"),
     ("EIS (Er)", "eis_employer"), ("HRD Levy", "hrd_levy_employer"),
     ("UL Deduction", "unpaid_deduction"), ("Other Ded.", "other_deduction"),
@@ -2145,7 +2145,7 @@ def payroll_export(year, month):
         cell.fill = header_fill
 
     money_cols = {"Basic", "Fixed Allow.", "Total OT", "Transport", "Meal", "CEWI",
-                  "Gross", "EPF (Emp)", "EPF (Er)", "SOCSO (Emp)", "SOCSO (Er)", "EIS (Emp)",
+                  "Gross", "EPF (EE)", "EPF (Er)", "SOCSO (EE)", "SOCSO (Er)", "EIS (EE)",
                   "EIS (Er)", "PCB", "SKBBK", "HRD Levy", "UL Deduction", "Other Ded.",
                   "Total Ded.", "NET PAY"}
 

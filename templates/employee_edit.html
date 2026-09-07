@@ -293,6 +293,19 @@
 </div>
 {% endif %}
 
+<div class="card">
+  <h2 style="margin-top:0;">Confirmation</h2>
+  <div class="form-grid">
+    <div><label>Confirmation Date</label><input type="date" id="confirmation_date" form="employee-form" name="confirmation_date" value="{{ emp.confirmation_date or '' }}"></div>
+  </div>
+  <p style="color:var(--muted); font-size:12px; margin-top:6px;">
+    Set this once the employee is actually confirmed, then Save &mdash; this also removes them from the Alerts
+    "due for confirmation" list. Confirming with a pay rise? Use <strong>Confirmation &amp; Salary Update</strong>
+    above instead of Save here &mdash; it sets this same date for you, updates Basic Salary, and keeps a record,
+    all in one step.
+  </p>
+</div>
+
 {% if not is_new %}
 <div class="card">
   <h2 style="margin-top:0;">Confirmation &amp; Salary Update</h2>
@@ -400,16 +413,6 @@
 {% endif %}
 
 <div class="card">
-  <h2 style="margin-top:0;">Confirmation</h2>
-  <div class="form-grid">
-    <div><label>Confirmation Date</label><input type="date" id="confirmation_date" form="employee-form" name="confirmation_date" value="{{ emp.confirmation_date or '' }}"></div>
-  </div>
-  <p style="color:var(--muted); font-size:12px; margin-top:6px;">
-    Set this once the employee is actually confirmed, then Save &mdash; this also removes them from the Alerts
-    "due for confirmation" list. Confirming with a pay rise? Use <strong>Confirmation &amp; Salary Update</strong>
-    above instead of Save here &mdash; it sets this same date for you, updates Basic Salary, and keeps a record,
-    all in one step.
-  </p>
 
   <h2>Resignation</h2>
   <div class="form-grid">

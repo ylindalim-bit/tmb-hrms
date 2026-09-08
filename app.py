@@ -2693,9 +2693,52 @@ def payroll_settings_page():
 
     row = db.execute("SELECT value FROM payroll_settings WHERE key='payslip_release_day'").fetchone()
     release_day = int(row["value"]) if row else PAYMENT_DAY
+    logo_row = db.execute("SELECT value FROM payroll_settings WHERE key='company_logo_filename'").fetchone()
     return render_template("settings.html", release_day=release_day, error=error,
                             payment_day=PAYMENT_DAY, employer_info_fields=EMPLOYER_INFO_FIELDS,
-                            employer_info=get_employer_info(db))
+                            employer_info=get_employer_info(db),
+                            company_logo_filename=logo_row["value"] if logo_row else None)
+
+
+@app.route("/hr/company-logo")
+def company_logo():
+    """Serves the uploaded company logo (stored under UPLOAD_DIR, the
+    persistent volume, not static/ which resets on every deploy)."""
+    db = get_db()
+    row = db.execute("SELECT value FROM payroll_settings WHERE key='company_logo_filename'").fetchone()
+    if not row or not row["value"]:
+        abort(404)
+    return send_from_directory(os.path.join(UPLOAD_DIR, "company"), row["value"])
+
+
+@app.route("/hr/company-logo/upload", methods=["POST"])
+def company_logo_upload():
+    db = get_db()
+    file = request.files.get("logo")
+    if file is None or file.filename == "":
+        return redirect(url_for("payroll_settings_page"))
+    original_name = secure_filename(file.filename)
+    ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+    if ext not in ALLOWED_PHOTO_EXTENSIONS:
+        return "File type not allowed. Use JPG or PNG.", 400
+
+    company_dir = os.path.join(UPLOAD_DIR, "company")
+    os.makedirs(company_dir, exist_ok=True)
+    old_row = db.execute("SELECT value FROM payroll_settings WHERE key='company_logo_filename'").fetchone()
+    if old_row and old_row["value"]:
+        old_path = os.path.join(company_dir, old_row["value"])
+        if os.path.exists(old_path):
+            os.remove(old_path)
+
+    stored_name = f"logo_{uuid.uuid4().hex}.{ext}"
+    file.save(os.path.join(company_dir, stored_name))
+    db.execute(
+        "INSERT INTO payroll_settings (key, value) VALUES ('company_logo_filename', ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (stored_name,),
+    )
+    db.commit()
+    return redirect(url_for("payroll_settings_page"))
 
 
 # ---------------- Mobile Clock-In ----------------

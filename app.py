@@ -2636,6 +2636,9 @@ def set_pcb_override(year, month, emp_id):
 # used to be hardcoded (SOCSO_EIS_EMPLOYER_CODE/_MYCOID) so the SOCSO/EIS
 # text file export keeps working even before these are filled in here.
 EMPLOYER_INFO_FIELDS = [
+    ("company_address", "Company Address"),
+    ("company_tel", "Telephone No."),
+    ("company_fax", "Fax No."),
     ("ssm_registration_no", "Company Registration No. (SSM)"),
     ("epf_employer_no", "EPF Employer Reference No. (KWSP)"),
     ("socso_eis_employer_code", "SOCSO / EIS Employer Code (PERKESO)"),

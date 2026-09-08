@@ -201,6 +201,14 @@
         <option value="Y" {% if emp.mobile_clockin_enabled=="Y" %}selected{% endif %}>Yes</option>
       </select>
     </div>
+    <div><label>Clock-In Location</label>
+      <select name="clockin_location_id">
+        <option value="">Any location in my Base</option>
+        {% for loc in clockin_locations %}
+        <option value="{{ loc.id }}" {% if emp.clockin_location_id == loc.id %}selected{% endif %}>{{ loc.base }} &mdash; {{ loc.label or "(unnamed)" }}</option>
+        {% endfor %}
+      </select>
+    </div>
     <div><label>Date Joined <span id="service_display" style="font-weight:400;"></span></label><input type="date" id="date_joined" name="date_joined" value="{{ emp.date_joined or '' }}" onchange="calcProbationEnd(); calcYearsOfService();"></div>
     <div><label>Last Working Day (if Resigned)</label><input type="date" id="last_working_day" name="last_working_day" value="{{ emp.last_working_day or '' }}" onchange="calcYearsOfService()"></div>
     <div><label>Probation Period</label>

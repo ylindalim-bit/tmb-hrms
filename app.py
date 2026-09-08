@@ -797,7 +797,7 @@ TEXT_FIELDS = ["full_name", "ic_passport_no", "date_of_birth", "marital_status",
                "passport_expiry", "work_permit_expiry", "termination_notice_period",
                "confirmation_date", "resignation_date", "appraisal_supervisor_username",
                "leave_approver_username", "hr_username", "ot_approval_required",
-               "standard_start", "standard_end", "mobile_clockin_enabled"]
+               "standard_start", "standard_end", "mobile_clockin_enabled", "clockin_location_id"]
 NUM_FIELDS = ["basic_salary", "working_days_week", "working_hours_day",
               "additional_epf_employee", "annual_leave_entitlement", "al_bf_days", "mc_entitlement",
               "hospitalisation_leave_entitlement", "medical_claim_limit"]
@@ -922,9 +922,13 @@ def add_employee():
                 )
             db.commit()
             return redirect(url_for("edit_employee", emp_id=emp_id))
+    clockin_locations = db.execute(
+        "SELECT id, base, label FROM clockin_locations ORDER BY base, id"
+    ).fetchall()
     return render_template("employee_edit.html", emp={}, is_new=True, error=error,
                             race_options=RACE_OPTIONS, religion_options=RELIGION_OPTIONS,
-                            holiday_state_options=HOLIDAY_STATE_OPTIONS, base_options=BASE_OPTIONS)
+                            holiday_state_options=HOLIDAY_STATE_OPTIONS, base_options=BASE_OPTIONS,
+                            clockin_locations=clockin_locations)
 
 
 @app.route("/employees/<emp_id>/edit", methods=["GET", "POST"])
@@ -1004,6 +1008,9 @@ def edit_employee(emp_id):
         "SELECT username, full_name FROM hr_users WHERE can_approve_leave='Y' ORDER BY full_name"
     ).fetchall()
     hr_accounts = db.execute("SELECT username, full_name FROM hr_users ORDER BY full_name").fetchall()
+    clockin_locations = db.execute(
+        "SELECT id, base, label FROM clockin_locations ORDER BY base, id"
+    ).fetchall()
 
     return render_template("employee_edit.html", emp=emp, is_new=False, extensions=extensions,
                             salary_history=salary_history, eis_applies=eis_applies,
@@ -1013,7 +1020,7 @@ def edit_employee(emp_id):
                             race_options=RACE_OPTIONS, religion_options=RELIGION_OPTIONS,
                             holiday_state_options=HOLIDAY_STATE_OPTIONS, base_options=BASE_OPTIONS,
                             appraisal_supervisors=appraisal_supervisors, leave_approvers=leave_approvers,
-                            hr_accounts=hr_accounts,
+                            hr_accounts=hr_accounts, clockin_locations=clockin_locations,
                             tax_profile=tax_profile)
 
 
@@ -3043,10 +3050,21 @@ def portal_clock():
     if emp["mobile_clockin_enabled"] != "Y":
         return "Mobile clock-in isn't enabled for your account yet.", 403
 
-    locations = db.execute(
-        "SELECT * FROM clockin_locations WHERE base=? AND latitude IS NOT NULL AND longitude IS NOT NULL",
-        (emp["base"],),
-    ).fetchall() if emp["base"] else []
+    # An employee assigned a specific clockin_location_id is restricted to
+    # just that one site; otherwise (the default) they're free to clock in
+    # at any location under their own Base.
+    if emp["clockin_location_id"]:
+        locations = db.execute(
+            "SELECT * FROM clockin_locations WHERE id=? AND latitude IS NOT NULL AND longitude IS NOT NULL",
+            (emp["clockin_location_id"],),
+        ).fetchall()
+    elif emp["base"]:
+        locations = db.execute(
+            "SELECT * FROM clockin_locations WHERE base=? AND latitude IS NOT NULL AND longitude IS NOT NULL",
+            (emp["base"],),
+        ).fetchall()
+    else:
+        locations = []
 
     error = None
     if request.method == "POST":
@@ -4908,6 +4926,14 @@ def hr_migrate_schema():
             db.execute("DROP TABLE clockin_locations")
             db.execute("ALTER TABLE clockin_locations_new RENAME TO clockin_locations")
             applied.append("clockin_locations: rebuilt with id (multiple locations per Base)")
+
+    if "clockin_location_id" not in emp_cols:
+        # Which specific clockin_locations row this employee must clock in
+        # at - NULL means "any location under their Base" (free to use
+        # either MY1 or MY2, say), which is the default so existing pilot
+        # staff aren't blocked until HR assigns them a specific site.
+        db.execute("ALTER TABLE employees ADD COLUMN clockin_location_id INTEGER REFERENCES clockin_locations(id)")
+        applied.append("employees.clockin_location_id")
 
     if "clockin_events" not in existing_tables:
         db.execute("""CREATE TABLE clockin_events (

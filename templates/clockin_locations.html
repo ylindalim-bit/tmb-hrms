@@ -3,9 +3,10 @@
 {% block content %}
 <h1>Mobile Clock-In Locations</h1>
 <p style="color:var(--muted); font-size:13px; margin-top:-8px; max-width:640px;">
-  One geofence per Base. Staff clocking in via the Staff Portal must be within the radius shown of
-  their own Base's point below, or the clock-in/out is rejected. Stand at the actual work site on your
-  phone/laptop and click "Use my current location" to fill in the coordinates, or type them in directly.
+  One or more geofence points per Base. Staff clocking in via the Staff Portal must be within the radius
+  of at least one location belonging to their own Base, or the clock-in/out is rejected. Stand at the
+  actual work site on your phone/laptop and click "Use my current location" to fill in the coordinates,
+  or type them in directly. Add more than one location per Base if staff can clock in from several sites.
 </p>
 
 <div class="card" style="max-width:480px;">
@@ -13,46 +14,62 @@
   <a href="{{ url_for('employees') }}">Manage on the Employees page &rarr;</a>
 </div>
 
-<form method="post">
 {% for base in bases %}
-{% set row = rows.get(base) %}
-<div class="card" style="max-width:560px;">
+<div class="card" style="max-width:640px;">
   <h2 style="margin-top:0;">{{ base }}</h2>
-  <div class="form-grid">
-    <div><label>Label (e.g. "Pasir Gudang Factory")</label>
-      <input type="text" name="label_{{ base }}" value="{{ row.label if row else '' }}">
+  {% for loc in locations_by_base.get(base, []) %}
+  <form id="loc-save-{{ loc.id }}" method="post" action="{{ url_for('clockin_location_save', location_id=loc.id) }}"></form>
+  <form id="loc-delete-{{ loc.id }}" method="post" action="{{ url_for('clockin_location_delete', location_id=loc.id) }}" onsubmit="return confirm('Remove this location?');"></form>
+  <div class="form-grid" style="margin-bottom:6px;">
+    <div><label>Label</label>
+      <input form="loc-save-{{ loc.id }}" type="text" name="label" value="{{ loc.label or '' }}">
     </div>
     <div><label>Radius (meters)</label>
-      <input type="number" name="radius_{{ base }}" value="{{ row.radius_meters if row else 300 }}" min="20" step="10">
+      <input form="loc-save-{{ loc.id }}" type="number" name="radius" value="{{ loc.radius_meters }}" min="20" step="10">
     </div>
     <div><label>Latitude</label>
-      <input type="text" id="lat_{{ base }}" name="lat_{{ base }}" value="{{ row.latitude if row and row.latitude is not none else '' }}">
+      <input form="loc-save-{{ loc.id }}" type="text" id="lat_{{ loc.id }}" name="lat" value="{{ loc.latitude if loc.latitude is not none else '' }}">
     </div>
     <div><label>Longitude</label>
-      <input type="text" id="lng_{{ base }}" name="lng_{{ base }}" value="{{ row.longitude if row and row.longitude is not none else '' }}">
+      <input form="loc-save-{{ loc.id }}" type="text" id="lng_{{ loc.id }}" name="lng" value="{{ loc.longitude if loc.longitude is not none else '' }}">
     </div>
   </div>
-  <button type="button" class="btn secondary" style="margin-top:8px;" onclick="useMyLocation('{{ base }}')">Use my current location</button>
-  <span id="status_{{ base }}" style="margin-left:8px; font-size:12px; color:var(--muted);"></span>
+  <button type="button" class="btn secondary" onclick="useMyLocation('{{ loc.id }}')">Use my current location</button>
+  <button form="loc-save-{{ loc.id }}" type="submit" class="btn">Save</button>
+  <button form="loc-delete-{{ loc.id }}" type="submit" class="btn secondary" style="color:var(--danger);">Remove</button>
+  <span id="status_{{ loc.id }}" style="margin-left:8px; font-size:12px; color:var(--muted);"></span>
+  <hr style="margin:14px 0; border:none; border-top:1px solid var(--border);">
+  {% else %}
+  <p style="color:var(--muted); font-size:13px;">No locations set up for {{ base }} yet.</p>
+  {% endfor %}
+
+  <form method="post" action="{{ url_for('clockin_location_add') }}">
+    <input type="hidden" name="base" value="{{ base }}">
+    <div class="form-grid">
+      <div><label>Label</label><input type="text" name="label" placeholder="e.g. Pasir Gudang Factory"></div>
+      <div><label>Radius (meters)</label><input type="number" name="radius" value="300" min="20" step="10"></div>
+      <div><label>Latitude</label><input type="text" id="lat_new_{{ base }}" name="lat"></div>
+      <div><label>Longitude</label><input type="text" id="lng_new_{{ base }}" name="lng"></div>
+    </div>
+    <button type="button" class="btn secondary" onclick="useMyLocation('new_{{ base }}')">Use my current location</button>
+    <button type="submit" class="btn">Add Location</button>
+    <span id="status_new_{{ base }}" style="margin-left:8px; font-size:12px; color:var(--muted);"></span>
+  </form>
 </div>
 {% endfor %}
-<div class="form-actions">
-  <button class="btn" type="submit">Save All</button>
-</div>
-</form>
 
 <script>
-function useMyLocation(base) {
-  var statusEl = document.getElementById('status_' + base);
+function useMyLocation(key) {
+  var statusEl = document.getElementById('status_' + key);
   if (!navigator.geolocation) {
     statusEl.textContent = 'Geolocation not supported on this browser.';
     return;
   }
   statusEl.textContent = 'Getting location...';
   navigator.geolocation.getCurrentPosition(function (pos) {
-    document.getElementById('lat_' + base).value = pos.coords.latitude.toFixed(6);
-    document.getElementById('lng_' + base).value = pos.coords.longitude.toFixed(6);
-    statusEl.textContent = 'Location captured (accuracy ~' + Math.round(pos.coords.accuracy) + 'm). Click Save All to keep it.';
+    document.getElementById('lat_' + key).value = pos.coords.latitude.toFixed(6);
+    document.getElementById('lng_' + key).value = pos.coords.longitude.toFixed(6);
+    statusEl.textContent = 'Location captured (accuracy ~' + Math.round(pos.coords.accuracy) + 'm). Click Save/Add to keep it.';
   }, function (err) {
     statusEl.textContent = 'Could not get location: ' + err.message;
   }, { enableHighAccuracy: true, timeout: 10000 });

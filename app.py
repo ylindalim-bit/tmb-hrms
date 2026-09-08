@@ -2645,38 +2645,67 @@ def payroll_settings_page():
 
 # ---------------- Mobile Clock-In ----------------
 
-@app.route("/hr/clockin-locations", methods=["GET", "POST"])
+@app.route("/hr/clockin-locations")
 def clockin_locations_page():
-    """One geofence location per Base (MY/ZJ/CD) for the mobile Clock
-    In/Out feature - staff clocking in via the Staff Portal must be
-    within `radius_meters` of their own Base's point here. Each row can
-    be filled in by typing coordinates, or by standing at the location
-    and clicking "Use my current location" (browser geolocation)."""
+    """Geofence locations for the mobile Clock In/Out feature, grouped by
+    Base (MY/ZJ/CD) - a Base can have any number of locations (e.g.
+    several factory sites within MY); staff clocking in via the Staff
+    Portal must be within `radius_meters` of at least one location
+    belonging to their own Base. Each row can be filled in by typing
+    coordinates, or by standing at the location and clicking "Use my
+    current location" (browser geolocation)."""
     db = get_db()
-    if request.method == "POST":
-        for base in BASE_OPTIONS:
-            label = request.form.get(f"label_{base}", "").strip()
-            lat_raw = request.form.get(f"lat_{base}", "").strip()
-            lng_raw = request.form.get(f"lng_{base}", "").strip()
-            radius_raw = request.form.get(f"radius_{base}", "").strip()
-            lat = float(lat_raw) if lat_raw else None
-            lng = float(lng_raw) if lng_raw else None
-            radius = float(radius_raw) if radius_raw else 300
-            db.execute(
-                """INSERT INTO clockin_locations (base, label, latitude, longitude, radius_meters)
-                   VALUES (?,?,?,?,?)
-                   ON CONFLICT(base) DO UPDATE SET label=excluded.label, latitude=excluded.latitude,
-                       longitude=excluded.longitude, radius_meters=excluded.radius_meters""",
-                (base, label, lat, lng, radius),
-            )
-        db.commit()
-        return redirect(url_for("clockin_locations_page"))
-
-    rows = {r["base"]: r for r in db.execute("SELECT * FROM clockin_locations").fetchall()}
+    locations_by_base = {base: [] for base in BASE_OPTIONS}
+    for r in db.execute("SELECT * FROM clockin_locations ORDER BY base, id").fetchall():
+        locations_by_base.setdefault(r["base"], []).append(r)
     pilot_count = db.execute(
         "SELECT COUNT(*) AS c FROM employees WHERE mobile_clockin_enabled='Y'"
     ).fetchone()["c"]
-    return render_template("clockin_locations.html", bases=BASE_OPTIONS, rows=rows, pilot_count=pilot_count)
+    return render_template("clockin_locations.html", bases=BASE_OPTIONS,
+                            locations_by_base=locations_by_base, pilot_count=pilot_count)
+
+
+@app.route("/hr/clockin-locations/add", methods=["POST"])
+def clockin_location_add():
+    db = get_db()
+    base = request.form.get("base")
+    if base not in BASE_OPTIONS:
+        abort(400)
+    label = request.form.get("label", "").strip()
+    lat_raw = request.form.get("lat", "").strip()
+    lng_raw = request.form.get("lng", "").strip()
+    radius_raw = request.form.get("radius", "").strip()
+    db.execute(
+        "INSERT INTO clockin_locations (base, label, latitude, longitude, radius_meters) VALUES (?,?,?,?,?)",
+        (base, label, float(lat_raw) if lat_raw else None, float(lng_raw) if lng_raw else None,
+         float(radius_raw) if radius_raw else 300),
+    )
+    db.commit()
+    return redirect(url_for("clockin_locations_page"))
+
+
+@app.route("/hr/clockin-locations/<int:location_id>/save", methods=["POST"])
+def clockin_location_save(location_id):
+    db = get_db()
+    label = request.form.get("label", "").strip()
+    lat_raw = request.form.get("lat", "").strip()
+    lng_raw = request.form.get("lng", "").strip()
+    radius_raw = request.form.get("radius", "").strip()
+    db.execute(
+        "UPDATE clockin_locations SET label=?, latitude=?, longitude=?, radius_meters=? WHERE id=?",
+        (label, float(lat_raw) if lat_raw else None, float(lng_raw) if lng_raw else None,
+         float(radius_raw) if radius_raw else 300, location_id),
+    )
+    db.commit()
+    return redirect(url_for("clockin_locations_page"))
+
+
+@app.route("/hr/clockin-locations/<int:location_id>/delete", methods=["POST"])
+def clockin_location_delete(location_id):
+    db = get_db()
+    db.execute("DELETE FROM clockin_locations WHERE id=?", (location_id,))
+    db.commit()
+    return redirect(url_for("clockin_locations_page"))
 
 
 @app.route("/where-am-i")
@@ -2998,19 +3027,21 @@ def portal_attendance():
 def portal_clock():
     """Pilot mobile clock-in/out feature - only shown to employees with
     mobile_clockin_enabled='Y'. Requires GPS coordinates within the
-    radius configured for the employee's Base (see clockin_locations
-    admin page); writes straight into today's attendance_daily Time
-    In/Out, same field HR fills in manually, with no separate approval
-    step. Every attempt (accepted or rejected) is logged to
-    clockin_events for an audit trail."""
+    radius of at least one location belonging to the employee's Base
+    (see clockin_locations admin page - a Base can have several
+    locations, e.g. multiple sites within MY); writes straight into
+    today's attendance_daily Time In/Out, same field HR fills in
+    manually, with no separate approval step. Every attempt (accepted
+    or rejected) is logged to clockin_events for an audit trail."""
     db = get_db()
     emp = current_portal_employee(db)
     if emp["mobile_clockin_enabled"] != "Y":
         return "Mobile clock-in isn't enabled for your account yet.", 403
 
-    location = db.execute(
-        "SELECT * FROM clockin_locations WHERE base=?", (emp["base"],)
-    ).fetchone() if emp["base"] else None
+    locations = db.execute(
+        "SELECT * FROM clockin_locations WHERE base=? AND latitude IS NOT NULL AND longitude IS NOT NULL",
+        (emp["base"],),
+    ).fetchall() if emp["base"] else []
 
     error = None
     if request.method == "POST":
@@ -3021,12 +3052,19 @@ def portal_clock():
             error = "Invalid request."
         elif not lat_raw or not lng_raw:
             error = "Couldn't read your phone's location. Please allow location access and try again."
-        elif location is None or location["latitude"] is None or location["longitude"] is None:
+        elif not locations:
             error = "No clock-in location has been set up for your Base yet - ask HR to configure it."
         else:
             lat, lng = float(lat_raw), float(lng_raw)
-            distance = _haversine_meters(lat, lng, location["latitude"], location["longitude"])
-            accepted = distance <= location["radius_meters"]
+            # Accepted if within radius of ANY of this Base's locations -
+            # for the rejection message, report distance/radius/label of
+            # whichever location is closest.
+            nearest = min(locations, key=lambda loc: _haversine_meters(lat, lng, loc["latitude"], loc["longitude"]))
+            distance = _haversine_meters(lat, lng, nearest["latitude"], nearest["longitude"])
+            accepted = any(
+                _haversine_meters(lat, lng, loc["latitude"], loc["longitude"]) <= loc["radius_meters"]
+                for loc in locations
+            )
             now = datetime.datetime.now()
             date_str = now.date().isoformat()
             time_str = now.strftime("%H:%M")
@@ -3037,7 +3075,7 @@ def portal_clock():
                  lat, lng, round(distance, 1)),
             )
             if not accepted:
-                error = f"You're about {round(distance)}m from {location['label'] or 'your work site'} - move closer and try again (allowed: {int(location['radius_meters'])}m)."
+                error = f"You're about {round(distance)}m from {nearest['label'] or 'your nearest work site'} - move closer and try again (allowed: {int(nearest['radius_meters'])}m)."
             elif action == "in":
                 db.execute(
                     """INSERT INTO attendance_daily (emp_id, date, day_type, time_in)
@@ -3062,7 +3100,7 @@ def portal_clock():
     today_row = db.execute(
         "SELECT * FROM attendance_daily WHERE emp_id=? AND date=?", (emp["emp_id"], today_str)
     ).fetchone()
-    return render_template("portal_clock.html", emp=emp, location=location, today_row=today_row, error=error)
+    return render_template("portal_clock.html", emp=emp, locations=locations, today_row=today_row, error=error)
 
 
 def _validate_and_create_leave_request(db, emp_id, leave_type, start_date, end_date, reason, files, status,
@@ -4834,9 +4872,24 @@ def hr_migrate_schema():
 
     if "clockin_locations" not in existing_tables:
         db.execute("""CREATE TABLE clockin_locations (
-            base TEXT PRIMARY KEY, label TEXT, latitude REAL, longitude REAL,
-            radius_meters REAL NOT NULL DEFAULT 300)""")
+            id INTEGER PRIMARY KEY AUTOINCREMENT, base TEXT NOT NULL, label TEXT,
+            latitude REAL, longitude REAL, radius_meters REAL NOT NULL DEFAULT 300)""")
         applied.append("table: clockin_locations")
+    else:
+        # Originally one row per Base (base as PRIMARY KEY) - now multiple
+        # locations are allowed per Base, so it needs an id and base is no
+        # longer unique. SQLite can't drop a PRIMARY KEY via ALTER TABLE,
+        # so rebuild the table and copy the existing rows across.
+        cl_cols = [r[1] for r in db.execute("PRAGMA table_info(clockin_locations)").fetchall()]
+        if "id" not in cl_cols:
+            db.execute("""CREATE TABLE clockin_locations_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, base TEXT NOT NULL, label TEXT,
+                latitude REAL, longitude REAL, radius_meters REAL NOT NULL DEFAULT 300)""")
+            db.execute("""INSERT INTO clockin_locations_new (base, label, latitude, longitude, radius_meters)
+                          SELECT base, label, latitude, longitude, radius_meters FROM clockin_locations""")
+            db.execute("DROP TABLE clockin_locations")
+            db.execute("ALTER TABLE clockin_locations_new RENAME TO clockin_locations")
+            applied.append("clockin_locations: rebuilt with id (multiple locations per Base)")
 
     if "clockin_events" not in existing_tables:
         db.execute("""CREATE TABLE clockin_events (

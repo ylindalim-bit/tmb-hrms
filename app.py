@@ -2512,6 +2512,7 @@ def _pad_num(cents, width):
 @app.route("/socso-eis-textfile/<int:year>/<int:month>")
 def socso_eis_textfile(year, month):
     db = get_db()
+    employer_info = get_employer_info(db)
     rows = db.execute(
         """SELECT pr.*, e.ic_passport_no, e.full_name
            FROM payroll_runs pr JOIN employees e ON e.emp_id = pr.emp_id
@@ -2523,8 +2524,8 @@ def socso_eis_textfile(year, month):
     lines = []
     for r in rows:
         line = (
-            _pad_left(SOCSO_EIS_EMPLOYER_CODE, 12)   # 1. Employer Code
-            + _pad_left(SOCSO_EIS_EMPLOYER_MYCOID, 20)  # 2. MyCoID / SSM No.
+            _pad_left(employer_info["socso_eis_employer_code"], 12)   # 1. Employer Code
+            + _pad_left(employer_info["ssm_registration_no"], 20)  # 2. MyCoID / SSM No.
             + _pad_left(r["ic_passport_no"], 12)     # 3. ID No. / SOCSO Foreign Worker No.
             + _pad_left(r["full_name"], 150)         # 4. Employee Name
             + month_str                              # 5. Month Contribution (MMYYYY)
@@ -2630,11 +2631,48 @@ def set_pcb_override(year, month, emp_id):
 
 # ---------------- Settings ----------------
 
+# Employer statutory registration numbers - editable on the Settings page,
+# stored in payroll_settings keyed as below. Falls back to the values that
+# used to be hardcoded (SOCSO_EIS_EMPLOYER_CODE/_MYCOID) so the SOCSO/EIS
+# text file export keeps working even before these are filled in here.
+EMPLOYER_INFO_FIELDS = [
+    ("ssm_registration_no", "Company Registration No. (SSM)"),
+    ("epf_employer_no", "EPF Employer Reference No. (KWSP)"),
+    ("socso_eis_employer_code", "SOCSO / EIS Employer Code (PERKESO)"),
+    ("income_tax_employer_no", "Income Tax Employer No. (LHDN \"E\" Number)"),
+    ("hrdcorp_employer_no", "HRD Corp Employer Registration No."),
+]
+
+
+def get_employer_info(db):
+    """{key: value} for every EMPLOYER_INFO_FIELDS key, falling back to the
+    legacy hardcoded SOCSO constants for the two fields that used to be
+    fixed in code, so nothing breaks before these are filled in here."""
+    rows = {r["key"]: r["value"] for r in db.execute(
+        "SELECT key, value FROM payroll_settings WHERE key IN ({})".format(
+            ",".join("?" * len(EMPLOYER_INFO_FIELDS))
+        ),
+        [k for k, _ in EMPLOYER_INFO_FIELDS],
+    ).fetchall()}
+    rows.setdefault("ssm_registration_no", SOCSO_EIS_EMPLOYER_MYCOID)
+    rows.setdefault("socso_eis_employer_code", SOCSO_EIS_EMPLOYER_CODE)
+    return {k: rows.get(k) or "" for k, _ in EMPLOYER_INFO_FIELDS}
+
+
 @app.route("/settings", methods=["GET", "POST"])
 def payroll_settings_page():
     db = get_db()
     error = None
     if request.method == "POST":
+        if request.form.get("form") == "employer_info":
+            for key, _ in EMPLOYER_INFO_FIELDS:
+                db.execute(
+                    "INSERT INTO payroll_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (key, request.form.get(key, "").strip()),
+                )
+            db.commit()
+            return redirect(url_for("payroll_settings_page"))
+
         raw = request.form.get("payslip_release_day", "").strip()
         try:
             day = int(raw)
@@ -2653,7 +2691,8 @@ def payroll_settings_page():
     row = db.execute("SELECT value FROM payroll_settings WHERE key='payslip_release_day'").fetchone()
     release_day = int(row["value"]) if row else PAYMENT_DAY
     return render_template("settings.html", release_day=release_day, error=error,
-                            payment_day=PAYMENT_DAY)
+                            payment_day=PAYMENT_DAY, employer_info_fields=EMPLOYER_INFO_FIELDS,
+                            employer_info=get_employer_info(db))
 
 
 # ---------------- Mobile Clock-In ----------------

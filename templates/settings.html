@@ -4,6 +4,24 @@
 <h1>Settings</h1>
 
 <div class="card" style="max-width:480px;">
+  <h2 style="margin-top:0;">Employer Information</h2>
+  <p style="color:var(--muted); font-size:13px; margin-top:0;">
+    Company statutory registration numbers, used on official submissions and exports (e.g. the SOCSO/EIS
+    text file, which reads the Employer Code and Company Registration No. from here).
+  </p>
+  <form method="post">
+    <input type="hidden" name="form" value="employer_info">
+    {% for key, label in employer_info_fields %}
+    <div style="margin-bottom:10px;">
+      <label style="display:block; font-size:12px; font-weight:600; color:var(--muted); margin-bottom:4px;">{{ label }}</label>
+      <input type="text" name="{{ key }}" value="{{ employer_info[key] }}" style="width:100%;">
+    </div>
+    {% endfor %}
+    <button class="btn" type="submit">Save</button>
+  </form>
+</div>
+
+<div class="card" style="max-width:480px;">
   <h2 style="margin-top:0;">Staff Portal &mdash; Payslip Release Date</h2>
   {% if error %}<div style="color:var(--danger); font-size:13px; margin-bottom:12px;">{{ error }}</div>{% endif %}
   <p style="color:var(--muted); font-size:13px; margin-top:0;">

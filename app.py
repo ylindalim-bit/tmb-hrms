@@ -3053,8 +3053,21 @@ def portal_clock():
         action = request.form.get("action")
         lat_raw = request.form.get("lat")
         lng_raw = request.form.get("lng")
+        existing_today = db.execute(
+            "SELECT * FROM attendance_daily WHERE emp_id=? AND date=?",
+            (emp["emp_id"], datetime.datetime.now(MYT).date().isoformat()),
+        ).fetchone()
         if action not in ("in", "out"):
             error = "Invalid request."
+        # A repeat tap (double-tap, browser back button, etc.) is rejected
+        # rather than silently overwriting the first clock-in/out already
+        # on file for today.
+        elif action == "in" and existing_today and existing_today["time_in"]:
+            error = f"You already clocked in at {existing_today['time_in']} today."
+        elif action == "out" and existing_today and existing_today["time_out"]:
+            error = f"You already clocked out at {existing_today['time_out']} today."
+        elif action == "out" and not (existing_today and existing_today["time_in"]):
+            error = "You haven't clocked in yet today."
         elif not lat_raw or not lng_raw:
             error = "Couldn't read your phone's location. Please allow location access and try again."
         elif not locations:

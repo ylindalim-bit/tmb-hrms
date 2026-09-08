@@ -243,6 +243,11 @@ DOCUMENT_TYPES = ["Job Application Form", "IC / Passport Copy", "Letter of Emplo
                    "Resignation Letter", "CP22A", "e-Stamping Certificate", "TP3 (Prior Employer Income)", "Other"]
 BUSINESS_TRIP_TYPES = ["Business Trip", "Out-Duty", "Training", "Unrecorded Leave"]
 BASE_OPTIONS = ["MY", "ZJ", "CD"]  # Malaysia, Zhejiang, Chengdu - which physical site this employee works at
+# Malaysia and China are both UTC+8 with no DST, so a fixed offset covers
+# every Base without needing an IANA tz database on the server (which runs
+# in UTC) - used anywhere a wall-clock time is shown to staff, e.g. mobile
+# clock-in, rather than datetime.now()'s server-local (UTC) time.
+MYT = datetime.timezone(datetime.timedelta(hours=8))
 LEAVE_TYPES = ["Annual Leave", "Medical Leave", "Hospitalisation Leave", "Unpaid Leave", "Maternity/Paternity Leave",
                "School Personal Leave"]
 LEAVE_DOC_REQUIRED_TYPES = {"Medical Leave", "Hospitalisation Leave"}
@@ -3065,7 +3070,7 @@ def portal_clock():
                 _haversine_meters(lat, lng, loc["latitude"], loc["longitude"]) <= loc["radius_meters"]
                 for loc in locations
             )
-            now = datetime.datetime.now()
+            now = datetime.datetime.now(MYT)
             date_str = now.date().isoformat()
             time_str = now.strftime("%H:%M")
             db.execute(
@@ -3096,7 +3101,7 @@ def portal_clock():
             if accepted:
                 return redirect(url_for("portal_clock"))
 
-    today_str = datetime.date.today().isoformat()
+    today_str = datetime.datetime.now(MYT).date().isoformat()
     today_row = db.execute(
         "SELECT * FROM attendance_daily WHERE emp_id=? AND date=?", (emp["emp_id"], today_str)
     ).fetchone()

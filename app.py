@@ -431,6 +431,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/delete-duplicate-m002-doc",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/set-i001-pcb-override-august",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/lock-pcb-l001-n001-s001-august",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/bulk-enable-mobile-clockin",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/add-september-ul-a007-m005",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
@@ -5924,6 +5925,26 @@ def hr_lock_pcb_l001_n001_s001_august():
         results[emp_id] = (result["pcb"], result["net_pay"])
     db.commit()
     return f"OK - locked PCB for L001/N001/S001: {results}", 200
+
+
+@app.route("/hr/bulk-enable-mobile-clockin", methods=["POST"])
+def hr_bulk_enable_mobile_clockin():
+    """One-time rollout: Linda confirmed moving mobile Clock In/Out from
+    the small pilot group to all Active staff. Only flips
+    mobile_clockin_enabled - doesn't touch anyone's Base or
+    clockin_location_id, so anyone without a clock-in location
+    configured for their Base yet will just see a clear "ask HR to
+    configure it" message until one is set up. Safe to re-run."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    updated = db.execute(
+        "UPDATE employees SET mobile_clockin_enabled='Y' WHERE status='Active' AND mobile_clockin_enabled != 'Y'"
+    ).rowcount
+    db.commit()
+    total_active = db.execute("SELECT COUNT(*) AS c FROM employees WHERE status='Active'").fetchone()["c"]
+    return f"OK - enabled mobile clock-in for {updated} more employee(s), {total_active} Active total now enabled", 200
 
 
 @app.route("/hr/add-september-ul-a007-m005", methods=["POST"])

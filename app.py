@@ -2640,6 +2640,7 @@ EMPLOYER_INFO_FIELDS = [
     ("company_address", "Company Address"),
     ("company_tel", "Telephone No."),
     ("company_fax", "Fax No."),
+    ("company_email", "Company Email Address"),
     ("director_name", "Director Name"),
     ("director_hp_no", "Director H/P Number"),
     ("ssm_registration_no", "Company Registration No. (SSM)"),

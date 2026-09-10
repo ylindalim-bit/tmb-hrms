@@ -3928,12 +3928,14 @@ def leave_report():
         al_total_available = al_entitlement + al_bf
         rows.append({
             "emp_id": e["emp_id"], "full_name": e["full_name"], "department": e["department"],
-            "al_entitlement": al_entitlement, "al_bf": al_bf, "al_total_available": al_total_available,
-            "al_used": totals["al"],
-            "al_balance": al_total_available - totals["al"], "al_note": al_note,
-            "mc_entitlement": mc_entitlement, "mc_used": totals["mc"],
-            "mc_balance": mc_entitlement - totals["mc"],
-            "hl_used": totals["hl"], "ul_used": totals["ul"], "other_used": totals["other"],
+            "al_entitlement": round(al_entitlement, 2), "al_bf": round(al_bf, 2),
+            "al_total_available": round(al_total_available, 2),
+            "al_used": round(totals["al"], 2),
+            "al_balance": round(al_total_available - totals["al"], 2), "al_note": al_note,
+            "mc_entitlement": round(mc_entitlement, 2), "mc_used": round(totals["mc"], 2),
+            "mc_balance": round(mc_entitlement - totals["mc"], 2),
+            "hl_used": round(totals["hl"], 2), "ul_used": round(totals["ul"], 2),
+            "other_used": round(totals["other"], 2),
         })
 
     years = db.execute("SELECT DISTINCT year FROM attendance_monthly ORDER BY year DESC").fetchall()

@@ -432,6 +432,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/set-i001-pcb-override-august",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/lock-pcb-l001-n001-s001-august",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/bulk-enable-mobile-clockin",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/add-sept-wecom-payments",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/add-september-ul-a007-m005",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
@@ -6098,6 +6099,42 @@ def hr_bulk_enable_mobile_clockin():
     db.commit()
     total_active = db.execute("SELECT COUNT(*) AS c FROM employees WHERE status='Active'").fetchone()["c"]
     return f"OK - enabled mobile clock-in for {updated} more employee(s), {total_active} Active total now enabled", 200
+
+
+@app.route("/hr/add-sept-wecom-payments", methods=["POST"])
+def hr_add_sept_wecom_payments():
+    """One-time entry: Linda's 6 September 2026 WeChat Work payment
+    applications (RM1,200 each, "Unrecorded relieve leave" / relieve
+    claim), logged into the new Company Payments Log for record only -
+    no payroll impact. Dated 2026-09-01 since she only gave the month,
+    not exact per-person dates; editable afterward via the UI. Safe to
+    re-run - clears and re-inserts this exact batch each time rather
+    than accumulating duplicates."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    entries = [
+        ("R001", "Unrecorded relieve leave", "Approved"),
+        ("M004", "Unrecorded relieve leave", "Pending"),
+        ("A005", "Unrecorded relieve leave", "Pending"),
+        ("S001", "Claim for RM1,200 - relieve claim", "Pending"),
+        ("A006", "Claim for RM1,200", "Pending"),
+        ("M002", "Claim for RM1,200", "Pending"),
+    ]
+    db.execute(
+        "DELETE FROM company_payments WHERE payment_date='2026-09-01' AND emp_id IN (?,?,?,?,?,?)",
+        [emp_id for emp_id, _, _ in entries],
+    )
+    for emp_id, reason, status in entries:
+        db.execute(
+            """INSERT INTO company_payments (emp_id, payment_date, reason, amount, status, recorded_at)
+               VALUES (?, '2026-09-01', ?, 1200.00, ?, ?)""",
+            (emp_id, reason, status, now),
+        )
+    db.commit()
+    return f"OK - logged {len(entries)} September payment record(s)", 200
 
 
 @app.route("/hr/add-september-ul-a007-m005", methods=["POST"])

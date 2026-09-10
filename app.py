@@ -1393,7 +1393,7 @@ def attendance(year, month):
 
     emps = employed_this_month(
         db, year, month,
-        "emp_id, full_name, meal_allowance_flag, cewi_flag, work_pattern",
+        "emp_id, full_name, meal_allowance_flag, cewi_flag, work_pattern, base",
     )
     att_rows = {
         r["emp_id"]: r for r in db.execute(

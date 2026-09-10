@@ -979,6 +979,10 @@ def edit_employee(emp_id):
         "SELECT * FROM employee_documents WHERE emp_id=? ORDER BY uploaded_at DESC",
         (emp_id,),
     ).fetchall()
+    company_payments = db.execute(
+        "SELECT * FROM company_payments WHERE emp_id=? ORDER BY payment_date DESC, recorded_at DESC",
+        (emp_id,),
+    ).fetchall()
 
     eis_applies = _eis_applies(emp["date_of_birth"], emp["eis_flag"])
 
@@ -1016,6 +1020,7 @@ def edit_employee(emp_id):
     return render_template("employee_edit.html", emp=emp, is_new=False, extensions=extensions,
                             salary_history=salary_history, eis_applies=eis_applies,
                             documents=documents, document_types=DOCUMENT_TYPES,
+                            company_payments=company_payments,
                             al_note=al_note, al_year=al_year, al_entitlement_effective=al_entitlement_effective,
                             al_used=al_used, al_balance=al_balance, al_bf=al_bf, al_total_available=al_total_available,
                             race_options=RACE_OPTIONS, religion_options=RELIGION_OPTIONS,
@@ -1171,6 +1176,52 @@ def delete_salary_history(emp_id, hist_id):
     db = get_db()
     db.execute("DELETE FROM salary_history WHERE id=? AND emp_id=?", (hist_id, emp_id))
     _resync_basic_salary_from_history(db, emp_id)
+    db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id))
+
+
+# ---------------- Company Payments Log (for-record-only, no payroll impact) ----------------
+
+@app.route("/employees/<emp_id>/company-payments/add", methods=["POST"])
+def add_company_payment(emp_id):
+    db = get_db()
+    payment_date = request.form.get("payment_date")
+    reason = (request.form.get("reason") or "").strip()
+    amount_raw = request.form.get("amount")
+    status = request.form.get("status") or "Approved"
+    if not payment_date or not reason or not amount_raw:
+        return redirect(url_for("edit_employee", emp_id=emp_id))
+    db.execute(
+        """INSERT INTO company_payments (emp_id, payment_date, reason, amount, status, recorded_at)
+           VALUES (?,?,?,?,?,?)""",
+        (emp_id, payment_date, reason, float(amount_raw), status,
+         datetime.datetime.now().isoformat(timespec="seconds")),
+    )
+    db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id))
+
+
+@app.route("/employees/<emp_id>/company-payments/<int:payment_id>/update", methods=["POST"])
+def update_company_payment(emp_id, payment_id):
+    db = get_db()
+    payment_date = request.form.get("payment_date")
+    reason = (request.form.get("reason") or "").strip()
+    amount_raw = request.form.get("amount")
+    status = request.form.get("status") or "Approved"
+    if not payment_date or not reason or not amount_raw:
+        return redirect(url_for("edit_employee", emp_id=emp_id))
+    db.execute(
+        "UPDATE company_payments SET payment_date=?, reason=?, amount=?, status=? WHERE id=? AND emp_id=?",
+        (payment_date, reason, float(amount_raw), status, payment_id, emp_id),
+    )
+    db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id))
+
+
+@app.route("/employees/<emp_id>/company-payments/<int:payment_id>/delete", methods=["POST"])
+def delete_company_payment(emp_id, payment_id):
+    db = get_db()
+    db.execute("DELETE FROM company_payments WHERE id=? AND emp_id=?", (payment_id, emp_id))
     db.commit()
     return redirect(url_for("edit_employee", emp_id=emp_id))
 
@@ -5025,6 +5076,18 @@ def hr_migrate_schema():
         # staff aren't blocked until HR assigns them a specific site.
         db.execute("ALTER TABLE employees ADD COLUMN clockin_location_id INTEGER REFERENCES clockin_locations(id)")
         applied.append("employees.clockin_location_id")
+
+    if "company_payments" not in existing_tables:
+        # For-record-only log of ad-hoc payments handled outside this
+        # system (e.g. approved via WeChat Work) - no payroll impact,
+        # just a place to keep a record per employee. Status is typed in
+        # by HR to match whatever it already is wherever the payment was
+        # actually approved, not a live approval workflow in here.
+        db.execute("""CREATE TABLE company_payments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),
+            payment_date TEXT NOT NULL, reason TEXT NOT NULL, amount REAL NOT NULL,
+            status TEXT NOT NULL DEFAULT 'Approved', recorded_at TEXT NOT NULL)""")
+        applied.append("table: company_payments")
 
     if "clockin_events" not in existing_tables:
         db.execute("""CREATE TABLE clockin_events (

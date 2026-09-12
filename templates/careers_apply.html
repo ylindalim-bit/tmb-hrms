@@ -30,9 +30,7 @@
 </head>
 <body>
 <div class="careers-header">
-  {% if company_logo_filename %}
-  <img src="{{ url_for('company_logo') }}" alt="Company logo">
-  {% endif %}
+  <img src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="Company logo">
   <h1>TIANMA PRECISION SDN BHD</h1>
   <p>Job Application Form</p>
 </div>

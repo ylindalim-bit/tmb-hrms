@@ -14,9 +14,7 @@
 </style>
 </head>
 <body>
-  {% if company_logo_filename %}
-  <img class="logo" src="{{ url_for('company_logo') }}" alt="Company logo">
-  {% endif %}
+  <img class="logo" src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="Company logo">
   <div class="check">&#10003;</div>
   <h1>Application Received</h1>
   <p>Thank you for applying to TIANMA PRECISION SDN. BHD. Our HR team has received your application

@@ -46,7 +46,7 @@
   <td class="text">
     <select name="day_type__{{ d.day }}" style="min-width:110px;">
       {% for t in day_types %}
-      <option value="{{ t }}" {% if (r.day_type if r else 'WORKED') == t %}selected{% endif %}>{{ t }}</option>
+      <option value="{{ t }}" {% if (r.day_type if r else d.default_day_type) == t %}selected{% endif %}>{{ t }}</option>
       {% endfor %}
     </select>
     {% if d.trip_label %}

@@ -27,6 +27,12 @@
                        border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 10px; }
   .submit-bar { text-align: center; margin-top: 24px; }
   .submit-bar button { font-size: 16px; padding: 14px 40px; }
+  .file-field { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+  .file-field input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+  .file-field .file-btn { display: inline-block; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border);
+                           background: var(--card); color: var(--text); font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .file-field .file-btn:hover { background: var(--accent-light); }
+  .file-field .file-name { font-size: 12px; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -45,7 +51,11 @@
     <label class="required">Position Applied For</label>
     <input type="text" name="position_applied" required>
     <label>Recent Passport Photo (optional)</label>
-    <input type="file" name="photo" accept="image/jpeg,image/png">
+    <div class="file-field">
+      <input type="file" id="f_photo" name="photo" accept="image/jpeg,image/png" onchange="showFileNames(this)">
+      <label for="f_photo" class="file-btn">Choose File</label>
+      <span class="file-name" id="f_photo_name">No file chosen</span>
+    </div>
   </fieldset>
 
   <fieldset>
@@ -211,13 +221,29 @@
     <legend>Supporting Documents</legend>
     <p style="font-size:12px; color:var(--muted);">PDF, Word, or image files (JPG/PNG). You can select more than one file for each.</p>
     <label>Resume / CV</label>
-    <input type="file" name="doc_resume" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple>
+    <div class="file-field">
+      <input type="file" id="f_resume" name="doc_resume" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple onchange="showFileNames(this)">
+      <label for="f_resume" class="file-btn">Choose File(s)</label>
+      <span class="file-name" id="f_resume_name">No file chosen</span>
+    </div>
     <label>Certificates / Diplomas</label>
-    <input type="file" name="doc_certificates" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple>
+    <div class="file-field">
+      <input type="file" id="f_certificates" name="doc_certificates" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple onchange="showFileNames(this)">
+      <label for="f_certificates" class="file-btn">Choose File(s)</label>
+      <span class="file-name" id="f_certificates_name">No file chosen</span>
+    </div>
     <label>License(s) (e.g. driving license)</label>
-    <input type="file" name="doc_license" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple>
+    <div class="file-field">
+      <input type="file" id="f_license" name="doc_license" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple onchange="showFileNames(this)">
+      <label for="f_license" class="file-btn">Choose File(s)</label>
+      <span class="file-name" id="f_license_name">No file chosen</span>
+    </div>
     <label>Other Supporting Documents</label>
-    <input type="file" name="doc_other" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple>
+    <div class="file-field">
+      <input type="file" id="f_other" name="doc_other" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple onchange="showFileNames(this)">
+      <label for="f_other" class="file-btn">Choose File(s)</label>
+      <span class="file-name" id="f_other_name">No file chosen</span>
+    </div>
   </fieldset>
 
   <fieldset>
@@ -316,5 +342,18 @@
     <button type="submit" class="btn">Submit Application</button>
   </div>
 </form>
+
+<script>
+  function showFileNames(input) {
+    var nameEl = document.getElementById(input.id + '_name');
+    if (!input.files || input.files.length === 0) {
+      nameEl.textContent = 'No file chosen';
+    } else if (input.files.length === 1) {
+      nameEl.textContent = input.files[0].name;
+    } else {
+      nameEl.textContent = input.files.length + ' files selected';
+    }
+  }
+</script>
 </body>
 </html>

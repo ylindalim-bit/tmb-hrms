@@ -3,6 +3,13 @@
 {% block extra_style %}
 <style>
   .print-only { display: none; }
+  .print-letterhead { text-align: center; margin-bottom: 20px; }
+  .print-letterhead-row { display: grid; grid-template-columns: 90px 1fr 90px; align-items: center; }
+  .print-letterhead .tmb-logo { grid-column: 1; justify-self: start; height: 36px; width: auto; display: block; }
+  .print-letterhead h1 { grid-column: 2; font-size: 19px; margin: 0; letter-spacing: 0.5px; font-family: Arial, sans-serif; }
+  .print-letterhead .reg-no { color: #333; font-size: 12px; margin-top: 4px; }
+  .print-letterhead .sub { color: #444; font-size: 12px; margin-top: 2px; }
+  .print-letterhead hr { border: none; border-top: 2px solid #111; margin-top: 14px; }
   @media print {
     .card { border: 1px solid #ccc; box-shadow: none; break-inside: avoid; }
     .print-only { display: block; }
@@ -10,6 +17,15 @@
 </style>
 {% endblock %}
 {% block content %}
+<div class="print-only print-letterhead">
+  <div class="print-letterhead-row">
+    <img src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="TMB" class="tmb-logo">
+    <h1>TIANMA PRECISION SDN. BHD.</h1>
+  </div>
+  <div class="reg-no">202301036641 (1530564-X)</div>
+  <div class="sub">Plo 192, Jalan Bakau 5, Kawasan Perindustrian Tanjung Langsat, 81700 Pasir Gudang, Johor, Malaysia.</div>
+  <hr>
+</div>
 <p class="no-print"><a href="{{ url_for('recruitment_list') }}">&larr; Back to Recruitment</a></p>
 <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
   <h1 style="margin-bottom:0;">{{ a.full_name }}</h1>

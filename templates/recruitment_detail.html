@@ -31,7 +31,8 @@
   <h1 style="margin-bottom:0;">{{ a.full_name }}</h1>
   <button type="button" class="btn no-print" onclick="window.print()">Print / Save as PDF</button>
 </div>
-<p style="color:var(--muted); margin-top:-10px;">Applied for {{ a.position_applied or "(not specified)" }} &mdash; submitted {{ a.submitted_at }}</p>
+<p style="margin-top:-10px;">Applied for <strong style="font-size:17px;">{{ a.position_applied or "(not specified)" }}</strong>
+  <span style="color:var(--muted);">&mdash; submitted {{ a.submitted_at }}</span></p>
 
 <div class="card no-print" style="max-width:520px;">
   <h2 style="margin-top:0;">For Official Use</h2>

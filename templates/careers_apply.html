@@ -73,7 +73,7 @@
       <div><label>Marital Status</label>
         <select name="marital_status"><option value=""></option><option>Single</option><option>Married</option><option>Divorced</option><option>Widowed</option></select></div>
       <div><label>Identity Card Colour</label><input type="text" name="ic_color"></div>
-      <div><label>Date of Birth</label><input type="date" name="date_of_birth"></div>
+      <div><label>Date of Birth</label><input type="text" name="date_of_birth" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"></div>
       <div><label>Age</label><input type="text" name="age"></div>
       <div><label>Height (cm)</label><input type="text" name="height_cm"></div>
       <div><label>Weight (kg)</label><input type="text" name="weight_kg"></div>
@@ -108,7 +108,7 @@
       <div class="form-grid">
         <div><label>Name</label><input type="text" name="family_name_{{ i }}"></div>
         <div><label>Relationship</label><input type="text" name="family_relationship_{{ i }}"></div>
-        <div><label>Date of Birth</label><input type="date" name="family_dob_{{ i }}"></div>
+        <div><label>Date of Birth</label><input type="text" name="family_dob_{{ i }}" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"></div>
         <div><label>Occupation</label><input type="text" name="family_occupation_{{ i }}"></div>
         <div><label>Name of Employer / School</label><input type="text" name="family_employer_{{ i }}"></div>
       </div>
@@ -212,7 +212,7 @@
     {% endfor %}
     <div class="form-grid" style="margin-top:10px;">
       <div><label>Length of Notice Required</label><input type="text" name="notice_period"></div>
-      <div><label>Earliest Start Date</label><input type="date" name="earliest_start_date"></div>
+      <div><label>Earliest Start Date</label><input type="text" name="earliest_start_date" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"></div>
       <div><label>Expected Salary</label><input type="text" name="expected_salary"></div>
     </div>
   </fieldset>
@@ -334,7 +334,7 @@
       <label><input type="checkbox" name="declaration_agreed" required> I have read and agree to the above declaration, and I am typing my full name above as my electronic signature *</label>
     </div>
     <div class="form-grid" style="margin-top:10px;">
-      <div><label class="required">Date</label><input type="date" name="declaration_date" required></div>
+      <div><label class="required">Date</label><input type="text" name="declaration_date" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}" required></div>
     </div>
   </fieldset>
 

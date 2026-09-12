@@ -1,11 +1,23 @@
 {% extends "base.html" %}
 {% block title %}{{ a.full_name }} - Recruitment - TMB Payroll{% endblock %}
+{% block extra_style %}
+<style>
+  .print-only { display: none; }
+  @media print {
+    .card { border: 1px solid #ccc; box-shadow: none; break-inside: avoid; }
+    .print-only { display: block; }
+  }
+</style>
+{% endblock %}
 {% block content %}
-<p><a href="{{ url_for('recruitment_list') }}">&larr; Back to Recruitment</a></p>
-<h1>{{ a.full_name }}</h1>
+<p class="no-print"><a href="{{ url_for('recruitment_list') }}">&larr; Back to Recruitment</a></p>
+<div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+  <h1 style="margin-bottom:0;">{{ a.full_name }}</h1>
+  <button type="button" class="btn no-print" onclick="window.print()">Print / Save as PDF</button>
+</div>
 <p style="color:var(--muted); margin-top:-10px;">Applied for {{ a.position_applied or "(not specified)" }} &mdash; submitted {{ a.submitted_at }}</p>
 
-<div class="card" style="max-width:520px;">
+<div class="card no-print" style="max-width:520px;">
   <h2 style="margin-top:0;">For Official Use</h2>
   <form method="post" action="{{ url_for('recruitment_update', app_id=a.id) }}">
     <div class="form-grid">
@@ -34,6 +46,17 @@
     <div class="form-actions"><button type="submit" class="btn">Save</button></div>
     {% if a.reviewed_by %}<p style="font-size:12px; color:var(--muted);">Last reviewed by {{ a.reviewed_by }} at {{ a.reviewed_at }}</p>{% endif %}
   </form>
+</div>
+
+<div class="card print-only" style="max-width:520px;">
+  <h2 style="margin-top:0;">For Official Use</h2>
+  <div class="form-grid">
+    <div><label>Status</label>{{ a.status }}</div>
+    <div><label>Decision</label>{{ a.decision or "-" }}</div>
+    <div><label>Appointment / Department</label>{{ a.appointment_department or "-" }}</div>
+    <div><label>Date</label>{{ a.official_use_date or "-" }}</div>
+  </div>
+  {% if a.comments %}<label style="margin-top:10px;">Comments</label><div>{{ a.comments }}</div>{% endif %}
 </div>
 
 {% if a.photo_stored_name %}

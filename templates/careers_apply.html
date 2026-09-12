@@ -7,10 +7,11 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <style>
   body { max-width: 760px; margin: 0 auto; padding: 20px 16px 60px; }
-  .careers-header { text-align: center; margin-bottom: 20px; }
-  .careers-header img { max-height: 70px; max-width: 100%; display: block; margin: 0 auto 10px; }
-  .careers-header h1 { font-size: 20px; margin-bottom: 2px; }
-  .careers-header p { color: var(--muted); font-size: 13px; margin-top: 0; }
+  .careers-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+  .careers-header img { height: 32px; width: auto; display: block; flex-shrink: 0; }
+  .careers-header .careers-header-text { min-width: 0; }
+  .careers-header h1 { font-size: 16px; margin: 0; line-height: 1.3; }
+  .careers-header p { color: var(--muted); font-size: 12px; margin: 0; }
   fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 18px; }
   legend { font-weight: 700; padding: 0 8px; }
   .subhead { font-weight: 700; font-size: 13px; margin: 14px 0 8px; color: var(--muted); }
@@ -31,8 +32,10 @@
 <body>
 <div class="careers-header">
   <img src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="Company logo">
-  <h1>TIANMA PRECISION SDN BHD</h1>
-  <p>Job Application Form</p>
+  <div class="careers-header-text">
+    <h1>TIANMA PRECISION SDN BHD</h1>
+    <p>Job Application Form</p>
+  </div>
 </div>
 
 <form method="post" action="{{ url_for('careers_apply') }}" enctype="multipart/form-data">

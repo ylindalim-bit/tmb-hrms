@@ -64,17 +64,6 @@
   </form>
 </div>
 
-<div class="card print-only" style="max-width:520px;">
-  <h2 style="margin-top:0;">For Official Use</h2>
-  <div class="form-grid">
-    <div><label>Status</label>{{ a.status }}</div>
-    <div><label>Decision</label>{{ a.decision or "-" }}</div>
-    <div><label>Appointment / Department</label>{{ a.appointment_department or "-" }}</div>
-    <div><label>Date</label>{{ a.official_use_date or "-" }}</div>
-  </div>
-  {% if a.comments %}<label style="margin-top:10px;">Comments</label><div>{{ a.comments }}</div>{% endif %}
-</div>
-
 {% if a.photo_stored_name %}
 <div class="card" style="max-width:200px;">
   <img src="{{ url_for('recruitment_photo', app_id=a.id) }}" alt="Photo" style="max-width:100%; border-radius:6px;">
@@ -283,5 +272,16 @@
   <p>Agreed: <strong>{{ "Yes" if a.declaration_agreed == "Y" else "No" }}</strong> &middot;
      Electronic signature (typed name): <strong>{{ a.applicant_signature_name or "-" }}</strong> &middot;
      Date: {{ a.declaration_date or "-" }}</p>
+</div>
+
+<div class="card print-only" style="max-width:520px;">
+  <h2 style="margin-top:0;">For Official Use</h2>
+  <div class="form-grid">
+    <div><label>Status</label>{{ a.status }}</div>
+    <div><label>Decision</label>{{ a.decision or "-" }}</div>
+    <div><label>Appointment / Department</label>{{ a.appointment_department or "-" }}</div>
+    <div><label>Date</label>{{ a.official_use_date or "-" }}</div>
+  </div>
+  {% if a.comments %}<label style="margin-top:10px;">Comments</label><div>{{ a.comments }}</div>{% endif %}
 </div>
 {% endblock %}

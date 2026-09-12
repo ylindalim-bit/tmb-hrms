@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job Application - TIANMA PRECISION SDN BHD</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<style>
+  body { max-width: 760px; margin: 0 auto; padding: 20px 16px 60px; }
+  .careers-header { text-align: center; margin-bottom: 20px; }
+  .careers-header h1 { font-size: 20px; margin-bottom: 2px; }
+  .careers-header p { color: var(--muted); font-size: 13px; margin-top: 0; }
+  fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 18px; }
+  legend { font-weight: 700; padding: 0 8px; }
+  .subhead { font-weight: 700; font-size: 13px; margin: 14px 0 8px; color: var(--muted); }
+  .row-block { border-top: 1px dashed var(--border); padding-top: 10px; margin-top: 10px; }
+  .row-block:first-of-type { border-top: none; margin-top: 0; padding-top: 0; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; margin-top: 8px; }
+  textarea { width: 100%; font: inherit; padding: 8px; border-radius: 6px; border: 1px solid var(--border);
+             background: var(--card); color: var(--text); box-sizing: border-box; }
+  .yn { display: flex; gap: 16px; align-items: center; margin-top: 6px; }
+  .yn label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); margin: 0; }
+  .required::after { content: " *"; color: var(--danger); }
+  .declaration-text { font-size: 12px; color: var(--muted); max-height: 180px; overflow-y: auto;
+                       border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 10px; }
+  .submit-bar { text-align: center; margin-top: 24px; }
+  .submit-bar button { font-size: 16px; padding: 14px 40px; }
+</style>
+</head>
+<body>
+<div class="careers-header">
+  <h1>TIANMA PRECISION SDN BHD</h1>
+  <p>Job Application Form</p>
+</div>
+
+<form method="post" action="{{ url_for('careers_apply') }}" enctype="multipart/form-data">
+
+  <fieldset>
+    <legend>Position</legend>
+    <label class="required">Position Applied For</label>
+    <input type="text" name="position_applied" required>
+    <label>Recent Passport Photo (optional)</label>
+    <input type="file" name="photo" accept="image/jpeg,image/png">
+  </fieldset>
+
+  <fieldset>
+    <legend>Personal Information</legend>
+    <div class="form-grid">
+      <div><label>Title</label>
+        <select name="salutation"><option value=""></option><option>Mr.</option><option>Mdm.</option><option>Ms.</option></select>
+      </div>
+      <div><label class="required">Full Name (as per IC / Passport)</label>
+        <input type="text" name="full_name" required></div>
+      <div><label>Chinese Name (if any)</label><input type="text" name="chinese_name"></div>
+      <div><label>Gender</label>
+        <select name="gender"><option value=""></option><option>Male</option><option>Female</option></select></div>
+      <div><label>Identity Card / Passport No / FIN No</label><input type="text" name="ic_passport_no"></div>
+      <div><label>Marital Status</label>
+        <select name="marital_status"><option value=""></option><option>Single</option><option>Married</option><option>Divorced</option><option>Widowed</option></select></div>
+      <div><label>Identity Card Colour</label><input type="text" name="ic_color"></div>
+      <div><label>Date of Birth</label><input type="date" name="date_of_birth"></div>
+      <div><label>Age</label><input type="text" name="age"></div>
+      <div><label>Height (cm)</label><input type="text" name="height_cm"></div>
+      <div><label>Weight (kg)</label><input type="text" name="weight_kg"></div>
+      <div><label>Home Tel No</label><input type="text" name="home_tel_no"></div>
+      <div><label>Office Tel No</label><input type="text" name="office_tel_no"></div>
+      <div><label>Handphone No</label><input type="text" name="handphone_no"></div>
+      <div><label>E-mail Address</label><input type="email" name="email"></div>
+      <div><label>Religion</label><input type="text" name="religion"></div>
+      <div><label>Race</label><input type="text" name="race"></div>
+      <div><label>Dialect</label><input type="text" name="dialect"></div>
+      <div><label>Place of Birth</label><input type="text" name="place_of_birth"></div>
+      <div><label>Nationality</label><input type="text" name="nationality"></div>
+      <div><label>Driving License</label>
+        <select name="driving_license"><option value=""></option><option>Yes</option><option>No</option></select></div>
+      <div><label>Driving License Class</label><input type="text" name="driving_license_class"></div>
+      <div><label>Car Owner</label>
+        <select name="car_owner"><option value=""></option><option>Yes</option><option>No</option></select></div>
+      <div><label>National Service Status</label>
+        <select name="national_service_status"><option value=""></option><option>Completed</option><option>Exempted</option><option>Reservist</option><option>Others</option></select></div>
+      <div><label>ORD</label><input type="text" name="national_service_ord"></div>
+      <div><label>Vocation</label><input type="text" name="national_service_vocation"></div>
+      <div><label>Last Rank Held</label><input type="text" name="national_service_last_rank"></div>
+    </div>
+    <label>Address</label>
+    <textarea name="address" rows="2"></textarea>
+  </fieldset>
+
+  <fieldset>
+    <legend>Family Particulars (Spouse, Children, Parents, Siblings)</legend>
+    {% for i in family_rows %}
+    <div class="row-block">
+      <div class="form-grid">
+        <div><label>Name</label><input type="text" name="family_name_{{ i }}"></div>
+        <div><label>Relationship</label><input type="text" name="family_relationship_{{ i }}"></div>
+        <div><label>Date of Birth</label><input type="date" name="family_dob_{{ i }}"></div>
+        <div><label>Occupation</label><input type="text" name="family_occupation_{{ i }}"></div>
+        <div><label>Name of Employer / School</label><input type="text" name="family_employer_{{ i }}"></div>
+      </div>
+    </div>
+    {% endfor %}
+  </fieldset>
+
+  <fieldset>
+    <legend>Educational Background</legend>
+    {% for i in education_rows %}
+    <div class="row-block">
+      <div class="form-grid">
+        <div><label>From (mm/yy)</label><input type="text" name="edu_from_{{ i }}" placeholder="mm/yy"></div>
+        <div><label>To (mm/yy)</label><input type="text" name="edu_to_{{ i }}" placeholder="mm/yy"></div>
+        <div><label>School / Institution</label><input type="text" name="edu_institution_{{ i }}"></div>
+        <div><label>Certificate / Diploma / Degree Awarded</label><input type="text" name="edu_certificate_{{ i }}"></div>
+      </div>
+    </div>
+    {% endfor %}
+    <div class="subhead">Other Qualifications / Courses Currently Attending</div>
+    {% for i in other_qualification_rows %}
+    <div class="row-block">
+      <div class="form-grid">
+        <div><label>From (mm/yy)</label><input type="text" name="oq_from_{{ i }}" placeholder="mm/yy"></div>
+        <div><label>To (mm/yy)</label><input type="text" name="oq_to_{{ i }}" placeholder="mm/yy"></div>
+        <div><label>Institution</label><input type="text" name="oq_institution_{{ i }}"></div>
+        <div><label>Name of Course</label><input type="text" name="oq_course_{{ i }}"></div>
+      </div>
+    </div>
+    {% endfor %}
+    <div class="subhead">Language and Dialect Proficiency</div>
+    {% for i in language_rows %}
+    <div class="row-block">
+      <div class="form-grid">
+        <div><label>Language / Dialect</label><input type="text" name="lang_language_{{ i }}"></div>
+        <div><label>Speak</label>
+          <select name="lang_speak_{{ i }}"><option value=""></option><option>Slight</option><option>Fair</option><option>Fluent</option></select></div>
+        <div><label>Read</label>
+          <select name="lang_read_{{ i }}"><option value=""></option><option>Slight</option><option>Fair</option><option>Fluent</option></select></div>
+        <div><label>Write</label>
+          <select name="lang_write_{{ i }}"><option value=""></option><option>Slight</option><option>Fair</option><option>Fluent</option></select></div>
+      </div>
+    </div>
+    {% endfor %}
+    <label>Computer Literacy and Other Skills</label>
+    <textarea name="computer_skills" rows="2"></textarea>
+  </fieldset>
+
+  <fieldset>
+    <legend>Health and Interests</legend>
+    <label>Have you been or are you suffering from any mental illness, physical disability, disease, medical condition or serious illness?</label>
+    <div class="yn">
+      <label><input type="radio" name="health_illness" value="Yes"> Yes</label>
+      <label><input type="radio" name="health_illness" value="No" checked> No</label>
+    </div>
+    <label>If yes, give details</label>
+    <textarea name="health_illness_details" rows="2"></textarea>
+
+    <label>Do you have any pre-existing illness or are you currently undergoing long term medical treatment?</label>
+    <div class="yn">
+      <label><input type="radio" name="health_treatment" value="Yes"> Yes</label>
+      <label><input type="radio" name="health_treatment" value="No" checked> No</label>
+    </div>
+    <label>If yes, give details</label>
+    <textarea name="health_treatment_details" rows="2"></textarea>
+
+    <label>Do you smoke or vape?</label>
+    <div class="yn">
+      <label><input type="radio" name="smoke_vape" value="Yes"> Yes</label>
+      <label><input type="radio" name="smoke_vape" value="No" checked> No</label>
+    </div>
+    <label>If yes, please specify</label>
+    <input type="text" name="smoke_vape_details">
+
+    <label>Hobbies, Interests and Games</label>
+    <textarea name="hobbies" rows="2"></textarea>
+    <label>Membership of Clubs, Associations, Societies and Community Centres</label>
+    <textarea name="memberships" rows="2"></textarea>
+  </fieldset>
+
+  <fieldset>
+    <legend>Employment History (start with your present/most recent employer)</legend>
+    {% for i in employment_rows %}
+    <div class="row-block">
+      <div class="subhead">{{ "Current / Last Employer" if i == 0 else "Previous Employer " ~ i }}</div>
+      <div class="form-grid">
+        <div><label>Name of Employer</label><input type="text" name="emp_employer_name_{{ i }}"></div>
+        <div><label>Job Title</label><input type="text" name="emp_job_title_{{ i }}"></div>
+        <div><label>Job Title of Supervisor</label><input type="text" name="emp_supervisor_title_{{ i }}"></div>
+        <div><label>From (mm/yy)</label><input type="text" name="emp_from_{{ i }}" placeholder="mm/yy"></div>
+        <div><label>To (mm/yy)</label><input type="text" name="emp_to_{{ i }}" placeholder="mm/yy"></div>
+        <div><label>Basic Salary</label><input type="text" name="emp_basic_salary_{{ i }}"></div>
+        <div><label>Gross Salary</label><input type="text" name="emp_gross_salary_{{ i }}"></div>
+        <div><label>13th Month Bonus (Months)</label><input type="text" name="emp_bonus_months_{{ i }}"></div>
+        <div><label>Other Allowances</label><input type="text" name="emp_other_allowances_{{ i }}"></div>
+        <div><label>Reasons for Leaving</label><input type="text" name="emp_reasons_leaving_{{ i }}"></div>
+      </div>
+      <label>Major Duties &amp; Responsibilities</label>
+      <textarea name="emp_duties_{{ i }}" rows="2"></textarea>
+    </div>
+    {% endfor %}
+    <div class="form-grid" style="margin-top:10px;">
+      <div><label>Length of Notice Required</label><input type="text" name="notice_period"></div>
+      <div><label>Earliest Start Date</label><input type="date" name="earliest_start_date"></div>
+      <div><label>Expected Salary</label><input type="text" name="expected_salary"></div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>References (do not include relatives; one should have supervised you before)</legend>
+    <div class="row-block">
+      <div class="form-grid">
+        <div><label>Name</label><input type="text" name="reference_1_name"></div>
+        <div><label>Occupation</label><input type="text" name="reference_1_occupation"></div>
+        <div><label>Contact Tel No</label><input type="text" name="reference_1_tel"></div>
+        <div><label>Years Known</label><input type="text" name="reference_1_years_known"></div>
+      </div>
+      <label>Address</label><textarea name="reference_1_address" rows="2"></textarea>
+    </div>
+    <div class="row-block">
+      <div class="form-grid">
+        <div><label>Name</label><input type="text" name="reference_2_name"></div>
+        <div><label>Occupation</label><input type="text" name="reference_2_occupation"></div>
+        <div><label>Contact Tel No</label><input type="text" name="reference_2_tel"></div>
+        <div><label>Years Known</label><input type="text" name="reference_2_years_known"></div>
+      </div>
+      <label>Address</label><textarea name="reference_2_address" rows="2"></textarea>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Supplementary Information</legend>
+    <p style="font-size:12px; color:var(--muted);">Please give details if you answer "Yes" to any of the following.</p>
+    {% set supp_questions = [
+      ("supp_relatives_in_group", "Do you have any relatives or friends who are presently or formerly employed by or have dealings with any company in Tianma Group?"),
+      ("supp_family_similar_industry", "Does any member of your immediate family work in a similar industry?"),
+      ("supp_suspended_discharged", "Have you ever been suspended, discharged or dismissed from the service of any previous employer(s)?"),
+      ("supp_financial_embarrassment", "Have you ever been or are you under any financial embarrassment?"),
+      ("supp_police_investigation", "Have you ever been under police investigation, charged or convicted in Court of Law in any country?"),
+      ("supp_business_share", "Do you have any share in any business undertaking other than in a public-listed company?"),
+      ("supp_directorship", "Are you holding any directorship or other appointment in any company?"),
+    ] %}
+    {% for key, question in supp_questions %}
+    <div class="row-block">
+      <label style="margin-top:0;">{{ question }}</label>
+      <div class="yn">
+        <label><input type="radio" name="{{ key }}" value="Yes"> Yes</label>
+        <label><input type="radio" name="{{ key }}" value="No" checked> No</label>
+      </div>
+      <input type="text" name="{{ key }}_details" placeholder="Details if Yes">
+    </div>
+    {% endfor %}
+  </fieldset>
+
+  <fieldset>
+    <legend>Person to Contact in Case of Emergency</legend>
+    {% for n in [1, 2] %}
+    <div class="row-block">
+      <div class="subhead">Contact {{ n }}</div>
+      <div class="form-grid">
+        <div><label>Name</label><input type="text" name="emergency_contact_{{ n }}_name"></div>
+        <div><label>Relationship</label><input type="text" name="emergency_contact_{{ n }}_relationship"></div>
+        <div><label>E-mail Address</label><input type="email" name="emergency_contact_{{ n }}_email"></div>
+        <div><label>Home Tel No</label><input type="text" name="emergency_contact_{{ n }}_home_tel"></div>
+        <div><label>Office Tel No</label><input type="text" name="emergency_contact_{{ n }}_office_tel"></div>
+        <div><label>Handphone No</label><input type="text" name="emergency_contact_{{ n }}_handphone"></div>
+      </div>
+      <label>Address</label><textarea name="emergency_contact_{{ n }}_address" rows="2"></textarea>
+    </div>
+    {% endfor %}
+  </fieldset>
+
+  <fieldset>
+    <legend>Declaration</legend>
+    <div class="declaration-text">
+      I declare that the information given by me in this application for employment is accurate and true and
+      that I have withheld no information which would in any way affect my employment by the Company. I accept
+      that if any information given by me in this application is in any way false or incorrect, the Company
+      shall have the right to terminate my employment without notice and without giving any reason.
+      <br><br>
+      By providing the information set out in this form, I agree and consent to the Company and its related
+      corporations (collectively, the "Group"), as well as their respective representatives and agents
+      ("Representatives") collecting, using, disclosing and sharing amongst themselves my personal data provided
+      above as well as in the records of the Group from time to time, and disclosing such personal data to the
+      Group's authorized service providers, and relevant third parties for purposes reasonably required by the
+      Group and its Representatives to process my employment application, assess my suitability for the position
+      which I am applying for, and if I am offered employment by the Group, to administer and manage my
+      employment relationship with the Group.
+      <br><br>
+      Such purposes are set out in the Group's Data Protection Policy, which is accessible at
+      http://www.tianmaco.com or available on request and which I confirm I have read and understood.
+    </div>
+    <div class="yn">
+      <label><input type="checkbox" name="declaration_agreed" required> I have read and agree to the above declaration, and I am typing my full name above as my electronic signature *</label>
+    </div>
+    <div class="form-grid" style="margin-top:10px;">
+      <div><label class="required">Date</label><input type="date" name="declaration_date" required></div>
+    </div>
+  </fieldset>
+
+  <div class="submit-bar">
+    <button type="submit" class="btn">Submit Application</button>
+  </div>
+</form>
+</body>
+</html>

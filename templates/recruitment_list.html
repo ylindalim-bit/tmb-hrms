@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Recruitment - TMB Payroll{% endblock %}
+{% block content %}
+<h1>Recruitment</h1>
+
+<div class="card" style="max-width:640px;">
+  Share this link with candidates so they can apply online:
+  <div style="margin-top:6px; font-family:monospace; font-size:13px; word-break:break-all;">{{ apply_url }}</div>
+</div>
+
+<div class="card">
+  <div style="margin-bottom:10px;">
+    <a href="{{ url_for('recruitment_list') }}" class="btn {{ 'secondary' if status_filter }}" style="padding:4px 10px;">All</a>
+    {% for s in ["New", "Reviewed", "Shortlisted", "Not Suitable", "Hired"] %}
+    <a href="{{ url_for('recruitment_list', status=s) }}" class="btn {{ 'secondary' if status_filter != s }}" style="padding:4px 10px;">{{ s }}</a>
+    {% endfor %}
+  </div>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th class="text">Name</th><th class="text">Position Applied For</th><th class="text">Contact</th>
+          <th class="text">Status</th><th class="text">Submitted</th></tr>
+    </thead>
+    <tbody>
+      {% for a in applications %}
+      <tr>
+        <td class="text"><a href="{{ url_for('recruitment_detail', app_id=a.id) }}">{{ a.full_name }}</a></td>
+        <td class="text">{{ a.position_applied or "" }}</td>
+        <td class="text">{{ a.handphone_no or a.email or "" }}</td>
+        <td class="text">
+          <span class="pill {% if a.status == 'Hired' %}finalized{% elif a.status == 'Not Suitable' %}rejected{% else %}draft{% endif %}">{{ a.status }}</span>
+        </td>
+        <td class="text">{{ a.submitted_at }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text" style="color:var(--muted);">No applications yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+{% block title %}{{ a.full_name }} - Recruitment - TMB Payroll{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('recruitment_list') }}">&larr; Back to Recruitment</a></p>
+<h1>{{ a.full_name }}</h1>
+<p style="color:var(--muted); margin-top:-10px;">Applied for {{ a.position_applied or "(not specified)" }} &mdash; submitted {{ a.submitted_at }}</p>
+
+<div class="card" style="max-width:520px;">
+  <h2 style="margin-top:0;">For Official Use</h2>
+  <form method="post" action="{{ url_for('recruitment_update', app_id=a.id) }}">
+    <div class="form-grid">
+      <div><label>Status</label>
+        <select name="status">
+          {% for s in ["New", "Reviewed", "Shortlisted", "Not Suitable", "Hired"] %}
+          <option value="{{ s }}" {{ "selected" if a.status == s }}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div><label>Decision</label>
+        <select name="decision">
+          <option value=""></option>
+          {% for d in ["Suitable", "Not Suitable", "Keep in View"] %}
+          <option value="{{ d }}" {{ "selected" if a.decision == d }}>{{ d }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div><label>Appointment / Department</label>
+        <input type="text" name="appointment_department" value="{{ a.appointment_department or '' }}"></div>
+      <div><label>Date</label>
+        <input type="date" name="official_use_date" value="{{ a.official_use_date or '' }}"></div>
+    </div>
+    <label>Comments</label>
+    <textarea name="comments" rows="2" style="width:100%; font:inherit; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--card); color:var(--text); box-sizing:border-box;">{{ a.comments or "" }}</textarea>
+    <div class="form-actions"><button type="submit" class="btn">Save</button></div>
+    {% if a.reviewed_by %}<p style="font-size:12px; color:var(--muted);">Last reviewed by {{ a.reviewed_by }} at {{ a.reviewed_at }}</p>{% endif %}
+  </form>
+</div>
+
+{% if a.photo_stored_name %}
+<div class="card" style="max-width:200px;">
+  <img src="{{ url_for('recruitment_photo', app_id=a.id) }}" alt="Photo" style="max-width:100%; border-radius:6px;">
+</div>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0;">Personal Information</h2>
+  <div class="form-grid">
+    <div><label>Salutation</label>{{ a.salutation or "-" }}</div>
+    <div><label>Chinese Name</label>{{ a.chinese_name or "-" }}</div>
+    <div><label>Gender</label>{{ a.gender or "-" }}</div>
+    <div><label>IC / Passport No</label>{{ a.ic_passport_no or "-" }}</div>
+    <div><label>Marital Status</label>{{ a.marital_status or "-" }}</div>
+    <div><label>IC Colour</label>{{ a.ic_color or "-" }}</div>
+    <div><label>Date of Birth</label>{{ a.date_of_birth or "-" }}</div>
+    <div><label>Age</label>{{ a.age or "-" }}</div>
+    <div><label>Height (cm)</label>{{ a.height_cm or "-" }}</div>
+    <div><label>Weight (kg)</label>{{ a.weight_kg or "-" }}</div>
+    <div><label>Home Tel No</label>{{ a.home_tel_no or "-" }}</div>
+    <div><label>Office Tel No</label>{{ a.office_tel_no or "-" }}</div>
+    <div><label>Handphone No</label>{{ a.handphone_no or "-" }}</div>
+    <div><label>E-mail</label>{{ a.email or "-" }}</div>
+    <div><label>Religion</label>{{ a.religion or "-" }}</div>
+    <div><label>Race</label>{{ a.race or "-" }}</div>
+    <div><label>Dialect</label>{{ a.dialect or "-" }}</div>
+    <div><label>Place of Birth</label>{{ a.place_of_birth or "-" }}</div>
+    <div><label>Nationality</label>{{ a.nationality or "-" }}</div>
+    <div><label>Driving License</label>{{ a.driving_license or "-" }} {{ a.driving_license_class or "" }}</div>
+    <div><label>Car Owner</label>{{ a.car_owner or "-" }}</div>
+    <div><label>National Service</label>{{ a.national_service_status or "-" }}</div>
+    <div><label>ORD / Vocation / Rank</label>{{ a.national_service_ord or "-" }} / {{ a.national_service_vocation or "-" }} / {{ a.national_service_last_rank or "-" }}</div>
+  </div>
+  <label style="margin-top:10px;">Address</label>
+  <div>{{ a.address or "-" }}</div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">Family Particulars</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th class="text">Name</th><th class="text">Relationship</th><th class="text">DOB</th><th class="text">Occupation</th><th class="text">Employer / School</th></tr></thead>
+    <tbody>
+      {% for r in family %}
+      <tr><td class="text">{{ r.name }}</td><td class="text">{{ r.relationship }}</td><td class="text">{{ r.dob }}</td><td class="text">{{ r.occupation }}</td><td class="text">{{ r.employer }}</td></tr>
+      {% else %}<tr><td colspan="5" class="text" style="color:var(--muted);">None given.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">Educational Background</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th class="text">From</th><th class="text">To</th><th class="text">Institution</th><th class="text">Certificate / Diploma / Degree</th></tr></thead>
+    <tbody>
+      {% for r in education %}
+      <tr><td class="text">{{ r.from }}</td><td class="text">{{ r.to }}</td><td class="text">{{ r.institution }}</td><td class="text">{{ r.certificate }}</td></tr>
+      {% else %}<tr><td colspan="4" class="text" style="color:var(--muted);">None given.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if other_quals %}
+  <h3>Other Qualifications / Courses Currently Attending</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th class="text">From</th><th class="text">To</th><th class="text">Institution</th><th class="text">Course</th></tr></thead>
+    <tbody>
+      {% for r in other_quals %}
+      <tr><td class="text">{{ r.from }}</td><td class="text">{{ r.to }}</td><td class="text">{{ r.institution }}</td><td class="text">{{ r.course }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+  {% if languages %}
+  <h3>Language and Dialect Proficiency</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th class="text">Language</th><th class="text">Speak</th><th class="text">Read</th><th class="text">Write</th></tr></thead>
+    <tbody>
+      {% for r in languages %}
+      <tr><td class="text">{{ r.language }}</td><td class="text">{{ r.speak }}</td><td class="text">{{ r.read }}</td><td class="text">{{ r.write }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+  {% if a.computer_skills %}
+  <h3>Computer Literacy and Other Skills</h3>
+  <p>{{ a.computer_skills }}</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">Health and Interests</h2>
+  <div class="form-grid">
+    <div><label>Mental/physical illness or serious condition</label>{{ a.health_illness or "-" }}
+      {% if a.health_illness_details %}<div style="color:var(--muted); font-size:12px;">{{ a.health_illness_details }}</div>{% endif %}</div>
+    <div><label>Pre-existing illness / long-term treatment</label>{{ a.health_treatment or "-" }}
+      {% if a.health_treatment_details %}<div style="color:var(--muted); font-size:12px;">{{ a.health_treatment_details }}</div>{% endif %}</div>
+    <div><label>Smoke / Vape</label>{{ a.smoke_vape or "-" }}
+      {% if a.smoke_vape_details %}<div style="color:var(--muted); font-size:12px;">{{ a.smoke_vape_details }}</div>{% endif %}</div>
+  </div>
+  {% if a.hobbies %}<label style="margin-top:10px;">Hobbies, Interests and Games</label><div>{{ a.hobbies }}</div>{% endif %}
+  {% if a.memberships %}<label style="margin-top:10px;">Club / Association Memberships</label><div>{{ a.memberships }}</div>{% endif %}
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">Employment History</h2>
+  {% for r in employment %}
+  <div style="border-top:1px solid var(--border); padding-top:10px; margin-top:10px;">
+    <strong>{{ r.employer_name }}</strong> &mdash; {{ r.job_title }} ({{ r.from }} to {{ r.to }})
+    <div class="form-grid" style="margin-top:6px;">
+      <div><label>Supervisor's Title</label>{{ r.supervisor_title or "-" }}</div>
+      <div><label>Basic Salary</label>{{ r.basic_salary or "-" }}</div>
+      <div><label>Gross Salary</label>{{ r.gross_salary or "-" }}</div>
+      <div><label>13th Month Bonus (Months)</label>{{ r.bonus_months or "-" }}</div>
+      <div><label>Other Allowances</label>{{ r.other_allowances or "-" }}</div>
+      <div><label>Reasons for Leaving</label>{{ r.reasons_leaving or "-" }}</div>
+    </div>
+    {% if r.duties %}<label style="margin-top:6px;">Major Duties &amp; Responsibilities</label><div>{{ r.duties }}</div>{% endif %}
+  </div>
+  {% else %}<p style="color:var(--muted);">None given.</p>{% endfor %}
+  <div class="form-grid" style="margin-top:10px; border-top:1px solid var(--border); padding-top:10px;">
+    <div><label>Length of Notice Required</label>{{ a.notice_period or "-" }}</div>
+    <div><label>Earliest Start Date</label>{{ a.earliest_start_date or "-" }}</div>
+    <div><label>Expected Salary</label>{{ a.expected_salary or "-" }}</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">References</h2>
+  <div class="form-grid">
+    <div><label>Reference 1</label>{{ a.reference_1_name or "-" }}, {{ a.reference_1_occupation or "-" }}<br>
+      {{ a.reference_1_address or "" }}<br>Tel: {{ a.reference_1_tel or "-" }} &middot; Years Known: {{ a.reference_1_years_known or "-" }}</div>
+    <div><label>Reference 2</label>{{ a.reference_2_name or "-" }}, {{ a.reference_2_occupation or "-" }}<br>
+      {{ a.reference_2_address or "" }}<br>Tel: {{ a.reference_2_tel or "-" }} &middot; Years Known: {{ a.reference_2_years_known or "-" }}</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">Supplementary Information</h2>
+  {% set supp_questions = [
+    ("supp_relatives_in_group", "Relatives/friends employed by or dealing with Tianma Group"),
+    ("supp_family_similar_industry", "Immediate family working in a similar industry"),
+    ("supp_suspended_discharged", "Suspended, discharged or dismissed by a previous employer"),
+    ("supp_financial_embarrassment", "Under financial embarrassment"),
+    ("supp_police_investigation", "Under police investigation / charged / convicted"),
+    ("supp_business_share", "Share in a business undertaking (non public-listed)"),
+    ("supp_directorship", "Holding directorship or other appointment"),
+  ] %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th class="text">Question</th><th class="text">Answer</th><th class="text">Details</th></tr></thead>
+    <tbody>
+      {% for key, label in supp_questions %}
+      <tr><td class="text">{{ label }}</td><td class="text">{{ a[key] or "-" }}</td><td class="text">{{ a[key ~ "_details"] or "" }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">Person to Contact in Case of Emergency</h2>
+  <div class="form-grid">
+    {% for n in [1, 2] %}
+    <div>
+      <label>Contact {{ n }}</label>
+      {{ a["emergency_contact_" ~ n ~ "_name"] or "-" }} ({{ a["emergency_contact_" ~ n ~ "_relationship"] or "-" }})<br>
+      {{ a["emergency_contact_" ~ n ~ "_address"] or "" }}<br>
+      Home: {{ a["emergency_contact_" ~ n ~ "_home_tel"] or "-" }} &middot;
+      Office: {{ a["emergency_contact_" ~ n ~ "_office_tel"] or "-" }} &middot;
+      Mobile: {{ a["emergency_contact_" ~ n ~ "_handphone"] or "-" }}<br>
+      {{ a["emergency_contact_" ~ n ~ "_email"] or "" }}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">Declaration</h2>
+  <p>Agreed: <strong>{{ "Yes" if a.declaration_agreed == "Y" else "No" }}</strong> &middot;
+     Electronic signature (typed name): <strong>{{ a.applicant_signature_name or "-" }}</strong> &middot;
+     Date: {{ a.declaration_date or "-" }}</p>
+</div>
+{% endblock %}

@@ -59,6 +59,9 @@
     <a href="{{ url_for('appraisals_admin') }}">Appraisals
       {% if pending_appraisal_count %}<span class="pill draft" style="margin-left:3px;">{{ pending_appraisal_count }}</span>{% endif %}
     </a>
+    <a href="{{ url_for('recruitment_list') }}">Recruitment
+      {% if pending_recruitment_count %}<span class="pill draft" style="margin-left:3px;">{{ pending_recruitment_count }}</span>{% endif %}
+    </a>
     <a href="{{ url_for('payroll_settings_page') }}">Settings</a>
     <a href="{{ url_for('clockin_locations_page') }}">Clock-In Locations</a>
     <a href="{{ url_for('hr_go_to_portal') }}" style="color:var(--muted);">Staff Portal &rarr;</a>

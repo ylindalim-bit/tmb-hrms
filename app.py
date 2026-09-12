@@ -361,13 +361,20 @@ def inject_pending_counts():
         pending_ot_claim_count = db.execute(
             "SELECT COUNT(*) AS c FROM ot_claims WHERE status='Pending'"
         ).fetchone()["c"]
+        # Recruitment isn't a per-employee approver capability, so an
+        # approver account (e.g. Mr Kee) never sees this count, same
+        # treatment as pending_medical_claim_count above.
+        pending_recruitment_count = db.execute(
+            "SELECT COUNT(*) AS c FROM job_applications WHERE status='New'"
+        ).fetchone()["c"] if session.get("hr_role") != "approver" else 0
     except sqlite3.OperationalError:
         return {}
     return {"pending_leave_count": pending_leave_count, "pending_trip_count": pending_trip_count,
             "pending_medical_claim_count": pending_medical_claim_count,
             "pending_appraisal_count": pending_appraisal_count,
             "pending_profile_update_count": pending_profile_update_count,
-            "pending_ot_claim_count": pending_ot_claim_count}
+            "pending_ot_claim_count": pending_ot_claim_count,
+            "pending_recruitment_count": pending_recruitment_count}
 
 
 def get_db():
@@ -392,6 +399,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/static/",
     "/portal",       # Staff Portal has its own separate @portal_login_required gate
     "/where-am-i",   # public no-login GPS helper for staff to send HR their coordinates
+    "/careers",      # public no-login online job application form for candidates
     "/api/",         # read-only payroll-export feed consumed by another local process
     "/hr/login",
     "/hr/logout",
@@ -2873,6 +2881,203 @@ def where_am_i():
     return render_template("where_am_i.html")
 
 
+# ---------------- Recruitment / Careers ----------------
+# Public online version of the paper "TM-Job Application Form": candidates
+# fill it in themselves at /careers/apply (no login, same treatment as
+# /where-am-i above), HR reviews and decides at /hr/recruitment.
+
+RECRUITMENT_PHOTO_DIR_NAME = "recruitment"
+
+# Repeating sections use a fixed number of blank row slots on the form
+# (simplest thing that works for a form this size on a phone) rather than
+# JS-driven add/remove rows; only non-blank rows are kept when saving.
+CAREERS_FAMILY_ROWS = 4
+CAREERS_EDUCATION_ROWS = 3
+CAREERS_OTHER_QUALIFICATION_ROWS = 2
+CAREERS_LANGUAGE_ROWS = 3
+CAREERS_EMPLOYMENT_ROWS = 3
+
+
+def _collect_indexed_rows(form, prefix, fields, count):
+    """Collects form fields named '{prefix}_{field}_{i}' for i in
+    range(count) into a list of dicts, one per row, dropping rows where
+    every field is blank."""
+    rows = []
+    for i in range(count):
+        row = {f: (form.get(f"{prefix}_{f}_{i}", "") or "").strip() for f in fields}
+        if any(row.values()):
+            rows.append(row)
+    return rows
+
+
+@app.route("/careers/apply", methods=["GET", "POST"])
+def careers_apply():
+    if request.method == "GET":
+        return render_template(
+            "careers_apply.html",
+            family_rows=range(CAREERS_FAMILY_ROWS), education_rows=range(CAREERS_EDUCATION_ROWS),
+            other_qualification_rows=range(CAREERS_OTHER_QUALIFICATION_ROWS),
+            language_rows=range(CAREERS_LANGUAGE_ROWS), employment_rows=range(CAREERS_EMPLOYMENT_ROWS),
+        )
+
+    f = request.form
+    full_name = (f.get("full_name") or "").strip()
+    if not full_name or f.get("declaration_agreed") != "on":
+        return "Full name and agreeing to the declaration are both required.", 400
+
+    family = _collect_indexed_rows(f, "family", ["name", "relationship", "dob", "occupation", "employer"], CAREERS_FAMILY_ROWS)
+    education = _collect_indexed_rows(f, "edu", ["from", "to", "institution", "certificate"], CAREERS_EDUCATION_ROWS)
+    other_quals = _collect_indexed_rows(f, "oq", ["from", "to", "institution", "course"], CAREERS_OTHER_QUALIFICATION_ROWS)
+    languages = _collect_indexed_rows(f, "lang", ["language", "speak", "read", "write"], CAREERS_LANGUAGE_ROWS)
+    employment = _collect_indexed_rows(
+        f, "emp",
+        ["employer_name", "job_title", "supervisor_title", "from", "to", "duties",
+         "basic_salary", "gross_salary", "bonus_months", "other_allowances", "reasons_leaving"],
+        CAREERS_EMPLOYMENT_ROWS,
+    )
+
+    db = get_db()
+    now = datetime.datetime.now(MYT).isoformat(timespec="seconds")
+    cur = db.execute(
+        """INSERT INTO job_applications (
+            submitted_at, status, position_applied,
+            salutation, full_name, chinese_name, gender, ic_passport_no, marital_status, ic_color,
+            date_of_birth, age, height_cm, weight_kg,
+            address, home_tel_no, office_tel_no, home_telephone, handphone_no, email,
+            religion, race, dialect, place_of_birth, nationality,
+            driving_license, driving_license_class, car_owner,
+            national_service_status, national_service_ord, national_service_vocation, national_service_last_rank,
+            family_particulars_json, education_json, other_qualifications_json, languages_json,
+            computer_skills,
+            health_illness, health_illness_details, health_treatment, health_treatment_details,
+            smoke_vape, smoke_vape_details, hobbies, memberships,
+            employment_history_json, notice_period, earliest_start_date, expected_salary,
+            reference_1_name, reference_1_occupation, reference_1_address, reference_1_tel, reference_1_years_known,
+            reference_2_name, reference_2_occupation, reference_2_address, reference_2_tel, reference_2_years_known,
+            supp_relatives_in_group, supp_relatives_in_group_details,
+            supp_family_similar_industry, supp_family_similar_industry_details,
+            supp_suspended_discharged, supp_suspended_discharged_details,
+            supp_financial_embarrassment, supp_financial_embarrassment_details,
+            supp_police_investigation, supp_police_investigation_details,
+            supp_business_share, supp_business_share_details,
+            supp_directorship, supp_directorship_details,
+            emergency_contact_1_name, emergency_contact_1_relationship, emergency_contact_1_address,
+            emergency_contact_1_email, emergency_contact_1_home_tel, emergency_contact_1_office_tel, emergency_contact_1_handphone,
+            emergency_contact_2_name, emergency_contact_2_relationship, emergency_contact_2_address,
+            emergency_contact_2_email, emergency_contact_2_home_tel, emergency_contact_2_office_tel, emergency_contact_2_handphone,
+            declaration_agreed, applicant_signature_name, declaration_date
+        ) VALUES (?,?,?, ?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?,?,?, ?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?, ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,?,?,?,?,?,?,?,?,? , ?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?,?,?)""",
+        (
+            now, "New", f.get("position_applied"),
+            f.get("salutation"), full_name, f.get("chinese_name"), f.get("gender"), f.get("ic_passport_no"), f.get("marital_status"), f.get("ic_color"),
+            f.get("date_of_birth"), f.get("age"), f.get("height_cm"), f.get("weight_kg"),
+            f.get("address"), f.get("home_tel_no"), f.get("office_tel_no"), f.get("home_telephone"), f.get("handphone_no"), f.get("email"),
+            f.get("religion"), f.get("race"), f.get("dialect"), f.get("place_of_birth"), f.get("nationality"),
+            f.get("driving_license"), f.get("driving_license_class"), f.get("car_owner"),
+            f.get("national_service_status"), f.get("national_service_ord"), f.get("national_service_vocation"), f.get("national_service_last_rank"),
+            json.dumps(family), json.dumps(education), json.dumps(other_quals), json.dumps(languages),
+            f.get("computer_skills"),
+            f.get("health_illness"), f.get("health_illness_details"), f.get("health_treatment"), f.get("health_treatment_details"),
+            f.get("smoke_vape"), f.get("smoke_vape_details"), f.get("hobbies"), f.get("memberships"),
+            json.dumps(employment), f.get("notice_period"), f.get("earliest_start_date"), f.get("expected_salary"),
+            f.get("reference_1_name"), f.get("reference_1_occupation"), f.get("reference_1_address"), f.get("reference_1_tel"), f.get("reference_1_years_known"),
+            f.get("reference_2_name"), f.get("reference_2_occupation"), f.get("reference_2_address"), f.get("reference_2_tel"), f.get("reference_2_years_known"),
+            f.get("supp_relatives_in_group"), f.get("supp_relatives_in_group_details"),
+            f.get("supp_family_similar_industry"), f.get("supp_family_similar_industry_details"),
+            f.get("supp_suspended_discharged"), f.get("supp_suspended_discharged_details"),
+            f.get("supp_financial_embarrassment"), f.get("supp_financial_embarrassment_details"),
+            f.get("supp_police_investigation"), f.get("supp_police_investigation_details"),
+            f.get("supp_business_share"), f.get("supp_business_share_details"),
+            f.get("supp_directorship"), f.get("supp_directorship_details"),
+            f.get("emergency_contact_1_name"), f.get("emergency_contact_1_relationship"), f.get("emergency_contact_1_address"),
+            f.get("emergency_contact_1_email"), f.get("emergency_contact_1_home_tel"), f.get("emergency_contact_1_office_tel"), f.get("emergency_contact_1_handphone"),
+            f.get("emergency_contact_2_name"), f.get("emergency_contact_2_relationship"), f.get("emergency_contact_2_address"),
+            f.get("emergency_contact_2_email"), f.get("emergency_contact_2_home_tel"), f.get("emergency_contact_2_office_tel"), f.get("emergency_contact_2_handphone"),
+            "Y", full_name, f.get("declaration_date"),
+        ),
+    )
+    app_id = cur.lastrowid
+
+    photo = request.files.get("photo")
+    if photo and photo.filename:
+        original_name = secure_filename(photo.filename)
+        ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+        if ext in ALLOWED_PHOTO_EXTENSIONS:
+            app_dir = os.path.join(UPLOAD_DIR, RECRUITMENT_PHOTO_DIR_NAME, str(app_id))
+            os.makedirs(app_dir, exist_ok=True)
+            stored_name = f"photo_{uuid.uuid4().hex}.{ext}"
+            photo.save(os.path.join(app_dir, stored_name))
+            db.execute("UPDATE job_applications SET photo_stored_name=? WHERE id=?", (stored_name, app_id))
+
+    db.commit()
+    return redirect(url_for("careers_thank_you"))
+
+
+@app.route("/careers/thank-you")
+def careers_thank_you():
+    return render_template("careers_thank_you.html")
+
+
+@app.route("/hr/recruitment/<int:app_id>/photo")
+def recruitment_photo(app_id):
+    db = get_db()
+    row = db.execute("SELECT photo_stored_name FROM job_applications WHERE id=?", (app_id,)).fetchone()
+    if row is None or not row["photo_stored_name"]:
+        abort(404)
+    return send_from_directory(
+        os.path.join(UPLOAD_DIR, RECRUITMENT_PHOTO_DIR_NAME, str(app_id)), row["photo_stored_name"],
+    )
+
+
+@app.route("/hr/recruitment")
+def recruitment_list():
+    db = get_db()
+    status_filter = request.args.get("status", "")
+    query = "SELECT * FROM job_applications"
+    params = ()
+    if status_filter:
+        query += " WHERE status=?"
+        params = (status_filter,)
+    query += " ORDER BY submitted_at DESC"
+    applications = db.execute(query, params).fetchall()
+    return render_template(
+        "recruitment_list.html", applications=applications, status_filter=status_filter,
+        apply_url=url_for("careers_apply", _external=True),
+    )
+
+
+@app.route("/hr/recruitment/<int:app_id>")
+def recruitment_detail(app_id):
+    db = get_db()
+    application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
+    if application is None:
+        abort(404)
+    return render_template(
+        "recruitment_detail.html", a=application,
+        family=json.loads(application["family_particulars_json"] or "[]"),
+        education=json.loads(application["education_json"] or "[]"),
+        other_quals=json.loads(application["other_qualifications_json"] or "[]"),
+        languages=json.loads(application["languages_json"] or "[]"),
+        employment=json.loads(application["employment_history_json"] or "[]"),
+    )
+
+
+@app.route("/hr/recruitment/<int:app_id>/update", methods=["POST"])
+def recruitment_update(app_id):
+    db = get_db()
+    if db.execute("SELECT 1 FROM job_applications WHERE id=?", (app_id,)).fetchone() is None:
+        abort(404)
+    db.execute(
+        """UPDATE job_applications SET status=?, decision=?, comments=?, appointment_department=?,
+           official_use_date=?, reviewed_by=?, reviewed_at=? WHERE id=?""",
+        (request.form.get("status"), request.form.get("decision"), request.form.get("comments"),
+         request.form.get("appointment_department"), request.form.get("official_use_date"),
+         session.get("hr_username"), datetime.datetime.now(MYT).isoformat(timespec="seconds"), app_id),
+    )
+    db.commit()
+    return redirect(url_for("recruitment_detail", app_id=app_id))
+
+
 # ---------------- Public Holidays ----------------
 
 @app.route("/holidays", methods=["GET", "POST"])
@@ -5098,6 +5303,63 @@ def hr_migrate_schema():
             event_type TEXT NOT NULL, event_at TEXT NOT NULL, accepted TEXT NOT NULL,
             latitude REAL NOT NULL, longitude REAL NOT NULL, distance_meters REAL NOT NULL)""")
         applied.append("table: clockin_events")
+
+    if "job_applications" not in existing_tables:
+        # Online version of the paper "TM-Job Application Form" - candidates
+        # fill this in themselves at the public /careers/apply page (no
+        # login), HR reviews/decides at /hr/recruitment. Repeating groups of
+        # unbounded length (family particulars, education, employment
+        # history, language proficiency) are stored as JSON text rather than
+        # child tables - simpler for a form this size, and HR only ever
+        # reads them back for display, never queries into them.
+        db.execute("""CREATE TABLE job_applications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            submitted_at TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'New',
+            position_applied TEXT,
+            photo_stored_name TEXT,
+            salutation TEXT, full_name TEXT NOT NULL, chinese_name TEXT, gender TEXT,
+            ic_passport_no TEXT, marital_status TEXT, ic_color TEXT,
+            date_of_birth TEXT, age TEXT, height_cm TEXT, weight_kg TEXT,
+            address TEXT, home_tel_no TEXT, office_tel_no TEXT, home_telephone TEXT,
+            handphone_no TEXT, email TEXT, religion TEXT, race TEXT, dialect TEXT,
+            place_of_birth TEXT, nationality TEXT,
+            driving_license TEXT, driving_license_class TEXT, car_owner TEXT,
+            national_service_status TEXT, national_service_ord TEXT,
+            national_service_vocation TEXT, national_service_last_rank TEXT,
+            family_particulars_json TEXT, education_json TEXT,
+            other_qualifications_json TEXT, languages_json TEXT,
+            computer_skills TEXT,
+            health_illness TEXT, health_illness_details TEXT,
+            health_treatment TEXT, health_treatment_details TEXT,
+            smoke_vape TEXT, smoke_vape_details TEXT,
+            hobbies TEXT, memberships TEXT,
+            employment_history_json TEXT,
+            notice_period TEXT, earliest_start_date TEXT, expected_salary TEXT,
+            reference_1_name TEXT, reference_1_occupation TEXT, reference_1_address TEXT,
+            reference_1_tel TEXT, reference_1_years_known TEXT,
+            reference_2_name TEXT, reference_2_occupation TEXT, reference_2_address TEXT,
+            reference_2_tel TEXT, reference_2_years_known TEXT,
+            supp_relatives_in_group TEXT, supp_relatives_in_group_details TEXT,
+            supp_family_similar_industry TEXT, supp_family_similar_industry_details TEXT,
+            supp_suspended_discharged TEXT, supp_suspended_discharged_details TEXT,
+            supp_financial_embarrassment TEXT, supp_financial_embarrassment_details TEXT,
+            supp_police_investigation TEXT, supp_police_investigation_details TEXT,
+            supp_business_share TEXT, supp_business_share_details TEXT,
+            supp_directorship TEXT, supp_directorship_details TEXT,
+            emergency_contact_1_name TEXT, emergency_contact_1_relationship TEXT,
+            emergency_contact_1_address TEXT, emergency_contact_1_email TEXT,
+            emergency_contact_1_home_tel TEXT, emergency_contact_1_office_tel TEXT,
+            emergency_contact_1_handphone TEXT,
+            emergency_contact_2_name TEXT, emergency_contact_2_relationship TEXT,
+            emergency_contact_2_address TEXT, emergency_contact_2_email TEXT,
+            emergency_contact_2_home_tel TEXT, emergency_contact_2_office_tel TEXT,
+            emergency_contact_2_handphone TEXT,
+            declaration_agreed TEXT NOT NULL DEFAULT 'N',
+            applicant_signature_name TEXT, declaration_date TEXT,
+            decision TEXT, comments TEXT, appointment_department TEXT, official_use_date TEXT,
+            reviewed_by TEXT, reviewed_at TEXT)""")
+        applied.append("table: job_applications")
 
     db.execute("UPDATE hr_users SET can_approve_leave='Y', can_approve_appraisal='Y' WHERE username='kee'")
     yang_password = request.form.get("yang_password", "")

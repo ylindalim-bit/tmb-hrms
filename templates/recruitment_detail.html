@@ -43,6 +43,27 @@
 {% endif %}
 
 <div class="card">
+  <h2 style="margin-top:0;">Supporting Documents</h2>
+  {% if documents %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th class="text">Type</th><th class="text">File</th></tr></thead>
+    <tbody>
+      {% for d in documents %}
+      <tr>
+        <td class="text">{{ d.doc_type }}</td>
+        <td class="text"><a href="{{ url_for('recruitment_document', app_id=a.id, doc_id=d.id) }}" target="_blank" rel="noopener">{{ d.original_name }}</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p style="color:var(--muted); font-size:13px;">No documents uploaded.</p>
+  {% endif %}
+</div>
+
+<div class="card">
   <h2 style="margin-top:0;">Personal Information</h2>
   <div class="form-grid">
     <div><label>Salutation</label>{{ a.salutation or "-" }}</div>

@@ -2886,7 +2886,7 @@ def where_am_i():
 # fill it in themselves at /careers/apply (no login, same treatment as
 # /where-am-i above), HR reviews and decides at /hr/recruitment.
 
-RECRUITMENT_PHOTO_DIR_NAME = "recruitment"
+RECRUITMENT_UPLOAD_DIR_NAME = "recruitment"
 
 # Repeating sections use a fixed number of blank row slots on the form
 # (simplest thing that works for a form this size on a phone) rather than
@@ -2896,6 +2896,15 @@ CAREERS_EDUCATION_ROWS = 3
 CAREERS_OTHER_QUALIFICATION_ROWS = 2
 CAREERS_LANGUAGE_ROWS = 3
 CAREERS_EMPLOYMENT_ROWS = 3
+
+# Form field name -> doc_type label stored against each uploaded file. Each
+# field accepts multiple files (e.g. several certificates at once).
+CAREERS_DOCUMENT_FIELDS = [
+    ("doc_resume", "Resume / CV"),
+    ("doc_certificates", "Certificate / Diploma"),
+    ("doc_license", "License"),
+    ("doc_other", "Other Supporting Document"),
+]
 
 
 def _collect_indexed_rows(form, prefix, fields, count):
@@ -2997,17 +3006,34 @@ def careers_apply():
         ),
     )
     app_id = cur.lastrowid
+    app_dir = os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(app_id))
 
     photo = request.files.get("photo")
     if photo and photo.filename:
         original_name = secure_filename(photo.filename)
         ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
         if ext in ALLOWED_PHOTO_EXTENSIONS:
-            app_dir = os.path.join(UPLOAD_DIR, RECRUITMENT_PHOTO_DIR_NAME, str(app_id))
             os.makedirs(app_dir, exist_ok=True)
             stored_name = f"photo_{uuid.uuid4().hex}.{ext}"
             photo.save(os.path.join(app_dir, stored_name))
             db.execute("UPDATE job_applications SET photo_stored_name=? WHERE id=?", (stored_name, app_id))
+
+    for field_name, doc_type in CAREERS_DOCUMENT_FIELDS:
+        for doc_file in request.files.getlist(field_name):
+            if not doc_file or not doc_file.filename:
+                continue
+            original_name = secure_filename(doc_file.filename)
+            ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+            if ext not in ALLOWED_DOC_EXTENSIONS:
+                continue
+            os.makedirs(app_dir, exist_ok=True)
+            stored_name = f"{uuid.uuid4().hex}_{original_name}"
+            doc_file.save(os.path.join(app_dir, stored_name))
+            db.execute(
+                """INSERT INTO job_application_documents (application_id, doc_type, original_name, stored_name, uploaded_at)
+                   VALUES (?,?,?,?,?)""",
+                (app_id, doc_type, original_name, stored_name, now),
+            )
 
     db.commit()
     return redirect(url_for("careers_thank_you"))
@@ -3025,7 +3051,7 @@ def recruitment_photo(app_id):
     if row is None or not row["photo_stored_name"]:
         abort(404)
     return send_from_directory(
-        os.path.join(UPLOAD_DIR, RECRUITMENT_PHOTO_DIR_NAME, str(app_id)), row["photo_stored_name"],
+        os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(app_id)), row["photo_stored_name"],
     )
 
 
@@ -3052,13 +3078,30 @@ def recruitment_detail(app_id):
     application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
     if application is None:
         abort(404)
+    documents = db.execute(
+        "SELECT * FROM job_application_documents WHERE application_id=? ORDER BY id", (app_id,)
+    ).fetchall()
     return render_template(
-        "recruitment_detail.html", a=application,
+        "recruitment_detail.html", a=application, documents=documents,
         family=json.loads(application["family_particulars_json"] or "[]"),
         education=json.loads(application["education_json"] or "[]"),
         other_quals=json.loads(application["other_qualifications_json"] or "[]"),
         languages=json.loads(application["languages_json"] or "[]"),
         employment=json.loads(application["employment_history_json"] or "[]"),
+    )
+
+
+@app.route("/hr/recruitment/<int:app_id>/documents/<int:doc_id>")
+def recruitment_document(app_id, doc_id):
+    db = get_db()
+    doc = db.execute(
+        "SELECT * FROM job_application_documents WHERE id=? AND application_id=?", (doc_id, app_id)
+    ).fetchone()
+    if doc is None:
+        abort(404)
+    return send_from_directory(
+        os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(app_id)), doc["stored_name"],
+        as_attachment=False, download_name=doc["original_name"],
     )
 
 
@@ -5360,6 +5403,17 @@ def hr_migrate_schema():
             decision TEXT, comments TEXT, appointment_department TEXT, official_use_date TEXT,
             reviewed_by TEXT, reviewed_at TEXT)""")
         applied.append("table: job_applications")
+
+    if "job_application_documents" not in existing_tables:
+        # Resume/CV, certificates, licenses etc. a candidate attaches to
+        # their online application - same storage convention as
+        # employee_documents (UPLOAD_DIR/<folder>/<uuid>_<original name>).
+        db.execute("""CREATE TABLE job_application_documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            application_id INTEGER NOT NULL REFERENCES job_applications(id),
+            doc_type TEXT NOT NULL, original_name TEXT NOT NULL, stored_name TEXT NOT NULL,
+            uploaded_at TEXT NOT NULL)""")
+        applied.append("table: job_application_documents")
 
     db.execute("UPDATE hr_users SET can_approve_leave='Y', can_approve_appraisal='Y' WHERE username='kee'")
     yang_password = request.form.get("yang_password", "")

@@ -400,6 +400,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/portal",       # Staff Portal has its own separate @portal_login_required gate
     "/where-am-i",   # public no-login GPS helper for staff to send HR their coordinates
     "/careers",      # public no-login online job application form for candidates
+    "/hr/company-logo",  # branding image only, not sensitive - shown on the public careers form too
     "/api/",         # read-only payroll-export feed consumed by another local process
     "/hr/login",
     "/hr/logout",
@@ -2913,11 +2914,15 @@ def _collect_indexed_rows(form, prefix, fields, count):
 @app.route("/careers/apply", methods=["GET", "POST"])
 def careers_apply():
     if request.method == "GET":
+        logo_row = get_db().execute(
+            "SELECT value FROM payroll_settings WHERE key='company_logo_filename'"
+        ).fetchone()
         return render_template(
             "careers_apply.html",
             family_rows=range(CAREERS_FAMILY_ROWS), education_rows=range(CAREERS_EDUCATION_ROWS),
             other_qualification_rows=range(CAREERS_OTHER_QUALIFICATION_ROWS),
             language_rows=range(CAREERS_LANGUAGE_ROWS), employment_rows=range(CAREERS_EMPLOYMENT_ROWS),
+            company_logo_filename=logo_row["value"] if logo_row else None,
         )
 
     f = request.form
@@ -3015,7 +3020,10 @@ def careers_apply():
 
 @app.route("/careers/thank-you")
 def careers_thank_you():
-    return render_template("careers_thank_you.html")
+    logo_row = get_db().execute(
+        "SELECT value FROM payroll_settings WHERE key='company_logo_filename'"
+    ).fetchone()
+    return render_template("careers_thank_you.html", company_logo_filename=logo_row["value"] if logo_row else None)
 
 
 @app.route("/hr/recruitment/<int:app_id>/photo")

@@ -10,9 +10,13 @@
   h1 { font-size: 20px; }
   p { color: #6b7280; font-size: 14px; max-width: 400px; margin: 8px auto; }
   .check { font-size: 40px; }
+  img.logo { max-height: 70px; max-width: 100%; display: block; margin: 0 auto 16px; }
 </style>
 </head>
 <body>
+  {% if company_logo_filename %}
+  <img class="logo" src="{{ url_for('company_logo') }}" alt="Company logo">
+  {% endif %}
   <div class="check">&#10003;</div>
   <h1>Application Received</h1>
   <p>Thank you for applying to TIANMA PRECISION SDN. BHD. Our HR team has received your application

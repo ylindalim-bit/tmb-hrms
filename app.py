@@ -3358,11 +3358,13 @@ def recruitment_update(app_id):
     else:
         db.execute(
             """UPDATE job_applications SET status=?, decision=?, comments=?, appointment_department=?,
-               official_use_date=?, reviewed_by=?, reviewed_at=?, assigned_reviewer_username=? WHERE id=?""",
+               official_use_date=?, reviewed_by=?, reviewed_at=?, assigned_reviewer_username=?,
+               position_applied=? WHERE id=?""",
             (request.form.get("status"), request.form.get("decision"), request.form.get("comments"),
              request.form.get("appointment_department"), request.form.get("official_use_date"),
              session.get("hr_username"), datetime.datetime.now(MYT).isoformat(timespec="seconds"),
-             request.form.get("assigned_reviewer_username") or None, app_id),
+             request.form.get("assigned_reviewer_username") or None,
+             request.form.get("position_applied") or None, app_id),
         )
     db.commit()
     return redirect(url_for("recruitment_detail", app_id=app_id))

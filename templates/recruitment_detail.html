@@ -38,6 +38,10 @@
   <h2 style="margin-top:0;">For Official Use</h2>
   <form method="post" action="{{ url_for('recruitment_update', app_id=a.id) }}">
     <div class="form-grid">
+      {% if hr_role != "approver" %}
+      <div><label>Position Applied For</label>
+        <input type="text" name="position_applied" value="{{ a.position_applied or '' }}"></div>
+      {% endif %}
       <div><label>Status</label>
         <select name="status">
           {% for s in ["New", "Reviewed", "Shortlisted", "Not Suitable", "Hired"] %}

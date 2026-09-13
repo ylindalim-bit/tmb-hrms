@@ -7,6 +7,7 @@ import json
 import math
 import os
 import secrets
+import shutil
 import sqlite3
 import uuid
 import zipfile
@@ -3368,6 +3369,24 @@ def recruitment_update(app_id):
         )
     db.commit()
     return redirect(url_for("recruitment_detail", app_id=app_id))
+
+
+@app.route("/hr/recruitment/<int:app_id>/delete", methods=["POST"])
+def recruitment_delete(app_id):
+    """Permanently removes an application (e.g. a duplicate or test entry)
+    - the row, its documents, and its uploaded files. Full HR only."""
+    db = get_db()
+    if session.get("hr_role") == "approver":
+        abort(403)
+    if db.execute("SELECT 1 FROM job_applications WHERE id=?", (app_id,)).fetchone() is None:
+        abort(404)
+    db.execute("DELETE FROM job_application_documents WHERE application_id=?", (app_id,))
+    db.execute("DELETE FROM job_applications WHERE id=?", (app_id,))
+    db.commit()
+    app_dir = os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(app_id))
+    if os.path.isdir(app_dir):
+        shutil.rmtree(app_dir)
+    return redirect(url_for("recruitment_list"))
 
 
 # ---------------- Public Holidays ----------------

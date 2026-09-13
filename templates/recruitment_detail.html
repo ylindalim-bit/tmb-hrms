@@ -29,7 +29,14 @@
 <p class="no-print"><a href="{{ url_for('recruitment_list') }}">&larr; Back to Recruitment</a></p>
 <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
   <h1 style="margin-bottom:0;">{{ a.full_name }}</h1>
-  <button type="button" class="btn no-print" onclick="window.print()">Print / Save as PDF</button>
+  <div class="no-print" style="display:flex; gap:8px;">
+    <button type="button" class="btn" onclick="window.print()">Print / Save as PDF</button>
+    {% if hr_role != "approver" %}
+    <form id="delete-app-{{ a.id }}" method="post" action="{{ url_for('recruitment_delete', app_id=a.id) }}"
+          onsubmit="return confirm('Permanently delete this application for {{ a.full_name }}? This cannot be undone.');"></form>
+    <button form="delete-app-{{ a.id }}" type="submit" class="btn secondary" style="color:var(--danger);">Delete</button>
+    {% endif %}
+  </div>
 </div>
 <p style="margin-top:-10px;">Applied for <strong style="font-size:17px;">{{ a.position_applied or "(not specified)" }}</strong>
   <span style="color:var(--muted);">&mdash; submitted {{ a.submitted_at }}</span></p>

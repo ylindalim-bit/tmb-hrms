@@ -2,30 +2,30 @@
 {% block title %}{{ a.full_name }} - Recruitment - TMB Payroll{% endblock %}
 {% block extra_style %}
 <style>
-  .print-only { display: none; }
-  .print-letterhead { text-align: center; margin-bottom: 20px; }
-  .print-letterhead-row { display: grid; grid-template-columns: 90px 1fr 90px; align-items: center; }
-  .print-letterhead .tmb-logo { grid-column: 1; justify-self: start; height: 36px; width: auto; display: block; }
-  .print-letterhead h1 { grid-column: 2; font-size: 19px; margin: 0; letter-spacing: 0.5px; font-family: Arial, sans-serif; }
-  .print-letterhead .reg-no { color: #333; font-size: 12px; margin-top: 4px; }
-  .print-letterhead .sub { color: #444; font-size: 12px; margin-top: 2px; }
-  .print-letterhead hr { border: none; border-top: 2px solid #111; margin-top: 14px; }
+  .print-only, .official-form { display: none; }
   @media print {
     .card { border: 1px solid #ccc; box-shadow: none; break-inside: avoid; }
     .print-only { display: block; }
+    .official-form { display: block; font-family: Arial, Helvetica, sans-serif; font-size: 10px; color: #000; line-height: 1.35; }
+    .official-form h3 { break-after: avoid; }
+    .of-header-row { display: grid; grid-template-columns: 70px 1fr 90px; align-items: center; gap: 8px; }
+    .of-header-row img.of-logo { height: 30px; width: auto; display: block; }
+    .of-company-name { text-align: center; font-weight: bold; font-size: 14px; }
+    .of-reg-no { text-align: center; font-size: 10px; }
+    .of-photo-box { border: 1px solid #000; width: 80px; height: 96px; display: flex; align-items: center; justify-content: center;
+                    text-align: center; font-size: 9px; padding: 2px; box-sizing: border-box; margin-left: auto; }
+    .of-photo-box img { max-width: 100%; max-height: 100%; }
+    .of-title { text-align: center; font-weight: bold; font-size: 13px; border: 1px solid #000; padding: 4px; margin: 6px 0; }
+    .of-position-row { border: 1px solid #000; border-top: none; padding: 4px 6px; margin-bottom: 6px; }
+    .of-section-header { background: #d9d9d9; font-weight: bold; border: 1px solid #000; padding: 3px 6px; margin-top: 8px; }
+    table.of-table { width: 100%; border-collapse: collapse; margin-bottom: 2px; break-inside: auto; }
+    table.of-table td, table.of-table th { border: 1px solid #000; padding: 3px 5px; vertical-align: top; font-size: 9.5px; }
+    table.of-table td.of-label { color: #333; white-space: nowrap; width: 1%; background: #f5f5f5; }
+    .of-declaration-text { border: 1px solid #000; border-top: none; padding: 6px; font-size: 9px; }
   }
 </style>
 {% endblock %}
 {% block content %}
-<div class="print-only print-letterhead">
-  <div class="print-letterhead-row">
-    <img src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="TMB" class="tmb-logo">
-    <h1>TIANMA PRECISION SDN. BHD.</h1>
-  </div>
-  <div class="reg-no">202301036641 (1530564-X)</div>
-  <div class="sub">Plo 192, Jalan Bakau 5, Kawasan Perindustrian Tanjung Langsat, 81700 Pasir Gudang, Johor, Malaysia.</div>
-  <hr>
-</div>
 <p class="no-print"><a href="{{ url_for('recruitment_list') }}">&larr; Back to Recruitment</a></p>
 <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
   <h1 style="margin-bottom:0;">{{ a.full_name }}</h1>
@@ -90,13 +90,8 @@
   {% endif %}
 </div>
 {% endif %}
-{% if a.photo_stored_name %}
-<div class="card print-only" style="max-width:200px;">
-  <img src="{{ url_for('recruitment_photo', app_id=a.id) }}" alt="Photo" style="max-width:100%; border-radius:6px;">
-</div>
-{% endif %}
 
-<div class="card">
+<div class="card no-print">
   <h2 style="margin-top:0;">Supporting Documents</h2>
   {% if documents %}
   <div class="table-wrap">
@@ -117,7 +112,7 @@
   {% endif %}
 </div>
 
-<div class="card">
+<div class="card no-print">
   <h2 style="margin-top:0;">Personal Information</h2>
   <div class="form-grid">
     <div><label>Salutation</label>{{ a.salutation or "-" }}</div>
@@ -148,7 +143,7 @@
   <div>{{ a.address or "-" }}</div>
 </div>
 
-<div class="card">
+<div class="card no-print">
   <h2 style="margin-top:0;">Family Particulars</h2>
   <div class="table-wrap">
   <table>
@@ -162,7 +157,7 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card no-print">
   <h2 style="margin-top:0;">Educational Background</h2>
   <div class="table-wrap">
   <table>
@@ -206,7 +201,7 @@
   {% endif %}
 </div>
 
-<div class="card">
+<div class="card no-print">
   <h2 style="margin-top:0;">Health and Interests</h2>
   <div class="form-grid">
     <div><label>Mental/physical illness or serious condition</label>{{ a.health_illness or "-" }}
@@ -220,7 +215,7 @@
   {% if a.memberships %}<label style="margin-top:10px;">Club / Association Memberships</label><div>{{ a.memberships }}</div>{% endif %}
 </div>
 
-<div class="card">
+<div class="card no-print">
   <h2 style="margin-top:0;">Employment History</h2>
   {% for r in employment %}
   <div style="border-top:1px solid var(--border); padding-top:10px; margin-top:10px;">
@@ -243,7 +238,7 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card no-print">
   <h2 style="margin-top:0;">References</h2>
   <div class="form-grid">
     <div><label>Reference 1</label>{{ a.reference_1_name or "-" }}, {{ a.reference_1_occupation or "-" }}<br>
@@ -253,7 +248,7 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card no-print">
   <h2 style="margin-top:0;">Supplementary Information</h2>
   {% set supp_questions = [
     ("supp_relatives_in_group", "Relatives/friends employed by or dealing with Tianma Group"),
@@ -276,7 +271,7 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card no-print">
   <h2 style="margin-top:0;">Person to Contact in Case of Emergency</h2>
   <div class="form-grid">
     {% for n in [1, 2] %}
@@ -293,22 +288,248 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card no-print">
   <h2 style="margin-top:0;">Declaration</h2>
   <p>Agreed: <strong>{{ "Yes" if a.declaration_agreed == "Y" else "No" }}</strong> &middot;
      Electronic signature (typed name): <strong>{{ a.applicant_signature_name or "-" }}</strong> &middot;
      Date: {{ a.declaration_date or "-" }}</p>
 </div>
 
-<div class="card print-only" style="max-width:520px;">
-  <h2 style="margin-top:0;">For Official Use</h2>
-  <div class="form-grid">
-    <div><label>Status</label>{{ a.status }}</div>
-    <div><label>Decision</label>{{ a.decision or "-" }}</div>
-    <div><label>Appointment / Department</label>{{ a.appointment_department or "-" }}</div>
-    <div><label>Date</label>{{ a.official_use_date or "-" }}</div>
-    <div><label>Reviewer</label>{{ a.assigned_reviewer_username or "-" }}</div>
+<!-- ============ PRINT-ONLY: recreation of the company's paper Job Application Form ============ -->
+<div class="official-form">
+  <div class="of-header-row">
+    <img src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="TMB" class="of-logo">
+    <div>
+      <div class="of-company-name">TIANMA PRECISION SDN. BHD.</div>
+      <div class="of-reg-no">(1530564X / 202301036641)</div>
+    </div>
+    <div class="of-photo-box">
+      {% if a.photo_stored_name %}
+      <img src="{{ url_for('recruitment_photo', app_id=a.id) }}" alt="Photo">
+      {% else %}
+      Recent Passport photo
+      {% endif %}
+    </div>
   </div>
-  {% if a.comments %}<label style="margin-top:10px;">Comments</label><div>{{ a.comments }}</div>{% endif %}
+  <div class="of-title">APPLICATION FORM</div>
+  <div class="of-position-row"><strong>Position Applied For :</strong> {{ a.position_applied or "" }}</div>
+
+  <div class="of-section-header">PERSONAL INFORMATION</div>
+  <table class="of-table">
+    <tr>
+      <td class="of-label">Full Name (Underline Surname) :</td>
+      <td colspan="5">{{ a.salutation or "" }} {{ a.full_name }}</td>
+    </tr>
+    <tr>
+      <td class="of-label">Chinese Name (if any)</td><td>{{ a.chinese_name or "" }}</td>
+      <td class="of-label">Gender</td><td>{{ a.gender or "" }}</td>
+      <td class="of-label">Identity Card / Passport No / FIN No</td><td>{{ a.ic_passport_no or "" }}</td>
+    </tr>
+    <tr>
+      <td class="of-label">Marital Status</td><td>{{ a.marital_status or "" }}</td>
+      <td class="of-label">Identity Card Colour</td><td>{{ a.ic_color or "" }}</td>
+      <td class="of-label">Date of Birth / Age</td><td>{{ a.date_of_birth or "" }} / {{ a.age or "" }}</td>
+    </tr>
+    <tr>
+      <td class="of-label">Height (cm)</td><td>{{ a.height_cm or "" }}</td>
+      <td class="of-label">Weight (kg)</td><td colspan="3">{{ a.weight_kg or "" }}</td>
+    </tr>
+    <tr>
+      <td class="of-label">Address</td><td colspan="5">{{ a.address or "" }}</td>
+    </tr>
+    <tr>
+      <td class="of-label">Home Tel No</td><td>{{ a.home_tel_no or "" }}</td>
+      <td class="of-label">Religion</td><td>{{ a.religion or "" }}</td>
+      <td class="of-label">Place of Birth</td><td>{{ a.place_of_birth or "" }}</td>
+    </tr>
+    <tr>
+      <td class="of-label">Office Tel No</td><td>{{ a.office_tel_no or "" }}</td>
+      <td class="of-label">Race</td><td>{{ a.race or "" }}</td>
+      <td class="of-label">Nationality</td><td>{{ a.nationality or "" }}</td>
+    </tr>
+    <tr>
+      <td class="of-label">Home Telephone</td><td>{{ a.home_telephone or "" }}</td>
+      <td class="of-label">Handphone No</td><td>{{ a.handphone_no or "" }}</td>
+      <td class="of-label">Dialect</td><td>{{ a.dialect or "" }}</td>
+    </tr>
+    <tr>
+      <td class="of-label">E-mail Address</td><td colspan="3">{{ a.email or "" }}</td>
+      <td class="of-label">Driving License</td><td>{{ a.driving_license or "" }} {{ a.driving_license_class or "" }}</td>
+    </tr>
+    <tr>
+      <td class="of-label">Car Owner</td><td>{{ a.car_owner or "" }}</td>
+      <td class="of-label" colspan="2">National Service Status</td><td colspan="2">{{ a.national_service_status or "" }}</td>
+    </tr>
+    <tr>
+      <td class="of-label">ORD</td><td>{{ a.national_service_ord or "" }}</td>
+      <td class="of-label">Vocation</td><td>{{ a.national_service_vocation or "" }}</td>
+      <td class="of-label">Last Rank Held</td><td>{{ a.national_service_last_rank or "" }}</td>
+    </tr>
+  </table>
+
+  <div class="of-section-header">FAMILY PARTICULARS (Spouse, Children, Parents, Siblings)</div>
+  <table class="of-table">
+    <tr><th>Name</th><th>Relationship</th><th>DOB</th><th>Occupation</th><th>Name of Employer / School</th></tr>
+    {% for r in family %}
+    <tr><td>{{ r.name }}</td><td>{{ r.relationship }}</td><td>{{ r.dob }}</td><td>{{ r.occupation }}</td><td>{{ r.employer }}</td></tr>
+    {% else %}
+    <tr><td>&nbsp;</td><td></td><td></td><td></td><td></td></tr>
+    {% endfor %}
+  </table>
+
+  <div class="of-section-header">EDUCATIONAL BACKGROUND</div>
+  <table class="of-table">
+    <tr><th>From (mm/yy)</th><th>To (mm/yy)</th><th>School / Institution</th><th>Certificate / Diploma / Degree Awarded</th></tr>
+    {% for r in education %}
+    <tr><td>{{ r.from }}</td><td>{{ r.to }}</td><td>{{ r.institution }}</td><td>{{ r.certificate }}</td></tr>
+    {% else %}
+    <tr><td>&nbsp;</td><td></td><td></td><td></td></tr>
+    {% endfor %}
+  </table>
+
+  {% if other_quals %}
+  <div class="of-section-header">OTHER QUALIFICATIONS / COURSES CURRENTLY ATTENDING</div>
+  <table class="of-table">
+    <tr><th>From (mm/yy)</th><th>To (mm/yy)</th><th>Institution</th><th>Name of Course</th></tr>
+    {% for r in other_quals %}
+    <tr><td>{{ r.from }}</td><td>{{ r.to }}</td><td>{{ r.institution }}</td><td>{{ r.course }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  <div class="of-section-header">LANGUAGE AND DIALECT PROFICIENCY</div>
+  <table class="of-table">
+    <tr><th>Language / Dialect</th><th>Speak</th><th>Read</th><th>Write</th></tr>
+    {% for r in languages %}
+    <tr><td>{{ r.language }}</td><td>{{ r.speak }}</td><td>{{ r.read }}</td><td>{{ r.write }}</td></tr>
+    {% else %}
+    <tr><td>&nbsp;</td><td></td><td></td><td></td></tr>
+    {% endfor %}
+  </table>
+
+  {% if a.computer_skills %}
+  <div class="of-section-header">COMPUTER LITERACY AND OTHER SKILLS</div>
+  <table class="of-table"><tr><td>{{ a.computer_skills }}</td></tr></table>
+  {% endif %}
+
+  <div class="of-section-header">HEALTH AND INTERESTS</div>
+  <table class="of-table">
+    <tr>
+      <td>Have you been or are you suffering from any mental illness, physical disability, disease, medical condition or serious illness?</td>
+      <td style="width:15%;">{{ a.health_illness or "" }}</td>
+      <td>{{ a.health_illness_details or "" }}</td>
+    </tr>
+    <tr>
+      <td>Do you have any pre-existing illness or are you currently undergoing long term medical treatment?</td>
+      <td>{{ a.health_treatment or "" }}</td>
+      <td>{{ a.health_treatment_details or "" }}</td>
+    </tr>
+    <tr>
+      <td>Do you smoke or vape?</td>
+      <td>{{ a.smoke_vape or "" }}</td>
+      <td>{{ a.smoke_vape_details or "" }}</td>
+    </tr>
+    <tr><td class="of-label">Hobbies, Interests and Games</td><td colspan="2">{{ a.hobbies or "" }}</td></tr>
+    <tr><td class="of-label">Membership of Clubs, Associations, Societies and Community Centres</td><td colspan="2">{{ a.memberships or "" }}</td></tr>
+  </table>
+
+  <div class="of-section-header">EMPLOYMENT HISTORY (start with your present/most recent employer)</div>
+  <table class="of-table">
+    {% for r in employment %}
+    <tr>
+      <td class="of-label">Name of Employer</td><td colspan="3">{{ r.employer_name }}</td>
+      <td class="of-label">From</td><td>{{ r.from }}</td>
+      <td class="of-label">To</td><td>{{ r.to }}</td>
+    </tr>
+    <tr>
+      <td class="of-label">Job Title</td><td>{{ r.job_title }}</td>
+      <td class="of-label">Supervisor's Title</td><td>{{ r.supervisor_title }}</td>
+      <td class="of-label">Basic Salary</td><td>{{ r.basic_salary }}</td>
+      <td class="of-label">Gross Salary</td><td>{{ r.gross_salary }}</td>
+    </tr>
+    <tr>
+      <td class="of-label">13th Mth Bonus (mths)</td><td>{{ r.bonus_months }}</td>
+      <td class="of-label">Other Allowances</td><td>{{ r.other_allowances }}</td>
+      <td class="of-label">Reasons for Leaving</td><td colspan="3">{{ r.reasons_leaving }}</td>
+    </tr>
+    {% if r.duties %}<tr><td class="of-label">Major Duties &amp; Responsibilities</td><td colspan="7">{{ r.duties }}</td></tr>{% endif %}
+    {% else %}
+    <tr><td class="of-label">Name of Employer</td><td colspan="7">&nbsp;</td></tr>
+    {% endfor %}
+  </table>
+  <table class="of-table">
+    <tr>
+      <td class="of-label">Length of Notice Required</td><td>{{ a.notice_period or "" }}</td>
+      <td class="of-label">Earliest Start Date</td><td>{{ a.earliest_start_date or "" }}</td>
+      <td class="of-label">Expected Salary</td><td>{{ a.expected_salary or "" }}</td>
+    </tr>
+  </table>
+
+  <div class="of-section-header">REFERENCES (do not include relatives; one should have supervised you before)</div>
+  <table class="of-table">
+    <tr><th>Name</th><th>Occupation</th><th>Address</th><th>Contact Tel No</th><th>Years Known</th></tr>
+    <tr>
+      <td>{{ a.reference_1_name or "" }}</td><td>{{ a.reference_1_occupation or "" }}</td>
+      <td>{{ a.reference_1_address or "" }}</td><td>{{ a.reference_1_tel or "" }}</td><td>{{ a.reference_1_years_known or "" }}</td>
+    </tr>
+    <tr>
+      <td>{{ a.reference_2_name or "" }}</td><td>{{ a.reference_2_occupation or "" }}</td>
+      <td>{{ a.reference_2_address or "" }}</td><td>{{ a.reference_2_tel or "" }}</td><td>{{ a.reference_2_years_known or "" }}</td>
+    </tr>
+  </table>
+
+  <div class="of-section-header">SUPPLEMENTARY INFORMATION</div>
+  <table class="of-table">
+    {% for key, label in supp_questions %}
+    <tr><td>{{ label }}</td><td style="width:12%;">{{ a[key] or "" }}</td><td>{{ a[key ~ "_details"] or "" }}</td></tr>
+    {% endfor %}
+  </table>
+
+  <div class="of-section-header">PERSON TO CONTACT IN CASE OF EMERGENCY</div>
+  <table class="of-table">
+    {% for n in [1, 2] %}
+    <tr>
+      <td class="of-label">Name</td><td>{{ a["emergency_contact_" ~ n ~ "_name"] or "" }}</td>
+      <td class="of-label">Relationship</td><td>{{ a["emergency_contact_" ~ n ~ "_relationship"] or "" }}</td>
+      <td class="of-label">Address</td><td rowspan="2">{{ a["emergency_contact_" ~ n ~ "_address"] or "" }}</td>
+    </tr>
+    <tr>
+      <td class="of-label">Home Tel / Office Tel</td>
+      <td>{{ a["emergency_contact_" ~ n ~ "_home_tel"] or "" }} / {{ a["emergency_contact_" ~ n ~ "_office_tel"] or "" }}</td>
+      <td class="of-label">Handphone / E-mail</td>
+      <td colspan="2">{{ a["emergency_contact_" ~ n ~ "_handphone"] or "" }} / {{ a["emergency_contact_" ~ n ~ "_email"] or "" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <div class="of-section-header">DECLARATION</div>
+  <div class="of-declaration-text">
+    I declare that the information given by me in this application for employment is accurate and true and
+    that I have withheld no information which would in any way affect my employment by the Company. I accept
+    that if any information given by me in this application is in any way false or incorrect, the Company
+    shall have the right to terminate my employment without notice and without giving any reason.
+    By providing the information set out in this form, I agree and consent to the Company and its related
+    corporations collecting, using, disclosing and sharing my personal data as set out in the Group's Data
+    Protection Policy, accessible at http://www.tianmaco.com.
+  </div>
+  <table class="of-table">
+    <tr>
+      <td class="of-label">Applicant's Signature (typed name)</td><td>{{ a.applicant_signature_name or "" }}</td>
+      <td class="of-label">Date</td><td>{{ a.declaration_date or "" }}</td>
+    </tr>
+  </table>
+
+  <div class="of-section-header">FOR OFFICIAL USE</div>
+  <table class="of-table">
+    <tr>
+      <td class="of-label">Decision</td><td>{{ a.decision or "" }}</td>
+      <td class="of-label">Status</td><td>{{ a.status }}</td>
+    </tr>
+    <tr><td class="of-label">Comments</td><td colspan="3">{{ a.comments or "" }}</td></tr>
+    <tr>
+      <td class="of-label">Appointment / Department</td><td>{{ a.appointment_department or "" }}</td>
+      <td class="of-label">Date</td><td>{{ a.official_use_date or "" }}</td>
+    </tr>
+  </table>
 </div>
 {% endblock %}

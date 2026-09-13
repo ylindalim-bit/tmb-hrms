@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}HR Accounts - TMB Payroll{% endblock %}
+{% block content %}
+<h1>HR Accounts</h1>
+<p style="color:var(--muted); font-size:13px; margin-top:-8px; max-width:680px;">
+  Restricted logins for people outside HR who only need to approve or review their own
+  assigned items - e.g. a department manager reviewing their own Recruitment candidates.
+  Give them the login at <code>/review-resume-login</code> (for recruitment reviewers) or
+  the normal <code>/hr/login</code> page, along with the username/password you set below.
+</p>
+
+{% for acc in accounts %}
+<div class="card" style="max-width:640px;">
+  <form id="acc-save-{{ acc.username }}" method="post" action="{{ url_for('hr_accounts_update', username=acc.username) }}"></form>
+  <form id="acc-pw-{{ acc.username }}" method="post" action="{{ url_for('hr_accounts_reset_password', username=acc.username) }}"></form>
+  <div class="form-grid">
+    <div><label>Username</label>{{ acc.username }}</div>
+    <div><label>Full Name</label>
+      <input form="acc-save-{{ acc.username }}" type="text" name="full_name" value="{{ acc.full_name }}">
+    </div>
+  </div>
+  <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:14px;">
+    {% for flag, label in capability_flags %}
+    <label style="display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:normal;">
+      <input form="acc-save-{{ acc.username }}" type="checkbox" name="{{ flag }}" {% if acc[flag] == 'Y' %}checked{% endif %}>
+      {{ label }}
+    </label>
+    {% endfor %}
+  </div>
+  <div class="form-actions">
+    <button form="acc-save-{{ acc.username }}" type="submit" class="btn">Save</button>
+  </div>
+  <div style="margin-top:14px; padding-top:10px; border-top:1px solid var(--border); display:flex; align-items:center; gap:8px;">
+    <label style="margin:0; font-size:12px; color:var(--muted);">New Password</label>
+    <input form="acc-pw-{{ acc.username }}" type="text" name="password" placeholder="min. 4 characters" style="max-width:180px;">
+    <button form="acc-pw-{{ acc.username }}" type="submit" class="btn secondary" style="padding:4px 10px;">Reset Password</button>
+  </div>
+</div>
+{% else %}
+<p style="color:var(--muted);">No restricted accounts yet.</p>
+{% endfor %}
+
+<div class="card" style="max-width:640px;">
+  <h2 style="margin-top:0;">Create New Account</h2>
+  <form method="post" action="{{ url_for('hr_accounts_create') }}">
+    <div class="form-grid">
+      <div><label>Username</label><input type="text" name="username" required></div>
+      <div><label>Full Name</label><input type="text" name="full_name" required></div>
+      <div><label>Password</label><input type="text" name="password" placeholder="min. 4 characters" required></div>
+    </div>
+    <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:14px;">
+      {% for flag, label in capability_flags %}
+      <label style="display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:normal;">
+        <input type="checkbox" name="{{ flag }}"> {{ label }}
+      </label>
+      {% endfor %}
+    </div>
+    <div class="form-actions"><button type="submit" class="btn">Create Account</button></div>
+  </form>
+</div>
+{% endblock %}

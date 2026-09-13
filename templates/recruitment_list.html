@@ -3,10 +3,12 @@
 {% block content %}
 <h1>Recruitment</h1>
 
+{% if hr_role != "approver" %}
 <div class="card" style="max-width:640px;">
   Share this link with candidates so they can apply online:
   <div style="margin-top:6px; font-family:monospace; font-size:13px; word-break:break-all;">{{ apply_url }}</div>
 </div>
+{% endif %}
 
 <div class="card">
   <div style="margin-bottom:10px;">

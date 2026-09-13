@@ -57,6 +57,16 @@
         <input type="text" name="appointment_department" value="{{ a.appointment_department or '' }}"></div>
       <div><label>Date</label>
         <input type="date" name="official_use_date" value="{{ a.official_use_date or '' }}"></div>
+      {% if hr_role != "approver" %}
+      <div><label>Reviewer</label>
+        <select name="assigned_reviewer_username">
+          <option value="">(none - handled by HR)</option>
+          {% for r in reviewers %}
+          <option value="{{ r.username }}" {{ "selected" if a.assigned_reviewer_username == r.username }}>{{ r.full_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
     </div>
     <label>Comments</label>
     <textarea name="comments" rows="2" style="width:100%; font:inherit; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--card); color:var(--text); box-sizing:border-box;">{{ a.comments or "" }}</textarea>
@@ -282,6 +292,7 @@
     <div><label>Decision</label>{{ a.decision or "-" }}</div>
     <div><label>Appointment / Department</label>{{ a.appointment_department or "-" }}</div>
     <div><label>Date</label>{{ a.official_use_date or "-" }}</div>
+    <div><label>Reviewer</label>{{ a.assigned_reviewer_username or "-" }}</div>
   </div>
   {% if a.comments %}<label style="margin-top:10px;">Comments</label><div>{{ a.comments }}</div>{% endif %}
 </div>

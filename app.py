@@ -361,12 +361,17 @@ def inject_pending_counts():
         pending_ot_claim_count = db.execute(
             "SELECT COUNT(*) AS c FROM ot_claims WHERE status='Pending'"
         ).fetchone()["c"]
-        # Recruitment isn't a per-employee approver capability, so an
-        # approver account (e.g. Mr Kee) never sees this count, same
-        # treatment as pending_medical_claim_count above.
-        pending_recruitment_count = db.execute(
-            "SELECT COUNT(*) AS c FROM job_applications WHERE status='New'"
-        ).fetchone()["c"] if session.get("hr_role") != "approver" else 0
+        if session.get("hr_role") == "approver":
+            # Scoped to just the applications handed to this specific
+            # reviewer (a department manager) - never the whole inbox.
+            pending_recruitment_count = db.execute(
+                "SELECT COUNT(*) AS c FROM job_applications WHERE status='New' AND assigned_reviewer_username=?",
+                (session["hr_username"],),
+            ).fetchone()["c"]
+        else:
+            pending_recruitment_count = db.execute(
+                "SELECT COUNT(*) AS c FROM job_applications WHERE status='New'"
+            ).fetchone()["c"]
     except sqlite3.OperationalError:
         return {}
     return {"pending_leave_count": pending_leave_count, "pending_trip_count": pending_trip_count,
@@ -461,6 +466,7 @@ APPROVER_CAPABILITY_PREFIXES = {
     "can_approve_leave": ("/leave-requests", "/business-trips"),
     "can_approve_appraisal": ("/appraisals",),
     "can_approve_ot": ("/ot-claims",),
+    "can_review_recruitment": ("/hr/recruitment",),
 }
 
 
@@ -474,6 +480,8 @@ def _approver_home():
         return url_for("appraisal_team")
     if session.get("can_approve_ot") == "Y":
         return url_for("ot_claims_admin")
+    if session.get("can_review_recruitment") == "Y":
+        return url_for("recruitment_list")
     return url_for("hr_change_password")
 
 
@@ -721,6 +729,7 @@ def hr_login():
             session["can_approve_leave"] = user["can_approve_leave"]
             session["can_approve_appraisal"] = user["can_approve_appraisal"]
             session["can_approve_ot"] = user["can_approve_ot"]
+            session["can_review_recruitment"] = user["can_review_recruitment"]
             next_url = request.form.get("next") or url_for("index")
             # Never redirect off-site or back into the login route itself.
             if not next_url.startswith("/") or next_url.startswith("/hr/login"):
@@ -808,6 +817,87 @@ def hr_change_password():
             db.commit()
             success = True
     return render_template("hr_change_password.html", error=error, success=success)
+
+
+# ---------------- HR Accounts (restricted logins for approvers/reviewers) ----------------
+# role='admin' only (never in APPROVER_CAPABILITY_PREFIXES, so the
+# before_request gate already blocks any 'approver' account from reaching
+# these routes at all). Lets HR self-service a limited login for e.g. a
+# department manager who should only review their own Recruitment
+# candidates, without asking a developer to hand-write a one-off script
+# each time - same account shape as the existing Kee/Yang approver rows,
+# just created through a form instead of a one-off migration.
+
+APPROVER_CAPABILITY_FLAGS = [
+    ("can_approve_leave", "Approve Leave Requests / Movement Notices"),
+    ("can_approve_appraisal", "Approve Appraisals"),
+    ("can_approve_ot", "Approve OT Claims"),
+    ("can_review_recruitment", "Review Recruitment candidates"),
+]
+
+
+@app.route("/hr/accounts")
+def hr_accounts():
+    db = get_db()
+    accounts = db.execute(
+        "SELECT * FROM hr_users WHERE role='approver' ORDER BY full_name"
+    ).fetchall()
+    return render_template("hr_accounts.html", accounts=accounts, capability_flags=APPROVER_CAPABILITY_FLAGS)
+
+
+@app.route("/hr/accounts/create", methods=["POST"])
+def hr_accounts_create():
+    db = get_db()
+    username = request.form.get("username", "").strip().lower()
+    full_name = request.form.get("full_name", "").strip()
+    password = request.form.get("password", "")
+    if not username or not full_name or len(password) < 4:
+        return "Username, full name, and a password of at least 4 characters are all required.", 400
+    if db.execute("SELECT 1 FROM hr_users WHERE username=?", (username,)).fetchone() is not None:
+        return f"Username {username!r} is already taken.", 400
+    flags = {flag: ("Y" if request.form.get(flag) else "N") for flag, _label in APPROVER_CAPABILITY_FLAGS}
+    db.execute(
+        """INSERT INTO hr_users (username, password_hash, full_name, created_at, role,
+               can_approve_leave, can_approve_appraisal, can_approve_ot, can_review_recruitment)
+           VALUES (?,?,?,?,'approver',?,?,?,?)""",
+        (username, generate_password_hash(password), full_name,
+         datetime.datetime.now().isoformat(timespec="seconds"),
+         flags["can_approve_leave"], flags["can_approve_appraisal"],
+         flags["can_approve_ot"], flags["can_review_recruitment"]),
+    )
+    db.commit()
+    return redirect(url_for("hr_accounts"))
+
+
+@app.route("/hr/accounts/<username>/update", methods=["POST"])
+def hr_accounts_update(username):
+    db = get_db()
+    if db.execute("SELECT 1 FROM hr_users WHERE username=? AND role='approver'", (username,)).fetchone() is None:
+        abort(404)
+    full_name = request.form.get("full_name", "").strip()
+    flags = {flag: ("Y" if request.form.get(flag) else "N") for flag, _label in APPROVER_CAPABILITY_FLAGS}
+    db.execute(
+        """UPDATE hr_users SET full_name=?, can_approve_leave=?, can_approve_appraisal=?,
+               can_approve_ot=?, can_review_recruitment=? WHERE username=?""",
+        (full_name, flags["can_approve_leave"], flags["can_approve_appraisal"],
+         flags["can_approve_ot"], flags["can_review_recruitment"], username),
+    )
+    db.commit()
+    return redirect(url_for("hr_accounts"))
+
+
+@app.route("/hr/accounts/<username>/reset-password", methods=["POST"])
+def hr_accounts_reset_password(username):
+    db = get_db()
+    if db.execute("SELECT 1 FROM hr_users WHERE username=? AND role='approver'", (username,)).fetchone() is None:
+        abort(404)
+    password = request.form.get("password", "")
+    if len(password) < 4:
+        return "Password must be at least 4 characters.", 400
+    db.execute("UPDATE hr_users SET password_hash=? WHERE username=?",
+               (generate_password_hash(password), username))
+    db.commit()
+    return redirect(url_for("hr_accounts"))
 
 
 # ---------------- Employees ----------------
@@ -3079,14 +3169,26 @@ def careers_thank_you():
     return render_template("careers_thank_you.html")
 
 
+def _can_review_application(application):
+    """Full HR (role='admin') can always see everything; a role='approver'
+    reviewer account only sees the one application it's been assigned to
+    (job_applications.assigned_reviewer_username), same restriction shape
+    as a Leave Approver only seeing their own assigned employees."""
+    if session.get("hr_role") != "approver":
+        return True
+    return application["assigned_reviewer_username"] == session.get("hr_username")
+
+
 @app.route("/hr/recruitment/<int:app_id>/photo")
 def recruitment_photo(app_id):
     db = get_db()
-    row = db.execute("SELECT photo_stored_name FROM job_applications WHERE id=?", (app_id,)).fetchone()
-    if row is None or not row["photo_stored_name"]:
+    application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
+    if application is None or not application["photo_stored_name"]:
         abort(404)
+    if not _can_review_application(application):
+        abort(403)
     return send_from_directory(
-        os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(app_id)), row["photo_stored_name"],
+        os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(app_id)), application["photo_stored_name"],
     )
 
 
@@ -3095,10 +3197,16 @@ def recruitment_list():
     db = get_db()
     status_filter = request.args.get("status", "")
     query = "SELECT * FROM job_applications"
-    params = ()
+    where = []
+    params = []
+    if session.get("hr_role") == "approver":
+        where.append("assigned_reviewer_username=?")
+        params.append(session["hr_username"])
     if status_filter:
-        query += " WHERE status=?"
-        params = (status_filter,)
+        where.append("status=?")
+        params.append(status_filter)
+    if where:
+        query += " WHERE " + " AND ".join(where)
     query += " ORDER BY submitted_at DESC"
     applications = db.execute(query, params).fetchall()
     return render_template(
@@ -3113,11 +3221,16 @@ def recruitment_detail(app_id):
     application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
     if application is None:
         abort(404)
+    if not _can_review_application(application):
+        abort(403)
     documents = db.execute(
         "SELECT * FROM job_application_documents WHERE application_id=? ORDER BY id", (app_id,)
     ).fetchall()
+    reviewers = db.execute(
+        "SELECT username, full_name FROM hr_users WHERE role='approver' AND can_review_recruitment='Y' ORDER BY full_name"
+    ).fetchall()
     return render_template(
-        "recruitment_detail.html", a=application, documents=documents,
+        "recruitment_detail.html", a=application, documents=documents, reviewers=reviewers,
         family=json.loads(application["family_particulars_json"] or "[]"),
         education=json.loads(application["education_json"] or "[]"),
         other_quals=json.loads(application["other_qualifications_json"] or "[]"),
@@ -3129,6 +3242,11 @@ def recruitment_detail(app_id):
 @app.route("/hr/recruitment/<int:app_id>/documents/<int:doc_id>")
 def recruitment_document(app_id, doc_id):
     db = get_db()
+    application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
+    if application is None:
+        abort(404)
+    if not _can_review_application(application):
+        abort(403)
     doc = db.execute(
         "SELECT * FROM job_application_documents WHERE id=? AND application_id=?", (doc_id, app_id)
     ).fetchone()
@@ -3143,15 +3261,30 @@ def recruitment_document(app_id, doc_id):
 @app.route("/hr/recruitment/<int:app_id>/update", methods=["POST"])
 def recruitment_update(app_id):
     db = get_db()
-    if db.execute("SELECT 1 FROM job_applications WHERE id=?", (app_id,)).fetchone() is None:
+    application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
+    if application is None:
         abort(404)
-    db.execute(
-        """UPDATE job_applications SET status=?, decision=?, comments=?, appointment_department=?,
-           official_use_date=?, reviewed_by=?, reviewed_at=? WHERE id=?""",
-        (request.form.get("status"), request.form.get("decision"), request.form.get("comments"),
-         request.form.get("appointment_department"), request.form.get("official_use_date"),
-         session.get("hr_username"), datetime.datetime.now(MYT).isoformat(timespec="seconds"), app_id),
-    )
+    if not _can_review_application(application):
+        abort(403)
+    if session.get("hr_role") == "approver":
+        # A reviewer can update their own review, but only full HR
+        # reassigns who the application is handed to.
+        db.execute(
+            """UPDATE job_applications SET status=?, decision=?, comments=?, appointment_department=?,
+               official_use_date=?, reviewed_by=?, reviewed_at=? WHERE id=?""",
+            (request.form.get("status"), request.form.get("decision"), request.form.get("comments"),
+             request.form.get("appointment_department"), request.form.get("official_use_date"),
+             session.get("hr_username"), datetime.datetime.now(MYT).isoformat(timespec="seconds"), app_id),
+        )
+    else:
+        db.execute(
+            """UPDATE job_applications SET status=?, decision=?, comments=?, appointment_department=?,
+               official_use_date=?, reviewed_by=?, reviewed_at=?, assigned_reviewer_username=? WHERE id=?""",
+            (request.form.get("status"), request.form.get("decision"), request.form.get("comments"),
+             request.form.get("appointment_department"), request.form.get("official_use_date"),
+             session.get("hr_username"), datetime.datetime.now(MYT).isoformat(timespec="seconds"),
+             request.form.get("assigned_reviewer_username") or None, app_id),
+        )
     db.commit()
     return redirect(url_for("recruitment_detail", app_id=app_id))
 
@@ -5197,7 +5330,8 @@ def hr_migrate_schema():
     hr_cols = [r[1] for r in db.execute("PRAGMA table_info(hr_users)").fetchall()]
     for col, decl in [("can_approve_leave", "TEXT NOT NULL DEFAULT 'N'"),
                        ("can_approve_appraisal", "TEXT NOT NULL DEFAULT 'N'"),
-                       ("can_approve_ot", "TEXT NOT NULL DEFAULT 'N'")]:
+                       ("can_approve_ot", "TEXT NOT NULL DEFAULT 'N'"),
+                       ("can_review_recruitment", "TEXT NOT NULL DEFAULT 'N'")]:
         if col not in hr_cols:
             db.execute(f"ALTER TABLE hr_users ADD COLUMN {col} {decl}")
             applied.append(f"hr_users.{col}")
@@ -5449,6 +5583,20 @@ def hr_migrate_schema():
             doc_type TEXT NOT NULL, original_name TEXT NOT NULL, stored_name TEXT NOT NULL,
             uploaded_at TEXT NOT NULL)""")
         applied.append("table: job_application_documents")
+
+    # Checked live (not against the existing_tables snapshot from before
+    # this function ran) so this also applies right after the CREATE TABLE
+    # above on a brand-new database.
+    job_app_cols = [r[1] for r in db.execute("PRAGMA table_info(job_applications)").fetchall()]
+    if "assigned_reviewer_username" not in job_app_cols:
+        # Which hr_users account (a department manager with
+        # can_review_recruitment='Y') this specific application is handed
+        # to for review - NULL means unassigned, still HR's own to handle.
+        # Manual per-application assignment, same idea as
+        # employees.leave_approver_username, since applications only carry
+        # a free-text position, not a real department field.
+        db.execute("ALTER TABLE job_applications ADD COLUMN assigned_reviewer_username TEXT")
+        applied.append("job_applications.assigned_reviewer_username")
 
     db.execute("UPDATE hr_users SET can_approve_leave='Y', can_approve_appraisal='Y' WHERE username='kee'")
     yang_password = request.form.get("yang_password", "")

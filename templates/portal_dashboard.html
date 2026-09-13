@@ -61,7 +61,7 @@
   {% if supervisor %}
   <div class="card">
     <h2 style="margin-top:0;">Team Reminders</h2>
-    {% if not supervisor.pending_leave and not supervisor.pending_trip and not supervisor.pending_appraisal and not supervisor.pending_ot %}
+    {% if not supervisor.pending_leave and not supervisor.pending_trip and not supervisor.pending_appraisal and not supervisor.pending_ot and not supervisor.pending_recruitment %}
     <p style="color:var(--muted);">Nothing pending for your team right now.</p>
     {% endif %}
     {% if supervisor.pending_leave %}
@@ -79,6 +79,10 @@
     {% if supervisor.pending_ot %}
     <p style="color:var(--danger); font-weight:600;">{{ supervisor.pending_ot }} OT claim{{ "s" if supervisor.pending_ot != 1 }} awaiting your approval</p>
     <p><a class="btn secondary" href="{{ url_for('ot_claims_admin') }}">Review OT Claims</a></p>
+    {% endif %}
+    {% if supervisor.pending_recruitment %}
+    <p style="color:var(--danger); font-weight:600;">{{ supervisor.pending_recruitment }} job application{{ "s" if supervisor.pending_recruitment != 1 }} awaiting your review</p>
+    <p><a class="btn secondary" href="{{ url_for('recruitment_list') }}">Review Recruitment</a></p>
     {% endif %}
   </div>
   {% endif %}

@@ -603,6 +603,7 @@ def portal_login():
                     session["can_approve_leave"] = hr_user["can_approve_leave"]
                     session["can_approve_appraisal"] = hr_user["can_approve_appraisal"]
                     session["can_approve_ot"] = hr_user["can_approve_ot"]
+                    session["can_review_recruitment"] = hr_user["can_review_recruitment"]
                     session["portal_self_login"] = True
             next_url = request.form.get("next") or url_for("portal_dashboard")
             return redirect(next_url)
@@ -3441,7 +3442,7 @@ def portal_dashboard():
     supervisor = None
     if emp["hr_username"]:
         hr_user = db.execute(
-            "SELECT username, can_approve_leave, can_approve_appraisal, can_approve_ot FROM hr_users WHERE username=?",
+            "SELECT username, can_approve_leave, can_approve_appraisal, can_approve_ot, can_review_recruitment FROM hr_users WHERE username=?",
             (emp["hr_username"],),
         ).fetchone()
         if hr_user:
@@ -3476,9 +3477,17 @@ def portal_dashboard():
                 team_pending_ot = db.execute(
                     "SELECT COUNT(*) AS c FROM ot_claims WHERE status='Pending'"
                 ).fetchone()["c"]
-            if hr_user["can_approve_leave"] == "Y" or hr_user["can_approve_appraisal"] == "Y" or hr_user["can_approve_ot"] == "Y":
+            team_pending_recruitment = 0
+            if hr_user["can_review_recruitment"] == "Y":
+                team_pending_recruitment = db.execute(
+                    "SELECT COUNT(*) AS c FROM job_applications WHERE status='New' AND assigned_reviewer_username=?",
+                    (hr_user["username"],),
+                ).fetchone()["c"]
+            if (hr_user["can_approve_leave"] == "Y" or hr_user["can_approve_appraisal"] == "Y"
+                    or hr_user["can_approve_ot"] == "Y" or hr_user["can_review_recruitment"] == "Y"):
                 supervisor = {"pending_leave": team_pending_leave, "pending_trip": team_pending_trip,
-                              "pending_appraisal": team_pending_appraisal, "pending_ot": team_pending_ot}
+                              "pending_appraisal": team_pending_appraisal, "pending_ot": team_pending_ot,
+                              "pending_recruitment": team_pending_recruitment}
 
     return render_template(
         "portal_dashboard.html", emp=emp, latest_run=latest_run,

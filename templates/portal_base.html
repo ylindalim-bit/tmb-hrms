@@ -57,6 +57,11 @@
       {% if pending_ot_claim_count %}<span class="pill rejected" style="margin-left:3px;">{{ pending_ot_claim_count }}</span>{% endif %}
     </a>
     {% endif %}
+    {% if session.get("can_review_recruitment") == "Y" %}
+    <a href="{{ url_for('recruitment_list') }}" style="color:var(--accent);">Recruitment
+      {% if pending_recruitment_count %}<span class="pill rejected" style="margin-left:3px;">{{ pending_recruitment_count }}</span>{% endif %}
+    </a>
+    {% endif %}
     {% endif %}
     <a href="{{ url_for('portal_logout') }}">Logout</a>
   </nav>

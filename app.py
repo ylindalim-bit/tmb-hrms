@@ -402,6 +402,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/careers",      # public no-login online job application form for candidates
     "/api/",         # read-only payroll-export feed consumed by another local process
     "/hr/login",
+    "/review-resume-login",  # branded alternate entry point to the same /hr/login form
     "/hr/logout",
     "/hr/setup",     # first-run only - locks itself once any hr_users row exists
     "/hr/restore-database",  # gated by RESTORE_TOKEN env var, not session - see route
@@ -726,8 +727,22 @@ def hr_login():
                 next_url = url_for("index")
             return redirect(next_url)
     no_hr_users = db.execute("SELECT 1 FROM hr_users LIMIT 1").fetchone() is None
-    return render_template("hr_login.html", error=error, next=request.args.get("next", ""),
-                            no_hr_users=no_hr_users)
+    page_heading = request.values.get("heading") or None
+    return render_template("hr_login.html", error=error, next=request.values.get("next", ""),
+                            no_hr_users=no_hr_users, page_heading=page_heading)
+
+
+@app.route("/review-resume-login")
+def review_resume_login():
+    """Branded alternate entry point to the exact same HR login (same
+    hr_users table/session, no separate auth) - for department managers
+    given only a Recruitment-reviewer account, so what they see says
+    'Review Resume Login' instead of the generic HRMS Login, and lands
+    them straight on Recruitment instead of the full payroll dashboard."""
+    return render_template(
+        "hr_login.html", error=None, next=request.args.get("next") or url_for("recruitment_list"),
+        no_hr_users=False, page_heading="Review Resume Login",
+    )
 
 
 @app.route("/hr/logout")

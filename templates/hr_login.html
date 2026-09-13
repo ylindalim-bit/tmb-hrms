@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HR Login - TMB Payroll</title>
+<title>{{ page_heading or "HR Login" }} - TMB Payroll</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <style>
   body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
@@ -22,7 +22,7 @@
 <body>
 <div class="card login-box">
   <img src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="TMB" class="login-logo">
-  <h1>HRMS Login</h1>
+  <h1>{{ page_heading or "HRMS Login" }}</h1>
   <div class="sub">Staff looking for the Staff Portal? <a href="{{ url_for('portal_login') }}">Go here instead</a>.</div>
   {% if no_hr_users %}
   <div class="sub" style="background:#fef3c7; color:#92400e; padding:10px; border-radius:6px; margin-bottom:14px;">
@@ -30,8 +30,9 @@
   </div>
   {% endif %}
   {% if error %}<div class="error">{{ error }}</div>{% endif %}
-  <form method="post">
+  <form method="post" action="{{ url_for('hr_login') }}">
     <input type="hidden" name="next" value="{{ next }}">
+    <input type="hidden" name="heading" value="{{ page_heading or '' }}">
     <label>Username</label>
     <input type="text" name="username" autofocus required>
     <div class="label-row">

@@ -75,8 +75,23 @@
   </form>
 </div>
 
+{% if a.photo_stored_name or hr_role != "approver" %}
+<div class="card no-print" style="max-width:200px;">
+  {% if a.photo_stored_name %}
+  <img src="{{ url_for('recruitment_photo', app_id=a.id) }}" alt="Photo" style="max-width:100%; border-radius:6px; margin-bottom:8px;">
+  {% endif %}
+  {% if hr_role != "approver" %}
+  <form method="post" action="{{ url_for('recruitment_photo_upload', app_id=a.id) }}" enctype="multipart/form-data">
+    <input type="file" name="photo" accept=".jpg,.jpeg,.png" required>
+    <button type="submit" class="btn secondary" style="padding:4px 10px; font-size:12px; margin-top:6px;">
+      {{ "Replace Photo" if a.photo_stored_name else "Upload Photo" }}
+    </button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
 {% if a.photo_stored_name %}
-<div class="card" style="max-width:200px;">
+<div class="card print-only" style="max-width:200px;">
   <img src="{{ url_for('recruitment_photo', app_id=a.id) }}" alt="Photo" style="max-width:100%; border-radius:6px;">
 </div>
 {% endif %}

@@ -3193,6 +3193,37 @@ def recruitment_photo(app_id):
     )
 
 
+@app.route("/hr/recruitment/<int:app_id>/photo/upload", methods=["POST"])
+def recruitment_photo_upload(app_id):
+    """Lets HR attach/replace a candidate's photo after the fact - e.g.
+    they left the (optional) photo field blank on /careers/apply but sent
+    one separately. Same convention as upload_photo() for employees."""
+    db = get_db()
+    application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
+    if application is None:
+        abort(404)
+    if session.get("hr_role") == "approver":
+        abort(403)
+    file = request.files.get("photo")
+    if file is None or file.filename == "":
+        return redirect(url_for("recruitment_detail", app_id=app_id))
+    original_name = secure_filename(file.filename)
+    ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+    if ext not in ALLOWED_PHOTO_EXTENSIONS:
+        return "File type not allowed. Use JPG or PNG.", 400
+    app_dir = os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(app_id))
+    os.makedirs(app_dir, exist_ok=True)
+    if application["photo_stored_name"]:
+        old_path = os.path.join(app_dir, application["photo_stored_name"])
+        if os.path.exists(old_path):
+            os.remove(old_path)
+    stored_name = f"photo_{uuid.uuid4().hex}.{ext}"
+    file.save(os.path.join(app_dir, stored_name))
+    db.execute("UPDATE job_applications SET photo_stored_name=? WHERE id=?", (stored_name, app_id))
+    db.commit()
+    return redirect(url_for("recruitment_detail", app_id=app_id))
+
+
 @app.route("/hr/recruitment")
 def recruitment_list():
     db = get_db()

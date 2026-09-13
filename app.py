@@ -3241,10 +3241,57 @@ def recruitment_list():
         query += " WHERE " + " AND ".join(where)
     query += " ORDER BY submitted_at DESC"
     applications = db.execute(query, params).fetchall()
+    reviewers = db.execute(
+        "SELECT username, full_name FROM hr_users WHERE role='approver' AND can_review_recruitment='Y' ORDER BY full_name"
+    ).fetchall()
     return render_template(
         "recruitment_list.html", applications=applications, status_filter=status_filter,
-        apply_url=url_for("careers_apply", _external=True),
+        apply_url=url_for("careers_apply", _external=True), reviewers=reviewers,
     )
+
+
+@app.route("/hr/recruitment/create", methods=["POST"])
+def recruitment_create():
+    """Lets HR add a candidate directly - e.g. a resume that came in by
+    email/referral instead of through /careers/apply - with just a name,
+    position, and (optionally) a resume file and reviewer, rather than
+    requiring the candidate to fill in the full form themselves. Every
+    other field on job_applications is nullable, so this is a valid
+    (if sparse) application row - the detail page just shows "-" for
+    whatever wasn't given, same as any candidate who skipped a field."""
+    db = get_db()
+    if session.get("hr_role") == "approver":
+        abort(403)
+    full_name = (request.form.get("full_name") or "").strip()
+    if not full_name:
+        return "Full name is required.", 400
+    now = datetime.datetime.now(MYT).isoformat(timespec="seconds")
+    cur = db.execute(
+        """INSERT INTO job_applications (submitted_at, status, position_applied, full_name,
+               assigned_reviewer_username, declaration_agreed)
+           VALUES (?, 'New', ?, ?, ?, 'N')""",
+        (now, request.form.get("position_applied") or None, full_name,
+         request.form.get("assigned_reviewer_username") or None),
+    )
+    app_id = cur.lastrowid
+
+    resume = request.files.get("resume")
+    if resume and resume.filename:
+        original_name = secure_filename(resume.filename)
+        ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+        if ext in ALLOWED_DOC_EXTENSIONS:
+            app_dir = os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(app_id))
+            os.makedirs(app_dir, exist_ok=True)
+            stored_name = f"{uuid.uuid4().hex}_{original_name}"
+            resume.save(os.path.join(app_dir, stored_name))
+            db.execute(
+                """INSERT INTO job_application_documents (application_id, doc_type, original_name, stored_name, uploaded_at)
+                   VALUES (?, 'Resume / CV', ?, ?, ?)""",
+                (app_id, original_name, stored_name, now),
+            )
+
+    db.commit()
+    return redirect(url_for("recruitment_detail", app_id=app_id))
 
 
 @app.route("/hr/recruitment/<int:app_id>")

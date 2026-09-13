@@ -8,6 +8,29 @@
   Share this link with candidates so they can apply online:
   <div style="margin-top:6px; font-family:monospace; font-size:13px; word-break:break-all;">{{ apply_url }}</div>
 </div>
+
+<div class="card" style="max-width:640px;">
+  <h2 style="margin-top:0;">Add Candidate Manually</h2>
+  <p style="color:var(--muted); font-size:13px; margin-top:-8px;">
+    For a resume that came in outside the online form (email, referral, walk-in).
+  </p>
+  <form method="post" action="{{ url_for('recruitment_create') }}" enctype="multipart/form-data">
+    <div class="form-grid">
+      <div><label>Full Name</label><input type="text" name="full_name" required></div>
+      <div><label>Position Applied For</label><input type="text" name="position_applied"></div>
+      <div><label>Resume / CV (optional)</label><input type="file" name="resume" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"></div>
+      <div><label>Reviewer (optional)</label>
+        <select name="assigned_reviewer_username">
+          <option value="">(none - handled by HR)</option>
+          {% for r in reviewers %}
+          <option value="{{ r.username }}">{{ r.full_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="form-actions"><button type="submit" class="btn">Add Candidate</button></div>
+  </form>
+</div>
 {% endif %}
 
 <div class="card">

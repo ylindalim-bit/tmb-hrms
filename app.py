@@ -449,6 +449,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/bulk-enable-mobile-clockin",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/add-sept-wecom-payments",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/add-september-ul-a007-m005",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/fix-k002-mc-entitlement",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -6774,6 +6775,23 @@ def hr_add_september_ul_a007_m005():
         results.append(f"{emp_id}: leave_request #{leave_request_id} created and synced")
     db.commit()
     return "OK - " + "; ".join(results), 200
+
+
+@app.route("/hr/fix-k002-mc-entitlement", methods=["POST"])
+def hr_fix_k002_mc_entitlement():
+    """One-time fix: K002 (Khairul Anuar) joined 2025-12-16 (under 2
+    years' service), so per the company's MC entitlement policy (<2yrs
+    = 14 days) his Medical Leave should be 14, not 22 - traced during a
+    leave-entitlement audit of all active staff (the only mismatch
+    found). An in-browser edit attempt hadn't taken effect, so applying
+    it directly. Safe to re-run."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    db.execute("UPDATE employees SET mc_entitlement=14 WHERE emp_id='K002'")
+    db.commit()
+    return "OK - set K002 mc_entitlement to 14", 200
 
 
 if __name__ == "__main__":

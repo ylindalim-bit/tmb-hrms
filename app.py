@@ -451,6 +451,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/add-september-ul-a007-m005",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fix-k002-mc-entitlement",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fix-h001-l002-september-weekends",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/fill-h001-september-full-attendance",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -6900,6 +6901,116 @@ def hr_fix_h001_l002_september_weekends():
 
     db.commit()
     return "OK - attendance fixed: " + "; ".join(applied) + " | payroll: " + "; ".join(results), 200
+
+
+@app.route("/hr/fill-h001-september-full-attendance", methods=["POST"])
+def hr_fill_h001_september_full_attendance():
+    """One-time fix: H001's September 2026 WORKED rows (all weekdays,
+    after the weekend OFF/REST correction above) had day_type set but no
+    actual punch times - fills every WORKED weekday with her Normal
+    Start/End Time (08:30-17:30) and ticks Meal Allowance (she's
+    eligible). Also corrects Sept 16, which is Malaysia Day (Public
+    Holiday) but had been left as WORKED, to PH. Leaves the already-
+    correct OFF/REST weekend rows untouched. Re-syncs
+    attendance_monthly and re-finalizes September payroll afterward.
+    Safe to re-run."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    emp_id = "H001"
+
+    ph_dates = {r["date"] for r in db.execute(
+        "SELECT date FROM public_holidays WHERE date LIKE '2026-09%'"
+    ).fetchall()}
+
+    applied = []
+    for day in range(1, 31):
+        date_str = f"2026-09-{day:02d}"
+        row = db.execute(
+            "SELECT day_type FROM attendance_daily WHERE emp_id=? AND date=?", (emp_id, date_str)
+        ).fetchone()
+        if row is None or row["day_type"] in ("OFF", "REST"):
+            continue
+        if date_str in ph_dates:
+            db.execute(
+                "UPDATE attendance_daily SET day_type='PH', time_in=NULL, time_out=NULL, meal_allowance_flag='N' WHERE emp_id=? AND date=?",
+                (emp_id, date_str),
+            )
+            applied.append(f"{date_str} -> PH")
+        else:
+            db.execute(
+                "UPDATE attendance_daily SET day_type='WORKED', time_in='08:30', time_out='17:30', meal_allowance_flag='Y' WHERE emp_id=? AND date=?",
+                (emp_id, date_str),
+            )
+            applied.append(f"{date_str} -> WORKED 08:30-17:30")
+
+    _sync_daily_to_monthly(db, emp_id, 2026, 9)
+    result = payroll_calc.calculate_payroll(db, emp_id, 2026, 9)
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    db.execute(
+        """INSERT INTO payroll_runs (
+            emp_id, year, month, basic_salary, fixed_allowance, variable_allowance,
+            working_days_in_month, days_worked, paid_leave_days, unpaid_days, unpaid_deduction,
+            ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, ot_pay_1_5, ot_pay_2_0, ot_pay_3_0,
+            ot_hourly_rate, ot_pay, days_employed, prorate_factor, transport_allowance,
+            meal_allowance, cewi_allowance, gross_pay, epf_employee, additional_epf_employee,
+            epf_employer, socso_employee, socso_employer, eis_employee, eis_employer, pcb,
+            skbbk_employee, hrd_levy_employer, other_deduction, other_deduction_desc,
+            total_deductions, net_pay, finalized_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(emp_id, year, month) DO UPDATE SET
+            basic_salary=excluded.basic_salary, fixed_allowance=excluded.fixed_allowance,
+            variable_allowance=excluded.variable_allowance,
+            working_days_in_month=excluded.working_days_in_month,
+            days_worked=excluded.days_worked, paid_leave_days=excluded.paid_leave_days,
+            unpaid_days=excluded.unpaid_days, unpaid_deduction=excluded.unpaid_deduction,
+            ot_hours_1_5=excluded.ot_hours_1_5, ot_hours_2_0=excluded.ot_hours_2_0,
+            ot_hours_3_0=excluded.ot_hours_3_0, ot_pay_1_5=excluded.ot_pay_1_5,
+            ot_pay_2_0=excluded.ot_pay_2_0, ot_pay_3_0=excluded.ot_pay_3_0,
+            ot_hourly_rate=excluded.ot_hourly_rate, ot_pay=excluded.ot_pay,
+            days_employed=excluded.days_employed, prorate_factor=excluded.prorate_factor,
+            transport_allowance=excluded.transport_allowance,
+            meal_allowance=excluded.meal_allowance, cewi_allowance=excluded.cewi_allowance,
+            gross_pay=excluded.gross_pay, net_pay=excluded.net_pay,
+            pcb=excluded.pcb, epf_employee=excluded.epf_employee,
+            additional_epf_employee=excluded.additional_epf_employee,
+            epf_employer=excluded.epf_employer, socso_employee=excluded.socso_employee,
+            socso_employer=excluded.socso_employer, eis_employee=excluded.eis_employee,
+            eis_employer=excluded.eis_employer, skbbk_employee=excluded.skbbk_employee,
+            hrd_levy_employer=excluded.hrd_levy_employer,
+            other_deduction=excluded.other_deduction, other_deduction_desc=excluded.other_deduction_desc,
+            total_deductions=excluded.total_deductions, finalized_at=excluded.finalized_at""",
+        (
+            result["emp_id"], 2026, 9, result["basic_salary"], result["fixed_allowance"],
+            result["variable_allowance"], result["working_days_in_month"],
+            result["working_days_in_month"] - result["unpaid_days"] - result["paid_leave_days"],
+            result["paid_leave_days"], result["unpaid_days"], result["unpaid_deduction"],
+            result["ot_hours_1_5"], result["ot_hours_2_0"], result["ot_hours_3_0"],
+            result["ot_pay_1_5"], result["ot_pay_2_0"], result["ot_pay_3_0"],
+            result["ot_hourly_rate"], result["ot_pay"], result["days_employed"], result["prorate_factor"],
+            result["transport_allowance"], result["meal_allowance"], result["cewi_allowance"],
+            result["gross_pay"], result["epf_employee"], result["additional_epf_employee"],
+            result["epf_employer"],
+            result["socso_employee"], result["socso_employer"], result["eis_employee"],
+            result["eis_employer"], result["pcb"], result["skbbk_employee"],
+            result["hrd_levy_employer"], result["other_deduction"], result["other_deduction_desc"],
+            result["total_deductions"], result["net_pay"], now,
+        ),
+    )
+    db.execute(
+        """INSERT INTO pcb_monthly_record (emp_id, year, month, gross_remun, epf_employee, pcb_deducted)
+           VALUES (?,?,?,?,?,?)
+           ON CONFLICT(emp_id, year, month) DO UPDATE SET
+             gross_remun=excluded.gross_remun, epf_employee=excluded.epf_employee,
+             pcb_deducted=excluded.pcb_deducted""",
+        (emp_id, 2026, 9, result["gross_pay"], result["epf_employee"], result["pcb"]),
+    )
+    db.commit()
+    return (
+        "OK - " + "; ".join(applied)
+        + f" | payroll: days_worked={result['working_days_in_month'] - result['unpaid_days'] - result['paid_leave_days']}, net_pay={result['net_pay']}"
+    ), 200
 
 
 if __name__ == "__main__":

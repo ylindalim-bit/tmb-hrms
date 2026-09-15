@@ -3911,6 +3911,7 @@ def portal_leave():
 
     return render_template("portal_leave.html", emp=emp, requests=my_requests, error=error,
                             al_balance=al_balance, mc_balance=mc_balance, hl_balance=hl_balance,
+                            al_used=al_used, mc_used=mc_used,
                             documents_by_request=documents_by_request, leave_types=LEAVE_TYPES)
 
 

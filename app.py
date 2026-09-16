@@ -1819,24 +1819,20 @@ def attendance_daily_all(year, month):
     """Read-only, all-employees view of Daily Attendance for one month -
     so HR can scan for problems (a WORKED day missing Time In or Time
     Out) across everyone at once, instead of opening each employee's
-    page one by one. Only lists employees who have at least one daily
-    entry that month - someone with none isn't being tracked this way
-    this month, so an empty grid for them wouldn't be useful. Editing
-    still happens on the per-employee page (linked from each block)."""
+    page one by one. Lists everyone employed that month (same rule as
+    the monthly Attendance page), including anyone with zero daily
+    entries at all - their block just shows every day unrecorded,
+    which is exactly the signal that their attendance for the month
+    hasn't been started yet. Editing still happens on the per-employee
+    page (linked from each block)."""
     db = get_db()
     days_in_month = calendar.monthrange(year, month)[1]
     month_prefix = f"{year:04d}-{month:02d}-"
 
-    emp_ids_with_data = [
-        r["emp_id"] for r in db.execute(
-            "SELECT DISTINCT emp_id FROM attendance_daily WHERE date LIKE ?", (f"{month_prefix}%",)
-        ).fetchall()
-    ]
-    employees = db.execute(
-        f"""SELECT emp_id, full_name, base, standard_start, standard_end, cewi_flag FROM employees
-            WHERE emp_id IN ({",".join("?" * len(emp_ids_with_data))}) ORDER BY emp_id""",
-        emp_ids_with_data,
-    ).fetchall() if emp_ids_with_data else []
+    employees = employed_this_month(
+        db, year, month,
+        "emp_id, full_name, base, standard_start, standard_end, cewi_flag",
+    )
 
     trip_labels = _trip_labels_for_month(db, year, month)
 

@@ -453,6 +453,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/fix-h001-l002-september-weekends",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fill-h001-september-full-attendance",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fill-k003-september-full-attendance",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/seed-china-2026-mid-autumn-national-day",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -7151,6 +7152,46 @@ def hr_fill_k003_september_full_attendance():
         "OK - " + "; ".join(applied)
         + f" | payroll: days_worked={result['working_days_in_month'] - result['unpaid_days'] - result['paid_leave_days']}, net_pay={result['net_pay']}"
     ), 200
+
+
+@app.route("/hr/seed-china-2026-mid-autumn-national-day", methods=["POST"])
+def hr_seed_china_2026_mid_autumn_national_day():
+    """One-time seed: China (CD/ZJ) staff's 2026 Mid-Autumn Festival and
+    National Day holiday block, per the company notice - Mid-Autumn
+    Sept 25-26, National Day Oct 1-5 (5 days, including Oct 5 as the
+    shifted rest day replacing Sept 20's normal Sunday rest - the notice
+    also states Sept 20 itself is a normal working day, which isn't a
+    Public Holidays entry, just something to remember when filling in
+    Daily Attendance for China staff that week). Tagged state='China' so
+    it only ever applies to China-based employees. Safe to re-run -
+    checks each date isn't already on file before inserting."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    china_holidays = [
+        ("2026-09-25", "Mid-Autumn Festival"),
+        ("2026-09-26", "Mid-Autumn Festival"),
+        ("2026-10-01", "National Day"),
+        ("2026-10-02", "National Day"),
+        ("2026-10-03", "National Day"),
+        ("2026-10-04", "National Day"),
+        ("2026-10-05", "National Day (shifted rest day, replacing Sept 20's Sunday rest)"),
+    ]
+    applied = []
+    for date_str, name in china_holidays:
+        if db.execute(
+            "SELECT 1 FROM public_holidays WHERE date=? AND state='China'", (date_str,)
+        ).fetchone():
+            continue
+        day = datetime.date.fromisoformat(date_str).strftime("%A")
+        db.execute(
+            "INSERT INTO public_holidays (date, day, name, state) VALUES (?,?,?,'China')",
+            (date_str, day, name),
+        )
+        applied.append(f"{date_str} {name}")
+    db.commit()
+    return "OK - added: " + ("; ".join(applied) if applied else "(nothing new, already on file)"), 200
 
 
 if __name__ == "__main__":

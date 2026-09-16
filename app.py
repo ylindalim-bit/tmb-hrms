@@ -1751,6 +1751,12 @@ def attendance_daily(emp_id, year, month):
         ).fetchall()
     }
     trip_labels = _trip_labels_for_month(db, year, month, emp_id)
+    holiday_names = {
+        r["date"]: r["name"] for r in db.execute(
+            "SELECT date, name FROM public_holidays WHERE date LIKE ? AND state=?",
+            (f"{year:04d}-{month:02d}-%", emp["base"] or "MY"),
+        ).fetchall()
+    }
     days = []
     for day in range(1, days_in_month + 1):
         date_obj = datetime.date(year, month, day)
@@ -1762,7 +1768,7 @@ def attendance_daily(emp_id, year, month):
             "day": day, "date": date_iso, "weekday": date_obj.strftime("%a"),
             "row": row, "unrecorded": row is None and not trip_label,
             "late_in": is_late, "early_out": is_early,
-            "trip_label": trip_label,
+            "trip_label": trip_label, "holiday_name": holiday_names.get(date_iso),
             "default_day_type": _default_day_type_for_pattern(emp["work_pattern"], date_obj.weekday()),
         })
     monthly = db.execute(

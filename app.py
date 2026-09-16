@@ -3365,12 +3365,14 @@ def recruitment_update(app_id):
         db.execute(
             """UPDATE job_applications SET status=?, decision=?, comments=?, appointment_department=?,
                official_use_date=?, reviewed_by=?, reviewed_at=?, assigned_reviewer_username=?,
-               position_applied=? WHERE id=?""",
+               position_applied=?, bank_name=?, bank_account_no=?, epf_no=?, tax_no=? WHERE id=?""",
             (request.form.get("status"), request.form.get("decision"), request.form.get("comments"),
              request.form.get("appointment_department"), request.form.get("official_use_date"),
              session.get("hr_username"), datetime.datetime.now(MYT).isoformat(timespec="seconds"),
              request.form.get("assigned_reviewer_username") or None,
-             request.form.get("position_applied") or None, app_id),
+             request.form.get("position_applied") or None,
+             request.form.get("bank_name") or None, request.form.get("bank_account_no") or None,
+             request.form.get("epf_no") or None, request.form.get("tax_no") or None, app_id),
         )
     db.commit()
     return redirect(url_for("recruitment_detail", app_id=app_id))
@@ -5711,6 +5713,14 @@ def hr_migrate_schema():
         # a free-text position, not a real department field.
         db.execute("ALTER TABLE job_applications ADD COLUMN assigned_reviewer_username TEXT")
         applied.append("job_applications.assigned_reviewer_username")
+
+    for col in ("bank_name", "bank_account_no", "epf_no", "tax_no"):
+        if col not in job_app_cols:
+            # HR-filled-in once hiring is confirmed, not part of the
+            # candidate's own online submission - lives in the For
+            # Official Use section alongside Decision/Status.
+            db.execute(f"ALTER TABLE job_applications ADD COLUMN {col} TEXT")
+            applied.append(f"job_applications.{col}")
 
     db.execute("UPDATE hr_users SET can_approve_leave='Y', can_approve_appraisal='Y' WHERE username='kee'")
     yang_password = request.form.get("yang_password", "")

@@ -77,6 +77,14 @@
           {% endfor %}
         </select>
       </div>
+      <div><label>Bank Name</label>
+        <input type="text" name="bank_name" value="{{ a.bank_name or '' }}"></div>
+      <div><label>Bank Account No.</label>
+        <input type="text" name="bank_account_no" value="{{ a.bank_account_no or '' }}"></div>
+      <div><label>EPF No.</label>
+        <input type="text" name="epf_no" value="{{ a.epf_no or '' }}"></div>
+      <div><label>Tax No.</label>
+        <input type="text" name="tax_no" value="{{ a.tax_no or '' }}"></div>
       {% endif %}
     </div>
     <label>Comments</label>
@@ -540,6 +548,14 @@
     <tr>
       <td class="of-label">Appointment / Department</td><td>{{ a.appointment_department or "" }}</td>
       <td class="of-label">Date</td><td>{{ a.official_use_date or "" }}</td>
+    </tr>
+    <tr>
+      <td class="of-label">Bank Name</td><td>{{ a.bank_name or "" }}</td>
+      <td class="of-label">Bank Account No.</td><td>{{ a.bank_account_no or "" }}</td>
+    </tr>
+    <tr>
+      <td class="of-label">EPF No.</td><td>{{ a.epf_no or "" }}</td>
+      <td class="of-label">Tax No.</td><td>{{ a.tax_no or "" }}</td>
     </tr>
   </table>
 </div>

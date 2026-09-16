@@ -2,6 +2,12 @@
 {% block title %}Public Holidays - TMB Payroll{% endblock %}
 {% block content %}
 <h1>Public Holidays <span style="color:var(--muted); font-weight:400; font-size:15px;">({{ holidays|length }} days total)</span></h1>
+<p style="color:var(--muted); font-size:13px; margin-top:-8px; max-width:640px;">
+  Each holiday only applies to employees whose own Holiday State (set on their Employee Edit page) matches -
+  Johor for Malaysia-based staff, China for staff based in Zhejiang/Chengdu. It affects Working Days in
+  Month auto-fill and OT rest-day rates, so a China holiday never reduces a Malaysia employee's working
+  days (or vice versa).
+</p>
 
 <div class="card">
   <h2 style="margin-top:0;">Add Holiday</h2>
@@ -9,6 +15,13 @@
     <div class="form-grid">
       <div><label>Date</label><input type="date" name="date" required></div>
       <div><label>Holiday Name</label><input type="text" name="name" placeholder="e.g. Awal Muharram" required></div>
+      <div><label>State</label>
+        <select name="state">
+          {% for s in holiday_state_options %}
+          <option value="{{ s }}">{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
       <div><label>Remarks</label><input type="text" name="remarks" placeholder="e.g. Replace of 22/03/2026"></div>
     </div>
     <div class="form-actions">
@@ -17,18 +30,26 @@
   </form>
 </div>
 
+<div class="card" style="margin-bottom:10px;">
+  <button type="button" class="btn holiday-filter-btn" data-state="" onclick="filterByState('')">All</button>
+  {% for s in holiday_state_options %}
+  <button type="button" class="btn secondary holiday-filter-btn" data-state="{{ s }}" onclick="filterByState('{{ s }}')">{{ s }}</button>
+  {% endfor %}
+</div>
+
 <div class="card table-wrap">
 {% for h in holidays %}
 <form id="holiday-delete-{{ h.id }}" method="post" action="{{ url_for('delete_holiday', holiday_id=h.id) }}" onsubmit="return confirm('Delete {{ h.name }} ({{ h.date }})?');"></form>
 {% endfor %}
 <table>
-<thead><tr><th class="text">Date</th><th class="text">Day</th><th class="text">Holiday</th><th class="text">Remarks</th><th></th></tr></thead>
+<thead><tr><th class="text">Date</th><th class="text">Day</th><th class="text">Holiday</th><th class="text">State</th><th class="text">Remarks</th><th></th></tr></thead>
 <tbody>
 {% for h in holidays %}
-<tr>
+<tr data-state="{{ h.state or 'Johor' }}">
   <td class="text">{{ h.date }}</td>
   <td class="text">{{ h.day or "" }}</td>
   <td class="text">{{ h.name }}</td>
+  <td class="text"><span class="pill draft">{{ h.state or "Johor" }}</span></td>
   <td class="text">{{ h.remarks or "" }}</td>
   <td class="text"><button form="holiday-delete-{{ h.id }}" type="submit" class="btn secondary" style="padding:3px 8px; font-size:11px; color:var(--danger);">Delete</button></td>
 </tr>
@@ -36,4 +57,14 @@
 </tbody>
 </table>
 </div>
+<script>
+function filterByState(state) {
+  document.querySelectorAll('tbody tr').forEach(function (row) {
+    row.style.display = (!state || row.dataset.state === state) ? '' : 'none';
+  });
+  document.querySelectorAll('.holiday-filter-btn').forEach(function (btn) {
+    btn.classList.toggle('secondary', btn.dataset.state !== state);
+  });
+}
+</script>
 {% endblock %}

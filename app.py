@@ -1611,7 +1611,7 @@ def attendance(year, month):
             suggested_ph_days[e["emp_id"]] = suggestion["ph_days"]
     return render_template("attendance.html", employees=emps, att=att_rows, adj=adj_rows,
                             year=year, month=month, suggested_working_days=suggested_working_days,
-                            suggested_ph_days=suggested_ph_days)
+                            suggested_ph_days=suggested_ph_days, base_options=BASE_OPTIONS)
 
 
 DAY_TYPES = ["WORKED", "OFF", "REST", "PH", "AL", "MC", "HL", "UL", "OTHER_PAID"]

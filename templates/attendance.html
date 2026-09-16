@@ -9,6 +9,14 @@
   <a href="{{ url_for('attendance_daily_all', year=year, month=month) }}" style="margin-left:16px;">View All Staff Daily Attendance &rarr;</a>
 </div>
 
+<div style="margin-bottom:10px;">
+  <label style="font-size:13px; color:var(--muted); margin-right:6px;">Base:</label>
+  <button type="button" class="btn base-filter-btn" data-base="" style="padding:4px 10px;" onclick="filterByBase('')">All</button>
+  {% for b in base_options %}
+  <button type="button" class="btn secondary base-filter-btn" data-base="{{ b }}" style="padding:4px 10px;" onclick="filterByBase('{{ b }}')">{{ b }}</button>
+  {% endfor %}
+</div>
+
 <form method="post">
 <div class="card table-wrap">
 <table>
@@ -26,7 +34,7 @@
 {% for e in employees %}
 {% set a = att.get(e.emp_id) %}
 {% set adj_row = adj.get(e.emp_id) %}
-<tr>
+<tr data-base="{{ e.base or '' }}">
   <td class="text sticky-col sticky-col-wide">{{ e.emp_id }} &mdash; {{ e.full_name }}
     <a href="{{ url_for('attendance_daily', emp_id=e.emp_id, year=year, month=month) }}" style="font-size:11px; margin-left:4px;">(Daily)</a>
   </td>
@@ -69,6 +77,18 @@
 </div>
 </form>
 <script>
+// Client-side only - just shows/hides table rows, leaving every input in
+// the DOM so "Save All Attendance" still submits every employee's values
+// regardless of which Base filter is currently active.
+function filterByBase(base) {
+  document.querySelectorAll('tbody tr').forEach(function (row) {
+    row.style.display = (!base || row.dataset.base === base) ? '' : 'none';
+  });
+  document.querySelectorAll('.base-filter-btn').forEach(function (btn) {
+    btn.classList.toggle('secondary', btn.dataset.base !== base);
+  });
+}
+
 // Employees with Meal Allowance or CEWI marked "Y" on their Employee Master
 // page (data-linked="1") get their Meal/CEWI Elig. Days auto-filled from
 // Working Days as HR types it in - this is exactly the field that got left

@@ -11,9 +11,9 @@
 
 <div style="margin-bottom:10px;">
   <label style="font-size:13px; color:var(--muted); margin-right:6px;">Base:</label>
-  <button type="button" class="btn base-filter-btn" data-base="" style="padding:4px 10px;" onclick="filterByBase('')">All</button>
+  <button type="button" class="btn base-filter-btn" data-base="" style="padding:4px 10px;" onclick="filterByBase('')">All ({{ employees|length }})</button>
   {% for b in base_options %}
-  <button type="button" class="btn secondary base-filter-btn" data-base="{{ b }}" style="padding:4px 10px;" onclick="filterByBase('{{ b }}')">{{ b }}</button>
+  <button type="button" class="btn secondary base-filter-btn" data-base="{{ b }}" style="padding:4px 10px;" onclick="filterByBase('{{ b }}')">{{ b }} ({{ base_counts[b] }})</button>
   {% endfor %}
 </div>
 

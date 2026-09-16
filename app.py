@@ -1609,9 +1609,14 @@ def attendance(year, month):
         if suggestion is not None:
             suggested_working_days[e["emp_id"]] = suggestion["working_days"]
             suggested_ph_days[e["emp_id"]] = suggestion["ph_days"]
+    base_counts = {b: 0 for b in BASE_OPTIONS}
+    for e in emps:
+        if e["base"] in base_counts:
+            base_counts[e["base"]] += 1
     return render_template("attendance.html", employees=emps, att=att_rows, adj=adj_rows,
                             year=year, month=month, suggested_working_days=suggested_working_days,
-                            suggested_ph_days=suggested_ph_days, base_options=BASE_OPTIONS)
+                            suggested_ph_days=suggested_ph_days, base_options=BASE_OPTIONS,
+                            base_counts=base_counts)
 
 
 DAY_TYPES = ["WORKED", "OFF", "REST", "PH", "AL", "MC", "HL", "UL", "OTHER_PAID"]

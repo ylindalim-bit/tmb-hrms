@@ -454,6 +454,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/fill-h001-september-full-attendance",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fill-k003-september-full-attendance",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/seed-china-2026-mid-autumn-national-day",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/split-china-zj-cd-holidays",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -1508,12 +1509,13 @@ def _default_day_type_for_pattern(work_pattern, weekday):
     return "WORKED"
 
 
-def _calc_working_days_from_pattern(db, year, month, work_pattern, holiday_state="Johor"):
+def _calc_working_days_from_pattern(db, year, month, work_pattern, base="MY"):
     """Deterministic Working Days in Month and PH count for an employee on a
     fixed weekly schedule - pure calendar math, no guessing - using the
-    Public Holidays list, scoped to this employee's own holiday_state
-    (Johor vs China - each has its own calendar; a China public holiday
-    should never reduce a Johor-based employee's working days, or vice
+    Public Holidays list, scoped to this employee's own Base (MY/ZJ/CD -
+    each site sets its own exact holiday dates, e.g. ZJ and CD's 2026
+    Mid-Autumn/National Day arrangements differ by a day; a CD holiday
+    should never reduce a ZJ or MY employee's working days, or vice
     versa) as the source of truth. Returns None for 'Manual' (or anything
     not recognized), so the caller falls back to the normal blank/manual
     entry. Alternating/irregular Saturday schedules must stay 'Manual':
@@ -1532,7 +1534,7 @@ def _calc_working_days_from_pattern(db, year, month, work_pattern, holiday_state
 
     holiday_rows = db.execute(
         "SELECT date FROM public_holidays WHERE date LIKE ? AND state=?",
-        (f"{year:04d}-{month:02d}-%", holiday_state or "Johor"),
+        (f"{year:04d}-{month:02d}-%", base or "MY"),
     ).fetchall()
     ph_days = 0
     for h in holiday_rows:
@@ -1586,7 +1588,7 @@ def attendance(year, month):
 
     emps = employed_this_month(
         db, year, month,
-        "emp_id, full_name, meal_allowance_flag, cewi_flag, work_pattern, base, holiday_state",
+        "emp_id, full_name, meal_allowance_flag, cewi_flag, work_pattern, base",
     )
     att_rows = {
         r["emp_id"]: r for r in db.execute(
@@ -1608,7 +1610,7 @@ def attendance(year, month):
         if e["emp_id"] in att_rows:
             continue
         suggestion = _calc_working_days_from_pattern(
-            db, year, month, e["work_pattern"], e["holiday_state"]
+            db, year, month, e["work_pattern"], e["base"]
         )
         if suggestion is not None:
             suggested_working_days[e["emp_id"]] = suggestion["working_days"]
@@ -3408,7 +3410,7 @@ def holidays():
         date = request.form.get("date")
         name = request.form.get("name")
         remarks = request.form.get("remarks") or None
-        state = request.form.get("state") or "Johor"
+        state = request.form.get("state") or "MY"
         if date and name:
             day = datetime.date.fromisoformat(date).strftime("%A")
             db.execute(
@@ -3418,7 +3420,7 @@ def holidays():
             db.commit()
         return redirect(url_for("holidays"))
     rows = db.execute("SELECT * FROM public_holidays ORDER BY date").fetchall()
-    return render_template("holidays.html", holidays=rows, holiday_state_options=HOLIDAY_STATE_OPTIONS)
+    return render_template("holidays.html", holidays=rows, base_options=BASE_OPTIONS)
 
 
 @app.route("/holidays/<int:holiday_id>/delete", methods=["POST"])
@@ -4167,7 +4169,7 @@ def portal_ot_claim():
         ot_before_end = request.form.get("ot_before_end") or None
         ot_start = request.form.get("ot_start") or None
         ot_end = request.form.get("ot_end") or None
-        ot_1_5, ot_2_0, ot_3_0 = _ot_claim_hours_from_form(db, request.form, claim_date, emp["holiday_state"])
+        ot_1_5, ot_2_0, ot_3_0 = _ot_claim_hours_from_form(db, request.form, claim_date, emp["base"])
         reason = request.form.get("reason", "").strip() or None
         if not claim_date:
             error = "Date is required."
@@ -4191,7 +4193,7 @@ def portal_ot_claim():
         "SELECT * FROM ot_claims WHERE emp_id=? ORDER BY submitted_at DESC", (emp["emp_id"],)
     ).fetchall()
     holiday_dates = [r["date"] for r in db.execute(
-        "SELECT date FROM public_holidays WHERE state=?", (emp["holiday_state"] or "Johor",)
+        "SELECT date FROM public_holidays WHERE state=?", (emp["base"] or "MY",)
     ).fetchall()]
     return render_template("portal_ot_claim.html", emp=emp, claims=my_claims, error=error,
                             holiday_dates=holiday_dates)
@@ -4991,11 +4993,11 @@ def _time_range_hours(start_str, end_str):
     return span_hours if span_hours > 0 else 0
 
 
-def _is_rest_day(db, claim_date, holiday_state="Johor"):
+def _is_rest_day(db, claim_date, base="MY"):
     """Sunday or a public holiday - the two day types that pay OT at
     2.0x/3.0x instead of the normal working day's 1.5x. The holiday
-    check is scoped to this employee's own holiday_state (Johor vs
-    China), same as _calc_working_days_from_pattern."""
+    check is scoped to this employee's own Base (MY/ZJ/CD), same as
+    _calc_working_days_from_pattern."""
     try:
         d = datetime.date.fromisoformat(claim_date)
     except (TypeError, ValueError):
@@ -5003,11 +5005,11 @@ def _is_rest_day(db, claim_date, holiday_state="Johor"):
     if d.weekday() == 6:
         return True
     return db.execute(
-        "SELECT 1 FROM public_holidays WHERE date=? AND state=?", (claim_date, holiday_state or "Johor")
+        "SELECT 1 FROM public_holidays WHERE date=? AND state=?", (claim_date, base or "MY")
     ).fetchone() is not None
 
 
-def _ot_claim_hours_from_form(db, f, claim_date, holiday_state="Johor"):
+def _ot_claim_hours_from_form(db, f, claim_date, base="MY"):
     """Builds (ot_hours_1_5, ot_hours_2_0, ot_hours_3_0) from a claim
     submission form. If either OT window (OT Before Start/End, for OT
     worked before the normal shift starts, e.g. 6:00am-8:30am; and/or OT
@@ -5029,7 +5031,7 @@ def _ot_claim_hours_from_form(db, f, claim_date, holiday_state="Johor"):
                 f.get("ot_hours_3_0", type=float) or 0)
     rest_hours = math.ceil(gross_hours / 5) * 0.5
     net_hours = max(gross_hours - rest_hours, 0)
-    if _is_rest_day(db, claim_date, holiday_state):
+    if _is_rest_day(db, claim_date, base):
         ot_2_0 = round(min(net_hours, 8), 2)
         ot_3_0 = round(max(net_hours - 8, 0), 2)
         return 0, ot_2_0, ot_3_0
@@ -5099,7 +5101,7 @@ def ot_claim_new():
     emp_id = request.form.get("emp_id")
     claim_date = request.form.get("claim_date", "")
     reason = request.form.get("reason", "").strip() or None
-    emp = db.execute("SELECT holiday_state FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+    emp = db.execute("SELECT base FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
     if emp is None or not claim_date:
         return "Employee and claim date are required", 400
     if not reason:
@@ -5110,7 +5112,7 @@ def ot_claim_new():
     ot_before_end = request.form.get("ot_before_end") or None
     ot_start = request.form.get("ot_start") or None
     ot_end = request.form.get("ot_end") or None
-    ot_1_5, ot_2_0, ot_3_0 = _ot_claim_hours_from_form(db, request.form, claim_date, emp["holiday_state"])
+    ot_1_5, ot_2_0, ot_3_0 = _ot_claim_hours_from_form(db, request.form, claim_date, emp["base"])
     db.execute(
         """INSERT INTO ot_claims (emp_id, claim_date, time_in, time_out,
                ot_before_start, ot_before_end, ot_start, ot_end,
@@ -5735,11 +5737,11 @@ def hr_migrate_schema():
 
     ph_cols = [r[1] for r in db.execute("PRAGMA table_info(public_holidays)").fetchall()]
     if "state" not in ph_cols:
-        # Which employees.holiday_state this holiday applies to (Johor vs
-        # China) - every existing row predates this and was Malaysia's
-        # calendar, so defaults to 'Johor' rather than silently applying
-        # to China staff too.
-        db.execute("ALTER TABLE public_holidays ADD COLUMN state TEXT NOT NULL DEFAULT 'Johor'")
+        # Which employees.base (MY/ZJ/CD) this holiday applies to - each
+        # site sets its own exact dates, so every existing row predates
+        # this and was Malaysia's calendar, defaulting to 'MY' rather
+        # than silently applying to China staff too.
+        db.execute("ALTER TABLE public_holidays ADD COLUMN state TEXT NOT NULL DEFAULT 'MY'")
         applied.append("public_holidays.state")
 
     db.execute("UPDATE hr_users SET can_approve_leave='Y', can_approve_appraisal='Y' WHERE username='kee'")
@@ -7192,6 +7194,51 @@ def hr_seed_china_2026_mid_autumn_national_day():
         applied.append(f"{date_str} {name}")
     db.commit()
     return "OK - added: " + ("; ".join(applied) if applied else "(nothing new, already on file)"), 200
+
+
+@app.route("/hr/split-china-zj-cd-holidays", methods=["POST"])
+def hr_split_china_zj_cd_holidays():
+    """One-time fix: Public Holidays' state was first scoped using
+    employees.holiday_state (Johor/China), but ZJ's own 2026 Mid-Autumn/
+    National Day notice turned out to differ from CD's (ZJ: Mid-Autumn 1
+    day, National Day Sept 30 + Oct 1-4; CD: Mid-Autumn 2 days, National
+    Day Oct 1-5) - one shared "China" calendar isn't precise enough.
+    Switched the scoping to employees.base (MY/ZJ/CD) instead, since
+    that's already reliably set per employee and directly matches each
+    site. Relabels existing rows (Johor -> MY, China -> CD, since the
+    'China' rows seeded earlier were actually CD's specific dates), then
+    seeds ZJ's own correct dates. Safe to re-run."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    db.execute("UPDATE public_holidays SET state='MY' WHERE state='Johor'")
+    db.execute("UPDATE public_holidays SET state='CD' WHERE state='China'")
+
+    zj_holidays = [
+        ("2026-09-25", "Mid-Autumn Festival"),
+        ("2026-09-30", "National Day"),
+        ("2026-10-01", "National Day"),
+        ("2026-10-02", "National Day"),
+        ("2026-10-03", "National Day"),
+        ("2026-10-04", "National Day"),
+    ]
+    applied = []
+    for date_str, name in zj_holidays:
+        if db.execute(
+            "SELECT 1 FROM public_holidays WHERE date=? AND state='ZJ'", (date_str,)
+        ).fetchone():
+            continue
+        day = datetime.date.fromisoformat(date_str).strftime("%A")
+        db.execute(
+            "INSERT INTO public_holidays (date, day, name, state) VALUES (?,?,?,'ZJ')",
+            (date_str, day, name),
+        )
+        applied.append(f"{date_str} {name}")
+    db.commit()
+    return "OK - relabeled Johor->MY, China->CD; added ZJ: " + (
+        "; ".join(applied) if applied else "(nothing new, already on file)"
+    ), 200
 
 
 if __name__ == "__main__":

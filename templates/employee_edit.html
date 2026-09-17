@@ -534,8 +534,18 @@
   <form id="al-adj-save-{{ adj.id }}" method="post" action="{{ url_for('update_al_adjustment', emp_id=emp.emp_id, adj_id=adj.id) }}"></form>
   <form id="al-adj-delete-{{ adj.id }}" method="post" action="{{ url_for('delete_al_adjustment', emp_id=emp.emp_id, adj_id=adj.id) }}" onsubmit="return confirm('Delete this AL adjustment? This will also subtract {{ adj.days }} day(s) from AL Adjustment.');"></form>
   {% endfor %}
+  <form method="post" action="{{ url_for('add_al_adjustment', emp_id=emp.emp_id) }}">
+    <div class="form-grid">
+      <div><label>Date</label><input type="date" name="adj_date" required></div>
+      <div><label>Days (negative to deduct)</label><input type="number" step="0.5" name="days" placeholder="e.g. 1 or -1" required></div>
+      <div><label>Reason</label><input type="text" name="reason" placeholder="e.g. Replacement for working Sun 7/9" style="width:100%;"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn" type="submit">Add AL Adjustment</button>
+    </div>
+  </form>
   {% if al_adjustments %}
-  <div class="table-wrap">
+  <div class="table-wrap" style="margin-top:14px;">
   <table>
     <thead><tr><th class="text">Date</th><th>Days</th><th class="text">Reason</th><th class="text">Added By</th><th></th></tr></thead>
     <tbody>
@@ -555,16 +565,6 @@
   </table>
   </div>
   {% endif %}
-  <form method="post" action="{{ url_for('add_al_adjustment', emp_id=emp.emp_id) }}" style="margin-top:10px;">
-    <div class="form-grid">
-      <div><label>Date</label><input type="date" name="adj_date" required></div>
-      <div><label>Days (negative to deduct)</label><input type="number" step="0.5" name="days" placeholder="e.g. 1 or -1" required></div>
-      <div><label>Reason</label><input type="text" name="reason" placeholder="e.g. Replacement for working Sun 7/9" style="width:100%;"></div>
-    </div>
-    <div class="form-actions">
-      <button class="btn" type="submit">Add AL Adjustment</button>
-    </div>
-  </form>
 </div>
 
 <div class="card">

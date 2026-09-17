@@ -36,6 +36,7 @@
 {% set MARITAL_ZH = {"Single": "单身", "Married": "已婚", "Divorced": "离异", "Widowed": "丧偶"} %}
 {% set NS_ZH = {"Completed": "已完成", "Exempted": "已豁免", "Reservist": "后备军人", "Others": "其他"} %}
 {% set PROF_ZH = {"Slight": "略懂", "Fair": "一般", "Fluent": "流利"} %}
+{% set DOC_TYPE_ZH = {"Resume / CV": "简历", "Certificate / Diploma": "证书/文凭", "License": "执照", "Other Supporting Document": "其他证明文件"} %}
 {% macro bi(en, zh, tag="span") -%}
 <{{ tag }} data-en="{{ en }}" data-zh="{{ zh }}">{{ en }}</{{ tag }}>
 {%- endmacro %}
@@ -583,6 +584,16 @@
       <td class="of-label" data-en="Date" data-zh="日期">Date</td><td>{{ a.declaration_date or "" }}</td>
     </tr>
   </table>
+
+  {% if documents %}
+  <div class="of-section-header" data-en="SUPPORTING DOCUMENTS" data-zh="证明文件">SUPPORTING DOCUMENTS</div>
+  <table class="of-table">
+    <tr><th data-en="Type" data-zh="类型">Type</th><th data-en="File" data-zh="文件">File</th></tr>
+    {% for d in documents %}
+    <tr><td data-en="{{ d.doc_type }}" data-zh="{{ DOC_TYPE_ZH.get(d.doc_type, d.doc_type) }}">{{ d.doc_type }}</td><td>{{ d.original_name }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
 
   <div class="of-section-header" data-en="FOR OFFICIAL USE" data-zh="公司专用">FOR OFFICIAL USE</div>
   <table class="of-table">

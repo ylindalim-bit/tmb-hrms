@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Daily Attendance {{ emp.emp_id }} {{ month_names[month] }} {{ year }} - TMB Payroll{% endblock %}
 {% block content %}
-<h1>Daily Attendance &mdash; {{ emp.emp_id }} &mdash; {{ emp.full_name }}</h1>
+<h1>Daily Attendance &mdash; {{ emp.emp_id }} &mdash; {{ emp.full_name }}
+  {% if emp.base %}<span class="pill" style="background:var(--bg); color:var(--muted); border:1px solid var(--border); vertical-align:middle;">{{ emp.base }}</span>{% endif %}
+</h1>
 <div class="month-nav">
   <a href="{{ url_for('attendance_daily', emp_id=emp.emp_id, year=year if month>1 else year-1, month=month-1 if month>1 else 12) }}">&laquo; Prev</a>
   <strong>{{ month_names[month] }} {{ year }}</strong>

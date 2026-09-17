@@ -1133,6 +1133,10 @@ def edit_employee(emp_id):
         "SELECT * FROM company_payments WHERE emp_id=? ORDER BY payment_date DESC, recorded_at DESC",
         (emp_id,),
     ).fetchall()
+    al_adjustments = db.execute(
+        "SELECT * FROM al_adjustments WHERE emp_id=? ORDER BY adj_date DESC, created_at DESC",
+        (emp_id,),
+    ).fetchall()
 
     eis_applies = _eis_applies(emp["date_of_birth"], emp["eis_flag"])
 
@@ -1170,7 +1174,7 @@ def edit_employee(emp_id):
     return render_template("employee_edit.html", emp=emp, is_new=False, extensions=extensions,
                             salary_history=salary_history, eis_applies=eis_applies,
                             documents=documents, document_types=DOCUMENT_TYPES,
-                            company_payments=company_payments,
+                            company_payments=company_payments, al_adjustments=al_adjustments,
                             al_note=al_note, al_year=al_year, al_entitlement_effective=al_entitlement_effective,
                             al_used=al_used, al_balance=al_balance, al_bf=al_bf, al_total_available=al_total_available,
                             race_options=RACE_OPTIONS, religion_options=RELIGION_OPTIONS,
@@ -1372,6 +1376,49 @@ def update_company_payment(emp_id, payment_id):
 def delete_company_payment(emp_id, payment_id):
     db = get_db()
     db.execute("DELETE FROM company_payments WHERE id=? AND emp_id=?", (payment_id, emp_id))
+    db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id))
+
+
+@app.route("/employees/<emp_id>/al-adjustments/add", methods=["POST"])
+def add_al_adjustment(emp_id):
+    """Records a specific date as the reason for an AL credit (e.g. a
+    replacement day for working a rest day/public holiday) - adding a
+    row here also adds the same number of days onto employees.al_bf_days
+    so the AL balance shown everywhere else updates immediately, without
+    those other pages needing to know about this table at all."""
+    db = get_db()
+    adj_date = request.form.get("adj_date")
+    days_raw = request.form.get("days")
+    reason = (request.form.get("reason") or "").strip()
+    if not adj_date or not days_raw:
+        return redirect(url_for("edit_employee", emp_id=emp_id))
+    days = float(days_raw)
+    db.execute(
+        """INSERT INTO al_adjustments (emp_id, adj_date, days, reason, created_at, created_by)
+           VALUES (?,?,?,?,?,?)""",
+        (emp_id, adj_date, days, reason, datetime.datetime.now().isoformat(timespec="seconds"),
+         session.get("hr_username")),
+    )
+    db.execute(
+        "UPDATE employees SET al_bf_days = COALESCE(al_bf_days,0) + ? WHERE emp_id=?", (days, emp_id),
+    )
+    db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id))
+
+
+@app.route("/employees/<emp_id>/al-adjustments/<int:adj_id>/delete", methods=["POST"])
+def delete_al_adjustment(emp_id, adj_id):
+    db = get_db()
+    row = db.execute(
+        "SELECT days FROM al_adjustments WHERE id=? AND emp_id=?", (adj_id, emp_id)
+    ).fetchone()
+    if row is None:
+        return redirect(url_for("edit_employee", emp_id=emp_id))
+    db.execute("DELETE FROM al_adjustments WHERE id=? AND emp_id=?", (adj_id, emp_id))
+    db.execute(
+        "UPDATE employees SET al_bf_days = COALESCE(al_bf_days,0) - ? WHERE emp_id=?", (row["days"], emp_id),
+    )
     db.commit()
     return redirect(url_for("edit_employee", emp_id=emp_id))
 
@@ -6044,6 +6091,22 @@ def hr_migrate_schema():
             payment_date TEXT NOT NULL, reason TEXT NOT NULL, amount REAL NOT NULL,
             status TEXT NOT NULL DEFAULT 'Approved', recorded_at TEXT NOT NULL)""")
         applied.append("table: company_payments")
+
+    if "al_adjustments" not in existing_tables:
+        # Per-date detail behind employees.al_bf_days, which used to be
+        # just a single number with no record of which specific date(s)
+        # it came from (e.g. a replacement day for working a rest day/
+        # public holiday) - Linda asked to key in the actual date and
+        # reason, not just bump the number. Adding/deleting a row here
+        # also adds/subtracts al_bf_days by the same amount (see
+        # add_al_adjustment/delete_al_adjustment), so the balance
+        # calculation everywhere else in the app (which only reads
+        # al_bf_days) doesn't need to change at all.
+        db.execute("""CREATE TABLE al_adjustments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),
+            adj_date TEXT NOT NULL, days REAL NOT NULL, reason TEXT,
+            created_at TEXT NOT NULL, created_by TEXT)""")
+        applied.append("table: al_adjustments")
 
     if "clockin_events" not in existing_tables:
         db.execute("""CREATE TABLE clockin_events (

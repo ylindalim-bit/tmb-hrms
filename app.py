@@ -3535,13 +3535,16 @@ def _application_pdf_styles():
     }
 
 
-def _build_application_form_pdf(a, family, education, other_quals, languages, employment, documents):
+def _build_application_form_pdf(a, family, education, other_quals, languages, employment, documents, photo_path=None):
     """Renders the application's data (same fields as the Recruitment
     detail page) as a fresh, clean PDF using reportlab - not a copy of
     the on-screen HTML, since that page's CSS (grid layout, print
     media) isn't something a Python PDF library can reliably reproduce.
     Used by recruitment_combined_pdf() as the first pages of the merged
-    PDF, followed by the candidate's actual uploaded documents."""
+    PDF, followed by the candidate's actual uploaded documents.
+    photo_path, if given and it exists on disk, is the candidate's own
+    uploaded photo (job_applications.photo_stored_name) - placed top
+    right, same spot as the photo box on the paper form."""
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=A4, topMargin=1.5 * cm, bottomMargin=1.5 * cm, leftMargin=1.5 * cm, rightMargin=1.5 * cm,
@@ -3550,17 +3553,28 @@ def _build_application_form_pdf(a, family, education, other_quals, languages, em
     story = []
 
     logo_path = os.path.join(app.static_folder, "img", "tmb_logo.jpg")
+    photo_draw_w = 2.5 * cm
+    photo_flowable = ""
+    if photo_path and os.path.exists(photo_path):
+        with PILImage.open(photo_path) as im:
+            photo_w, photo_h = im.size
+        photo_draw_h = photo_draw_w * photo_h / photo_w
+        photo_flowable = RLImage(photo_path, width=photo_draw_w, height=photo_draw_h)
     if os.path.exists(logo_path):
         with PILImage.open(logo_path) as im:
             logo_w, logo_h = im.size
         logo_draw_h = 0.8 * cm
         logo_draw_w = logo_draw_h * logo_w / logo_h
-        header_tbl = Table(
-            [[RLImage(logo_path, width=logo_draw_w, height=logo_draw_h),
-              [Paragraph("TIANMA PRECISION SDN. BHD.", s["company"]), Paragraph("APPLICATION FORM", s["title"])]]],
-            colWidths=[logo_draw_w + 0.3 * cm, doc.width - logo_draw_w - 0.3 * cm],
-        )
-        header_tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+        header_row = [
+            RLImage(logo_path, width=logo_draw_w, height=logo_draw_h),
+            [Paragraph("TIANMA PRECISION SDN. BHD.", s["company"]), Paragraph("APPLICATION FORM", s["title"])],
+        ]
+        col_widths = [logo_draw_w + 0.3 * cm, doc.width - logo_draw_w - photo_draw_w - 0.6 * cm]
+        if photo_flowable:
+            header_row.append(photo_flowable)
+            col_widths.append(photo_draw_w + 0.3 * cm)
+        header_tbl = Table([header_row], colWidths=col_widths)
+        header_tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (-1, 0), (-1, 0), "RIGHT")]))
         story.append(header_tbl)
         story.append(Spacer(1, 6))
     else:
@@ -3784,13 +3798,16 @@ def recruitment_combined_pdf(app_id):
     languages = json.loads(application["languages_json"] or "[]")
     employment = json.loads(application["employment_history_json"] or "[]")
 
-    form_pdf_bytes = _build_application_form_pdf(application, family, education, other_quals, languages, employment, documents)
+    app_dir = os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(app_id))
+    photo_path = os.path.join(app_dir, application["photo_stored_name"]) if application["photo_stored_name"] else None
+    form_pdf_bytes = _build_application_form_pdf(
+        application, family, education, other_quals, languages, employment, documents, photo_path=photo_path,
+    )
 
     writer = PdfWriter()
     for page in PdfReader(io.BytesIO(form_pdf_bytes)).pages:
         writer.add_page(page)
 
-    app_dir = os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(app_id))
     for d in documents:
         path = os.path.join(app_dir, d["stored_name"])
         if not os.path.exists(path):

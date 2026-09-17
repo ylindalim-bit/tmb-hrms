@@ -7,11 +7,15 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <style>
   body { max-width: 760px; margin: 0 auto; padding: 20px 16px 60px; }
-  .careers-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+  .careers-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
   .careers-header img { height: 32px; width: auto; display: block; flex-shrink: 0; }
   .careers-header .careers-header-text { min-width: 0; }
   .careers-header h1 { font-size: 16px; margin: 0; line-height: 1.3; }
   .careers-header p { color: var(--muted); font-size: 12px; margin: 0; }
+  .lang-toggle { display: flex; gap: 6px; margin-bottom: 20px; }
+  .lang-toggle button { font-size: 12px; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border);
+                         background: var(--card); color: var(--text); cursor: pointer; }
+  .lang-toggle button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 18px; }
   legend { font-weight: 700; padding: 0 8px; }
   .subhead { font-weight: 700; font-size: 13px; margin: 14px 0 8px; color: var(--muted); }
@@ -40,279 +44,283 @@
   <img src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="Company logo">
   <div class="careers-header-text">
     <h1>TIANMA PRECISION SDN BHD</h1>
-    <p>Job Application Form</p>
+    <p data-en="Job Application Form" data-zh="求职申请表">Job Application Form</p>
   </div>
+</div>
+<div class="lang-toggle">
+  <button type="button" id="lang-btn-en" class="active" onclick="setLang('en')">English</button>
+  <button type="button" id="lang-btn-zh" onclick="setLang('zh')">简体中文</button>
 </div>
 
 <form method="post" action="{{ url_for('careers_apply') }}" enctype="multipart/form-data">
 
   <fieldset>
-    <legend>Position</legend>
-    <label class="required">Position Applied For</label>
+    <legend data-en="Position" data-zh="应聘职位">Position</legend>
+    <label class="required" data-en="Position Applied For" data-zh="应聘职位">Position Applied For</label>
     <input type="text" name="position_applied" required>
-    <label>Recent Passport Photo</label>
+    <label data-en="Recent Passport Photo" data-zh="最近护照照片">Recent Passport Photo</label>
     <div class="file-field">
       <input type="file" id="f_photo" name="photo" accept="image/jpeg,image/png" onchange="showFileNames(this)">
-      <label for="f_photo" class="file-btn">Choose File</label>
-      <span class="file-name" id="f_photo_name">No file chosen</span>
+      <label for="f_photo" class="file-btn" data-en="Choose File" data-zh="选择文件">Choose File</label>
+      <span class="file-name" id="f_photo_name" data-en="No file chosen" data-zh="未选择文件">No file chosen</span>
     </div>
   </fieldset>
 
   <fieldset>
-    <legend>Personal Information</legend>
+    <legend data-en="Personal Information" data-zh="个人资料">Personal Information</legend>
     <div class="form-grid">
-      <div><label>Title</label>
-        <select name="salutation"><option value=""></option><option>Mr.</option><option>Mdm.</option><option>Ms.</option></select>
+      <div><label data-en="Title" data-zh="称谓">Title</label>
+        <select name="salutation"><option value=""></option><option data-en="Mr." data-zh="先生">Mr.</option><option data-en="Mdm." data-zh="夫人">Mdm.</option><option data-en="Ms." data-zh="女士">Ms.</option></select>
       </div>
-      <div><label class="required">Full Name (as per IC / Passport)</label>
+      <div><label class="required" data-en="Full Name (as per IC / Passport)" data-zh="姓名（与身份证/护照一致）">Full Name (as per IC / Passport)</label>
         <input type="text" name="full_name" required></div>
-      <div><label>Chinese Name (if any)</label><input type="text" name="chinese_name"></div>
-      <div><label>Gender</label>
-        <select name="gender"><option value=""></option><option>Male</option><option>Female</option></select></div>
-      <div><label>Identity Card / Passport No / FIN No</label><input type="text" name="ic_passport_no"></div>
-      <div><label>Marital Status</label>
-        <select name="marital_status"><option value=""></option><option>Single</option><option>Married</option><option>Divorced</option><option>Widowed</option></select></div>
-      <div><label>Identity Card Colour</label><input type="text" name="ic_color"></div>
-      <div><label>Date of Birth</label><input type="text" name="date_of_birth" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"></div>
-      <div><label>Age</label><input type="text" name="age"></div>
-      <div><label>Height (cm)</label><input type="text" name="height_cm"></div>
-      <div><label>Weight (kg)</label><input type="text" name="weight_kg"></div>
-      <div><label>Home Tel No</label><input type="text" name="home_tel_no"></div>
-      <div><label>Office Tel No</label><input type="text" name="office_tel_no"></div>
-      <div><label>Handphone No</label><input type="text" name="handphone_no"></div>
-      <div><label>E-mail Address</label><input type="email" name="email"></div>
-      <div><label>Religion</label><input type="text" name="religion"></div>
-      <div><label>Race</label><input type="text" name="race"></div>
-      <div><label>Dialect</label><input type="text" name="dialect"></div>
-      <div><label>Place of Birth</label><input type="text" name="place_of_birth"></div>
-      <div><label>Nationality</label><input type="text" name="nationality"></div>
-      <div><label>Driving License</label>
-        <select name="driving_license"><option value=""></option><option>Yes</option><option>No</option></select></div>
-      <div><label>Driving License Class</label><input type="text" name="driving_license_class"></div>
-      <div><label>Car Owner</label>
-        <select name="car_owner"><option value=""></option><option>Yes</option><option>No</option></select></div>
-      <div><label>National Service Status</label>
-        <select name="national_service_status"><option value=""></option><option>Completed</option><option>Exempted</option><option>Reservist</option><option>Others</option></select></div>
-      <div><label>ORD</label><input type="text" name="national_service_ord"></div>
-      <div><label>Vocation</label><input type="text" name="national_service_vocation"></div>
-      <div><label>Last Rank Held</label><input type="text" name="national_service_last_rank"></div>
+      <div><label data-en="Chinese Name (if any)" data-zh="中文姓名（如有）">Chinese Name (if any)</label><input type="text" name="chinese_name"></div>
+      <div><label data-en="Gender" data-zh="性别">Gender</label>
+        <select name="gender"><option value=""></option><option data-en="Male" data-zh="男">Male</option><option data-en="Female" data-zh="女">Female</option></select></div>
+      <div><label data-en="Identity Card / Passport No / FIN No" data-zh="身份证/护照号码/FIN号码">Identity Card / Passport No / FIN No</label><input type="text" name="ic_passport_no"></div>
+      <div><label data-en="Marital Status" data-zh="婚姻状况">Marital Status</label>
+        <select name="marital_status"><option value=""></option><option data-en="Single" data-zh="单身">Single</option><option data-en="Married" data-zh="已婚">Married</option><option data-en="Divorced" data-zh="离异">Divorced</option><option data-en="Widowed" data-zh="丧偶">Widowed</option></select></div>
+      <div><label data-en="Identity Card Colour" data-zh="身份证颜色">Identity Card Colour</label><input type="text" name="ic_color"></div>
+      <div><label data-en="Date of Birth" data-zh="出生日期">Date of Birth</label><input type="text" name="date_of_birth" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"></div>
+      <div><label data-en="Age" data-zh="年龄">Age</label><input type="text" name="age"></div>
+      <div><label data-en="Height (cm)" data-zh="身高（厘米）">Height (cm)</label><input type="text" name="height_cm"></div>
+      <div><label data-en="Weight (kg)" data-zh="体重（公斤）">Weight (kg)</label><input type="text" name="weight_kg"></div>
+      <div><label data-en="Home Tel No" data-zh="住宅电话号码">Home Tel No</label><input type="text" name="home_tel_no"></div>
+      <div><label data-en="Office Tel No" data-zh="办公室电话号码">Office Tel No</label><input type="text" name="office_tel_no"></div>
+      <div><label data-en="Handphone No" data-zh="手机号码">Handphone No</label><input type="text" name="handphone_no"></div>
+      <div><label data-en="E-mail Address" data-zh="电子邮箱地址">E-mail Address</label><input type="email" name="email"></div>
+      <div><label data-en="Religion" data-zh="宗教信仰">Religion</label><input type="text" name="religion"></div>
+      <div><label data-en="Race" data-zh="种族">Race</label><input type="text" name="race"></div>
+      <div><label data-en="Dialect" data-zh="方言">Dialect</label><input type="text" name="dialect"></div>
+      <div><label data-en="Place of Birth" data-zh="出生地点">Place of Birth</label><input type="text" name="place_of_birth"></div>
+      <div><label data-en="Nationality" data-zh="国籍">Nationality</label><input type="text" name="nationality"></div>
+      <div><label data-en="Driving License" data-zh="驾驶执照">Driving License</label>
+        <select name="driving_license"><option value=""></option><option data-en="Yes" data-zh="是">Yes</option><option data-en="No" data-zh="否">No</option></select></div>
+      <div><label data-en="Driving License Class" data-zh="驾照类别">Driving License Class</label><input type="text" name="driving_license_class"></div>
+      <div><label data-en="Car Owner" data-zh="是否拥有汽车">Car Owner</label>
+        <select name="car_owner"><option value=""></option><option data-en="Yes" data-zh="是">Yes</option><option data-en="No" data-zh="否">No</option></select></div>
+      <div><label data-en="National Service Status" data-zh="国民服役状况">National Service Status</label>
+        <select name="national_service_status"><option value=""></option><option data-en="Completed" data-zh="已完成">Completed</option><option data-en="Exempted" data-zh="已豁免">Exempted</option><option data-en="Reservist" data-zh="后备军人">Reservist</option><option data-en="Others" data-zh="其他">Others</option></select></div>
+      <div><label data-en="ORD" data-zh="退伍日期（ORD）">ORD</label><input type="text" name="national_service_ord"></div>
+      <div><label data-en="Vocation" data-zh="职务/兵种">Vocation</label><input type="text" name="national_service_vocation"></div>
+      <div><label data-en="Last Rank Held" data-zh="最后军阶">Last Rank Held</label><input type="text" name="national_service_last_rank"></div>
     </div>
-    <label>Address</label>
+    <label data-en="Address" data-zh="地址">Address</label>
     <textarea name="address" rows="2"></textarea>
   </fieldset>
 
   <fieldset>
-    <legend>Family Particulars (Spouse, Children, Parents, Siblings)</legend>
+    <legend data-en="Family Particulars (Spouse, Children, Parents, Siblings)" data-zh="家庭成员资料（配偶、子女、父母、兄弟姐妹）">Family Particulars (Spouse, Children, Parents, Siblings)</legend>
     {% for i in family_rows %}
     <div class="row-block">
       <div class="form-grid">
-        <div><label>Name</label><input type="text" name="family_name_{{ i }}"></div>
-        <div><label>Relationship</label><input type="text" name="family_relationship_{{ i }}"></div>
-        <div><label>Date of Birth</label><input type="text" name="family_dob_{{ i }}" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"></div>
-        <div><label>Occupation</label><input type="text" name="family_occupation_{{ i }}"></div>
-        <div><label>Name of Employer / School</label><input type="text" name="family_employer_{{ i }}"></div>
+        <div><label data-en="Name" data-zh="姓名">Name</label><input type="text" name="family_name_{{ i }}"></div>
+        <div><label data-en="Relationship" data-zh="关系">Relationship</label><input type="text" name="family_relationship_{{ i }}"></div>
+        <div><label data-en="Date of Birth" data-zh="出生日期">Date of Birth</label><input type="text" name="family_dob_{{ i }}" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"></div>
+        <div><label data-en="Occupation" data-zh="职业">Occupation</label><input type="text" name="family_occupation_{{ i }}"></div>
+        <div><label data-en="Name of Employer / School" data-zh="雇主/学校名称">Name of Employer / School</label><input type="text" name="family_employer_{{ i }}"></div>
       </div>
     </div>
     {% endfor %}
   </fieldset>
 
   <fieldset>
-    <legend>Educational Background</legend>
+    <legend data-en="Educational Background" data-zh="教育背景">Educational Background</legend>
     {% for i in education_rows %}
     <div class="row-block">
       <div class="form-grid">
-        <div><label>From (mm/yy)</label><input type="text" name="edu_from_{{ i }}" placeholder="mm/yy"></div>
-        <div><label>To (mm/yy)</label><input type="text" name="edu_to_{{ i }}" placeholder="mm/yy"></div>
-        <div><label>School / Institution</label><input type="text" name="edu_institution_{{ i }}"></div>
-        <div><label>Certificate / Diploma / Degree Awarded</label><input type="text" name="edu_certificate_{{ i }}"></div>
+        <div><label data-en="From (mm/yy)" data-zh="起始日期（月/年）">From (mm/yy)</label><input type="text" name="edu_from_{{ i }}" placeholder="mm/yy"></div>
+        <div><label data-en="To (mm/yy)" data-zh="结束日期（月/年）">To (mm/yy)</label><input type="text" name="edu_to_{{ i }}" placeholder="mm/yy"></div>
+        <div><label data-en="School / Institution" data-zh="学校/院校">School / Institution</label><input type="text" name="edu_institution_{{ i }}"></div>
+        <div><label data-en="Certificate / Diploma / Degree Awarded" data-zh="所获证书/文凭/学位">Certificate / Diploma / Degree Awarded</label><input type="text" name="edu_certificate_{{ i }}"></div>
       </div>
     </div>
     {% endfor %}
-    <div class="subhead">Other Qualifications / Courses Currently Attending</div>
+    <div class="subhead" data-en="Other Qualifications / Courses Currently Attending" data-zh="其他资格证书/目前在读课程">Other Qualifications / Courses Currently Attending</div>
     {% for i in other_qualification_rows %}
     <div class="row-block">
       <div class="form-grid">
-        <div><label>From (mm/yy)</label><input type="text" name="oq_from_{{ i }}" placeholder="mm/yy"></div>
-        <div><label>To (mm/yy)</label><input type="text" name="oq_to_{{ i }}" placeholder="mm/yy"></div>
-        <div><label>Institution</label><input type="text" name="oq_institution_{{ i }}"></div>
-        <div><label>Name of Course</label><input type="text" name="oq_course_{{ i }}"></div>
+        <div><label data-en="From (mm/yy)" data-zh="起始日期（月/年）">From (mm/yy)</label><input type="text" name="oq_from_{{ i }}" placeholder="mm/yy"></div>
+        <div><label data-en="To (mm/yy)" data-zh="结束日期（月/年）">To (mm/yy)</label><input type="text" name="oq_to_{{ i }}" placeholder="mm/yy"></div>
+        <div><label data-en="Institution" data-zh="院校">Institution</label><input type="text" name="oq_institution_{{ i }}"></div>
+        <div><label data-en="Name of Course" data-zh="课程名称">Name of Course</label><input type="text" name="oq_course_{{ i }}"></div>
       </div>
     </div>
     {% endfor %}
-    <div class="subhead">Language and Dialect Proficiency</div>
+    <div class="subhead" data-en="Language and Dialect Proficiency" data-zh="语言及方言能力">Language and Dialect Proficiency</div>
     {% for i in language_rows %}
     <div class="row-block">
       <div class="form-grid">
-        <div><label>Language / Dialect</label><input type="text" name="lang_language_{{ i }}"></div>
-        <div><label>Speak</label>
-          <select name="lang_speak_{{ i }}"><option value=""></option><option>Slight</option><option>Fair</option><option>Fluent</option></select></div>
-        <div><label>Read</label>
-          <select name="lang_read_{{ i }}"><option value=""></option><option>Slight</option><option>Fair</option><option>Fluent</option></select></div>
-        <div><label>Write</label>
-          <select name="lang_write_{{ i }}"><option value=""></option><option>Slight</option><option>Fair</option><option>Fluent</option></select></div>
+        <div><label data-en="Language / Dialect" data-zh="语言/方言">Language / Dialect</label><input type="text" name="lang_language_{{ i }}"></div>
+        <div><label data-en="Speak" data-zh="口语">Speak</label>
+          <select name="lang_speak_{{ i }}"><option value=""></option><option data-en="Slight" data-zh="略懂">Slight</option><option data-en="Fair" data-zh="一般">Fair</option><option data-en="Fluent" data-zh="流利">Fluent</option></select></div>
+        <div><label data-en="Read" data-zh="阅读">Read</label>
+          <select name="lang_read_{{ i }}"><option value=""></option><option data-en="Slight" data-zh="略懂">Slight</option><option data-en="Fair" data-zh="一般">Fair</option><option data-en="Fluent" data-zh="流利">Fluent</option></select></div>
+        <div><label data-en="Write" data-zh="写作">Write</label>
+          <select name="lang_write_{{ i }}"><option value=""></option><option data-en="Slight" data-zh="略懂">Slight</option><option data-en="Fair" data-zh="一般">Fair</option><option data-en="Fluent" data-zh="流利">Fluent</option></select></div>
       </div>
     </div>
     {% endfor %}
-    <label>Computer Literacy and Other Skills</label>
+    <label data-en="Computer Literacy and Other Skills" data-zh="电脑技能及其他技能">Computer Literacy and Other Skills</label>
     <textarea name="computer_skills" rows="2"></textarea>
   </fieldset>
 
   <fieldset>
-    <legend>Health and Interests</legend>
-    <label>Have you been or are you suffering from any mental illness, physical disability, disease, medical condition or serious illness?</label>
+    <legend data-en="Health and Interests" data-zh="健康状况及兴趣爱好">Health and Interests</legend>
+    <label data-en="Have you been or are you suffering from any mental illness, physical disability, disease, medical condition or serious illness?" data-zh="您是否曾经或目前患有任何精神疾病、身体残疾、疾病、医疗状况或严重疾病？">Have you been or are you suffering from any mental illness, physical disability, disease, medical condition or serious illness?</label>
     <div class="yn">
-      <label><input type="radio" name="health_illness" value="Yes"> Yes</label>
-      <label><input type="radio" name="health_illness" value="No" checked> No</label>
+      <label><input type="radio" name="health_illness" value="Yes"> <span data-en="Yes" data-zh="是">Yes</span></label>
+      <label><input type="radio" name="health_illness" value="No" checked> <span data-en="No" data-zh="否">No</span></label>
     </div>
-    <label>If yes, give details</label>
+    <label data-en="If yes, give details" data-zh="若是，请提供详情">If yes, give details</label>
     <textarea name="health_illness_details" rows="2"></textarea>
 
-    <label>Do you have any pre-existing illness or are you currently undergoing long term medical treatment?</label>
+    <label data-en="Do you have any pre-existing illness or are you currently undergoing long term medical treatment?" data-zh="您是否有任何既往病史，或目前正在接受长期医疗治疗？">Do you have any pre-existing illness or are you currently undergoing long term medical treatment?</label>
     <div class="yn">
-      <label><input type="radio" name="health_treatment" value="Yes"> Yes</label>
-      <label><input type="radio" name="health_treatment" value="No" checked> No</label>
+      <label><input type="radio" name="health_treatment" value="Yes"> <span data-en="Yes" data-zh="是">Yes</span></label>
+      <label><input type="radio" name="health_treatment" value="No" checked> <span data-en="No" data-zh="否">No</span></label>
     </div>
-    <label>If yes, give details</label>
+    <label data-en="If yes, give details" data-zh="若是，请提供详情">If yes, give details</label>
     <textarea name="health_treatment_details" rows="2"></textarea>
 
-    <label>Do you smoke or vape?</label>
+    <label data-en="Do you smoke or vape?" data-zh="您是否吸烟或使用电子烟？">Do you smoke or vape?</label>
     <div class="yn">
-      <label><input type="radio" name="smoke_vape" value="Yes"> Yes</label>
-      <label><input type="radio" name="smoke_vape" value="No" checked> No</label>
+      <label><input type="radio" name="smoke_vape" value="Yes"> <span data-en="Yes" data-zh="是">Yes</span></label>
+      <label><input type="radio" name="smoke_vape" value="No" checked> <span data-en="No" data-zh="否">No</span></label>
     </div>
-    <label>If yes, please specify</label>
+    <label data-en="If yes, please specify" data-zh="若是，请说明">If yes, please specify</label>
     <input type="text" name="smoke_vape_details">
 
-    <label>Hobbies, Interests and Games</label>
+    <label data-en="Hobbies, Interests and Games" data-zh="爱好、兴趣及运动">Hobbies, Interests and Games</label>
     <textarea name="hobbies" rows="2"></textarea>
-    <label>Membership of Clubs, Associations, Societies and Community Centres</label>
+    <label data-en="Membership of Clubs, Associations, Societies and Community Centres" data-zh="俱乐部、社团、协会及社区中心会员资格">Membership of Clubs, Associations, Societies and Community Centres</label>
     <textarea name="memberships" rows="2"></textarea>
   </fieldset>
 
   <fieldset>
-    <legend>Employment History (start with your present/most recent employer)</legend>
+    <legend data-en="Employment History (start with your present/most recent employer)" data-zh="工作经历（请从目前/最近的雇主开始填写）">Employment History (start with your present/most recent employer)</legend>
     {% for i in employment_rows %}
     <div class="row-block">
-      <div class="subhead">{{ "Current / Last Employer" if i == 0 else "Previous Employer " ~ i }}</div>
+      <div class="subhead" data-en="{{ "Current / Last Employer" if i == 0 else "Previous Employer " ~ i }}" data-zh="{{ "目前/最近雇主" if i == 0 else "前雇主 " ~ i }}">{{ "Current / Last Employer" if i == 0 else "Previous Employer " ~ i }}</div>
       <div class="form-grid">
-        <div><label>Name of Employer</label><input type="text" name="emp_employer_name_{{ i }}"></div>
-        <div><label>Job Title</label><input type="text" name="emp_job_title_{{ i }}"></div>
-        <div><label>Job Title of Supervisor</label><input type="text" name="emp_supervisor_title_{{ i }}"></div>
-        <div><label>From (mm/yy)</label><input type="text" name="emp_from_{{ i }}" placeholder="mm/yy"></div>
-        <div><label>To (mm/yy)</label><input type="text" name="emp_to_{{ i }}" placeholder="mm/yy"></div>
-        <div><label>Basic Salary</label><input type="text" name="emp_basic_salary_{{ i }}"></div>
-        <div><label>Gross Salary</label><input type="text" name="emp_gross_salary_{{ i }}"></div>
-        <div><label>13th Month Bonus (Months)</label><input type="text" name="emp_bonus_months_{{ i }}"></div>
-        <div><label>Other Allowances</label><input type="text" name="emp_other_allowances_{{ i }}"></div>
-        <div><label>Reasons for Leaving</label><input type="text" name="emp_reasons_leaving_{{ i }}"></div>
+        <div><label data-en="Name of Employer" data-zh="雇主名称">Name of Employer</label><input type="text" name="emp_employer_name_{{ i }}"></div>
+        <div><label data-en="Job Title" data-zh="职位名称">Job Title</label><input type="text" name="emp_job_title_{{ i }}"></div>
+        <div><label data-en="Job Title of Supervisor" data-zh="主管职位名称">Job Title of Supervisor</label><input type="text" name="emp_supervisor_title_{{ i }}"></div>
+        <div><label data-en="From (mm/yy)" data-zh="起始日期（月/年）">From (mm/yy)</label><input type="text" name="emp_from_{{ i }}" placeholder="mm/yy"></div>
+        <div><label data-en="To (mm/yy)" data-zh="结束日期（月/年）">To (mm/yy)</label><input type="text" name="emp_to_{{ i }}" placeholder="mm/yy"></div>
+        <div><label data-en="Basic Salary" data-zh="基本薪金">Basic Salary</label><input type="text" name="emp_basic_salary_{{ i }}"></div>
+        <div><label data-en="Gross Salary" data-zh="总薪金">Gross Salary</label><input type="text" name="emp_gross_salary_{{ i }}"></div>
+        <div><label data-en="13th Month Bonus (Months)" data-zh="第13个月花红（月数）">13th Month Bonus (Months)</label><input type="text" name="emp_bonus_months_{{ i }}"></div>
+        <div><label data-en="Other Allowances" data-zh="其他津贴">Other Allowances</label><input type="text" name="emp_other_allowances_{{ i }}"></div>
+        <div><label data-en="Reasons for Leaving" data-zh="离职原因">Reasons for Leaving</label><input type="text" name="emp_reasons_leaving_{{ i }}"></div>
       </div>
-      <label>Major Duties &amp; Responsibilities</label>
+      <label data-en="Major Duties &amp; Responsibilities" data-zh="主要职责">Major Duties &amp; Responsibilities</label>
       <textarea name="emp_duties_{{ i }}" rows="2"></textarea>
     </div>
     {% endfor %}
     <div class="form-grid" style="margin-top:10px;">
-      <div><label>Length of Notice Required</label><input type="text" name="notice_period"></div>
-      <div><label>Earliest Start Date</label><input type="text" name="earliest_start_date" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"></div>
-      <div><label>Expected Salary</label><input type="text" name="expected_salary"></div>
+      <div><label data-en="Length of Notice Required" data-zh="所需通知期">Length of Notice Required</label><input type="text" name="notice_period"></div>
+      <div><label data-en="Earliest Start Date" data-zh="最早可上班日期">Earliest Start Date</label><input type="text" name="earliest_start_date" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"></div>
+      <div><label data-en="Expected Salary" data-zh="期望薪金">Expected Salary</label><input type="text" name="expected_salary"></div>
     </div>
   </fieldset>
 
   <fieldset>
-    <legend>Supporting Documents</legend>
-    <p style="font-size:12px; color:var(--muted);">PDF, Word, or image files (JPG/PNG). You can select more than one file for each.</p>
-    <label>Resume / CV</label>
+    <legend data-en="Supporting Documents" data-zh="证明文件">Supporting Documents</legend>
+    <p style="font-size:12px; color:var(--muted);" data-en="PDF, Word, or image files (JPG/PNG). You can select more than one file for each." data-zh="PDF、Word 或图片文件（JPG/PNG）。每项可选择多个文件。">PDF, Word, or image files (JPG/PNG). You can select more than one file for each.</p>
+    <label data-en="Resume / CV" data-zh="简历">Resume / CV</label>
     <div class="file-field">
       <input type="file" id="f_resume" name="doc_resume" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple onchange="showFileNames(this)">
-      <label for="f_resume" class="file-btn">Choose File(s)</label>
-      <span class="file-name" id="f_resume_name">No file chosen</span>
+      <label for="f_resume" class="file-btn" data-en="Choose File(s)" data-zh="选择文件">Choose File(s)</label>
+      <span class="file-name" id="f_resume_name" data-en="No file chosen" data-zh="未选择文件">No file chosen</span>
     </div>
-    <label>Certificates / Diplomas</label>
+    <label data-en="Certificates / Diplomas" data-zh="证书/文凭">Certificates / Diplomas</label>
     <div class="file-field">
       <input type="file" id="f_certificates" name="doc_certificates" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple onchange="showFileNames(this)">
-      <label for="f_certificates" class="file-btn">Choose File(s)</label>
-      <span class="file-name" id="f_certificates_name">No file chosen</span>
+      <label for="f_certificates" class="file-btn" data-en="Choose File(s)" data-zh="选择文件">Choose File(s)</label>
+      <span class="file-name" id="f_certificates_name" data-en="No file chosen" data-zh="未选择文件">No file chosen</span>
     </div>
-    <label>License(s) (e.g. driving license)</label>
+    <label data-en="License(s) (e.g. driving license)" data-zh="执照（如驾驶执照）">License(s) (e.g. driving license)</label>
     <div class="file-field">
       <input type="file" id="f_license" name="doc_license" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple onchange="showFileNames(this)">
-      <label for="f_license" class="file-btn">Choose File(s)</label>
-      <span class="file-name" id="f_license_name">No file chosen</span>
+      <label for="f_license" class="file-btn" data-en="Choose File(s)" data-zh="选择文件">Choose File(s)</label>
+      <span class="file-name" id="f_license_name" data-en="No file chosen" data-zh="未选择文件">No file chosen</span>
     </div>
-    <label>Other Supporting Documents</label>
+    <label data-en="Other Supporting Documents" data-zh="其他证明文件">Other Supporting Documents</label>
     <div class="file-field">
       <input type="file" id="f_other" name="doc_other" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple onchange="showFileNames(this)">
-      <label for="f_other" class="file-btn">Choose File(s)</label>
-      <span class="file-name" id="f_other_name">No file chosen</span>
+      <label for="f_other" class="file-btn" data-en="Choose File(s)" data-zh="选择文件">Choose File(s)</label>
+      <span class="file-name" id="f_other_name" data-en="No file chosen" data-zh="未选择文件">No file chosen</span>
     </div>
   </fieldset>
 
   <fieldset>
-    <legend>References (do not include relatives; one should have supervised you before)</legend>
+    <legend data-en="References (do not include relatives; one should have supervised you before)" data-zh="推荐人（请勿填写亲属，其中一位应曾是您的主管）">References (do not include relatives; one should have supervised you before)</legend>
     <div class="row-block">
       <div class="form-grid">
-        <div><label>Name</label><input type="text" name="reference_1_name"></div>
-        <div><label>Occupation</label><input type="text" name="reference_1_occupation"></div>
-        <div><label>Contact Tel No</label><input type="text" name="reference_1_tel"></div>
-        <div><label>Years Known</label><input type="text" name="reference_1_years_known"></div>
+        <div><label data-en="Name" data-zh="姓名">Name</label><input type="text" name="reference_1_name"></div>
+        <div><label data-en="Occupation" data-zh="职业">Occupation</label><input type="text" name="reference_1_occupation"></div>
+        <div><label data-en="Contact Tel No" data-zh="联络电话号码">Contact Tel No</label><input type="text" name="reference_1_tel"></div>
+        <div><label data-en="Years Known" data-zh="认识年数">Years Known</label><input type="text" name="reference_1_years_known"></div>
       </div>
-      <label>Address</label><textarea name="reference_1_address" rows="2"></textarea>
+      <label data-en="Address" data-zh="地址">Address</label><textarea name="reference_1_address" rows="2"></textarea>
     </div>
     <div class="row-block">
       <div class="form-grid">
-        <div><label>Name</label><input type="text" name="reference_2_name"></div>
-        <div><label>Occupation</label><input type="text" name="reference_2_occupation"></div>
-        <div><label>Contact Tel No</label><input type="text" name="reference_2_tel"></div>
-        <div><label>Years Known</label><input type="text" name="reference_2_years_known"></div>
+        <div><label data-en="Name" data-zh="姓名">Name</label><input type="text" name="reference_2_name"></div>
+        <div><label data-en="Occupation" data-zh="职业">Occupation</label><input type="text" name="reference_2_occupation"></div>
+        <div><label data-en="Contact Tel No" data-zh="联络电话号码">Contact Tel No</label><input type="text" name="reference_2_tel"></div>
+        <div><label data-en="Years Known" data-zh="认识年数">Years Known</label><input type="text" name="reference_2_years_known"></div>
       </div>
-      <label>Address</label><textarea name="reference_2_address" rows="2"></textarea>
+      <label data-en="Address" data-zh="地址">Address</label><textarea name="reference_2_address" rows="2"></textarea>
     </div>
   </fieldset>
 
   <fieldset>
-    <legend>Supplementary Information</legend>
-    <p style="font-size:12px; color:var(--muted);">Please give details if you answer "Yes" to any of the following.</p>
+    <legend data-en="Supplementary Information" data-zh="补充资料">Supplementary Information</legend>
+    <p style="font-size:12px; color:var(--muted);" data-en="Please give details if you answer &quot;Yes&quot; to any of the following." data-zh="如以下任何问题回答「是」，请提供详情。">Please give details if you answer "Yes" to any of the following.</p>
     {% set supp_questions = [
-      ("supp_relatives_in_group", "Do you have any relatives or friends who are presently or formerly employed by or have dealings with any company in Tianma Group?"),
-      ("supp_family_similar_industry", "Does any member of your immediate family work in a similar industry?"),
-      ("supp_suspended_discharged", "Have you ever been suspended, discharged or dismissed from the service of any previous employer(s)?"),
-      ("supp_financial_embarrassment", "Have you ever been or are you under any financial embarrassment?"),
-      ("supp_police_investigation", "Have you ever been under police investigation, charged or convicted in Court of Law in any country?"),
-      ("supp_business_share", "Do you have any share in any business undertaking other than in a public-listed company?"),
-      ("supp_directorship", "Are you holding any directorship or other appointment in any company?"),
+      ("supp_relatives_in_group", "Do you have any relatives or friends who are presently or formerly employed by or have dealings with any company in Tianma Group?", "您是否有亲属或朋友目前或曾经受雇于天马集团旗下任何公司，或与该等公司有业务往来？"),
+      ("supp_family_similar_industry", "Does any member of your immediate family work in a similar industry?", "您的直系亲属中是否有人从事相关行业？"),
+      ("supp_suspended_discharged", "Have you ever been suspended, discharged or dismissed from the service of any previous employer(s)?", "您是否曾被任何前雇主停职、革职或解雇？"),
+      ("supp_financial_embarrassment", "Have you ever been or are you under any financial embarrassment?", "您是否曾经或目前陷入财务困境？"),
+      ("supp_police_investigation", "Have you ever been under police investigation, charged or convicted in Court of Law in any country?", "您是否曾在任何国家接受警方调查、被起诉或被法庭定罪？"),
+      ("supp_business_share", "Do you have any share in any business undertaking other than in a public-listed company?", "除上市公司股份外，您是否持有任何商业机构的股权？"),
+      ("supp_directorship", "Are you holding any directorship or other appointment in any company?", "您是否在任何公司担任董事或其他职务？"),
     ] %}
-    {% for key, question in supp_questions %}
+    {% for key, question, question_zh in supp_questions %}
     <div class="row-block">
-      <label style="margin-top:0;">{{ question }}</label>
+      <label style="margin-top:0;" data-en="{{ question }}" data-zh="{{ question_zh }}">{{ question }}</label>
       <div class="yn">
-        <label><input type="radio" name="{{ key }}" value="Yes"> Yes</label>
-        <label><input type="radio" name="{{ key }}" value="No" checked> No</label>
+        <label><input type="radio" name="{{ key }}" value="Yes"> <span data-en="Yes" data-zh="是">Yes</span></label>
+        <label><input type="radio" name="{{ key }}" value="No" checked> <span data-en="No" data-zh="否">No</span></label>
       </div>
-      <input type="text" name="{{ key }}_details" placeholder="Details if Yes">
+      <input type="text" name="{{ key }}_details" data-en-ph="Details if Yes" data-zh-ph="若是，请提供详情" placeholder="Details if Yes">
     </div>
     {% endfor %}
   </fieldset>
 
   <fieldset>
-    <legend>Person to Contact in Case of Emergency</legend>
+    <legend data-en="Person to Contact in Case of Emergency" data-zh="紧急联络人">Person to Contact in Case of Emergency</legend>
     {% for n in [1, 2] %}
     <div class="row-block">
-      <div class="subhead">Contact {{ n }}</div>
+      <div class="subhead" data-en="Contact {{ n }}" data-zh="联络人 {{ n }}">Contact {{ n }}</div>
       <div class="form-grid">
-        <div><label>Name</label><input type="text" name="emergency_contact_{{ n }}_name"></div>
-        <div><label>Relationship</label><input type="text" name="emergency_contact_{{ n }}_relationship"></div>
-        <div><label>E-mail Address</label><input type="email" name="emergency_contact_{{ n }}_email"></div>
-        <div><label>Home Tel No</label><input type="text" name="emergency_contact_{{ n }}_home_tel"></div>
-        <div><label>Office Tel No</label><input type="text" name="emergency_contact_{{ n }}_office_tel"></div>
-        <div><label>Handphone No</label><input type="text" name="emergency_contact_{{ n }}_handphone"></div>
+        <div><label data-en="Name" data-zh="姓名">Name</label><input type="text" name="emergency_contact_{{ n }}_name"></div>
+        <div><label data-en="Relationship" data-zh="关系">Relationship</label><input type="text" name="emergency_contact_{{ n }}_relationship"></div>
+        <div><label data-en="E-mail Address" data-zh="电子邮箱地址">E-mail Address</label><input type="email" name="emergency_contact_{{ n }}_email"></div>
+        <div><label data-en="Home Tel No" data-zh="住宅电话号码">Home Tel No</label><input type="text" name="emergency_contact_{{ n }}_home_tel"></div>
+        <div><label data-en="Office Tel No" data-zh="办公室电话号码">Office Tel No</label><input type="text" name="emergency_contact_{{ n }}_office_tel"></div>
+        <div><label data-en="Handphone No" data-zh="手机号码">Handphone No</label><input type="text" name="emergency_contact_{{ n }}_handphone"></div>
       </div>
-      <label>Address</label><textarea name="emergency_contact_{{ n }}_address" rows="2"></textarea>
+      <label data-en="Address" data-zh="地址">Address</label><textarea name="emergency_contact_{{ n }}_address" rows="2"></textarea>
     </div>
     {% endfor %}
   </fieldset>
 
   <fieldset>
-    <legend>Declaration</legend>
-    <div class="declaration-text">
+    <legend data-en="Declaration" data-zh="声明">Declaration</legend>
+    <div class="declaration-text lang-en">
       I declare that the information given by me in this application for employment is accurate and true and
       that I have withheld no information which would in any way affect my employment by the Company. I accept
       that if any information given by me in this application is in any way false or incorrect, the Company
@@ -330,16 +338,23 @@
       Such purposes are set out in the Group's Data Protection Policy, which is accessible at
       http://www.tianmaco.com or available on request and which I confirm I have read and understood.
     </div>
+    <div class="declaration-text lang-zh" style="display:none;">
+      本人声明，本求职申请表中所提供的资料均属准确真实，并无隐瞒任何可能影响本人受聘于本公司的信息。本人同意，若本申请表中所提供的任何资料有任何不实或不正确之处，公司有权在不另行通知及无需说明理由的情况下终止本人的雇佣关系。
+      <br><br>
+      本人透过提供本表格所载资料，同意并允许公司及其关联企业（统称「集团」）以及各自的代表和代理人（「代表」）收集、使用、披露及互相分享本人上述提供的个人资料，以及集团不时保存的相关记录，并将该等个人资料披露予集团授权的服务提供商及其他相关第三方，以便集团及其代表处理本人的求职申请、评估本人对所申请职位的适任程度，并在集团向本人提供聘用后，管理本人与集团之间的雇佣关系。
+      <br><br>
+      上述用途载于集团的《数据保护政策》，可于 http://www.tianmaco.com 查阅，或应要求提供，本人确认已阅读并理解该政策内容。
+    </div>
     <div class="yn">
-      <label><input type="checkbox" name="declaration_agreed" required> I have read and agree to the above declaration, and I am typing my full name above as my electronic signature *</label>
+      <label><input type="checkbox" name="declaration_agreed" required> <span data-en="I have read and agree to the above declaration, and I am typing my full name above as my electronic signature *" data-zh="本人已阅读并同意以上声明，并以上方所填写的姓名作为本人的电子签名 *">I have read and agree to the above declaration, and I am typing my full name above as my electronic signature *</span></label>
     </div>
     <div class="form-grid" style="margin-top:10px;">
-      <div><label class="required">Date</label><input type="text" name="declaration_date" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}" required></div>
+      <div><label class="required" data-en="Date" data-zh="日期">Date</label><input type="text" name="declaration_date" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}" required></div>
     </div>
   </fieldset>
 
   <div class="submit-bar">
-    <button type="submit" class="btn">Submit Application</button>
+    <button type="submit" class="btn" data-en="Submit Application" data-zh="提交申请">Submit Application</button>
   </div>
 </form>
 
@@ -347,13 +362,35 @@
   function showFileNames(input) {
     var nameEl = document.getElementById(input.id + '_name');
     if (!input.files || input.files.length === 0) {
-      nameEl.textContent = 'No file chosen';
+      nameEl.textContent = nameEl.dataset[currentLang === 'zh' ? 'zh' : 'en'] || 'No file chosen';
     } else if (input.files.length === 1) {
       nameEl.textContent = input.files[0].name;
     } else {
       nameEl.textContent = input.files.length + ' files selected';
     }
   }
+
+  var currentLang = 'en';
+  function setLang(lang) {
+    currentLang = lang;
+    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en-GB';
+    document.querySelectorAll('[data-en]').forEach(function (el) {
+      el.textContent = lang === 'zh' ? (el.dataset.zh || el.dataset.en) : el.dataset.en;
+    });
+    document.querySelectorAll('[data-en-ph]').forEach(function (el) {
+      el.placeholder = lang === 'zh' ? (el.dataset.zhPh || el.dataset.enPh) : el.dataset.enPh;
+    });
+    document.querySelectorAll('.lang-en').forEach(function (el) { el.style.display = lang === 'zh' ? 'none' : ''; });
+    document.querySelectorAll('.lang-zh').forEach(function (el) { el.style.display = lang === 'zh' ? '' : 'none'; });
+    document.getElementById('lang-btn-en').classList.toggle('active', lang === 'en');
+    document.getElementById('lang-btn-zh').classList.toggle('active', lang === 'zh');
+    try { localStorage.setItem('careers_apply_lang', lang); } catch (e) {}
+  }
+  (function () {
+    var saved = null;
+    try { saved = localStorage.getItem('careers_apply_lang'); } catch (e) {}
+    if (saved === 'zh') setLang('zh');
+  })();
 </script>
 </body>
 </html>

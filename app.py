@@ -1868,7 +1868,14 @@ def attendance_daily_all(year, month):
             date_iso = date_obj.isoformat()
             row = saved.get(date_iso)
             trip_label = trip_labels.get((e["emp_id"], date_iso))
-            is_problem = bool(row) and row["day_type"] == "WORKED" and (not row["time_in"] or not row["time_out"])
+            # A Business Trip/Out-Duty/Training day is expected to have no
+            # punch time (they weren't at their normal clock-in site) - not
+            # a data-entry problem, so trip_label excludes it same as it
+            # already does for is_unrecorded below.
+            is_problem = (
+                bool(row) and row["day_type"] == "WORKED"
+                and (not row["time_in"] or not row["time_out"]) and not trip_label
+            )
             is_unrecorded = row is None and not trip_label
             is_late, is_early = _late_early_flags(row, e)
             if is_problem:

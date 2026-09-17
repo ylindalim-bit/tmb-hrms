@@ -82,6 +82,9 @@
     <td class="text">{{ d.weekday }}</td>
     <td class="text">
       {% if d.trip_label %}{{ d.trip_label }}{% else %}{{ r.day_type if r else "-" }}{% endif %}
+      {% if d.holiday_name %}
+      <div style="font-size:11px; color:var(--danger); font-weight:600; margin-top:2px;">Public Holiday: {{ d.holiday_name }}</div>
+      {% endif %}
     </td>
     <td class="text">{{ r.time_in if r and r.time_in else "-" }}{% if d.late_in %} <span style="color:#1e3a8a; font-weight:600;">(Late)</span>{% endif %}</td>
     <td class="text">{{ r.time_out if r and r.time_out else "-" }}{% if d.early_out %} <span style="color:#1e3a8a; font-weight:600;">(Early)</span>{% endif %}</td>

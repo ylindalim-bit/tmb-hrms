@@ -1849,12 +1849,18 @@ def attendance_daily_all(year, month):
     )
 
     trip_labels = _trip_labels_for_month(db, year, month)
+    holiday_names_by_base = {}
+    for r in db.execute(
+        "SELECT state, date, name FROM public_holidays WHERE date LIKE ?", (f"{month_prefix}%",)
+    ).fetchall():
+        holiday_names_by_base.setdefault(r["state"], {})[r["date"]] = r["name"]
 
     blocks = []
     problem_count = 0
     unrecorded_count = 0
     late_early_count = 0
     for e in employees:
+        holiday_names = holiday_names_by_base.get(e["base"] or "MY", {})
         saved = {
             r["date"]: r for r in db.execute(
                 "SELECT * FROM attendance_daily WHERE emp_id=? AND date LIKE ? ORDER BY date",
@@ -1890,7 +1896,7 @@ def attendance_daily_all(year, month):
                 "day": day, "date": date_iso, "weekday": date_obj.strftime("%a"),
                 "row": row, "problem": is_problem, "unrecorded": is_unrecorded,
                 "late_in": is_late, "early_out": is_early,
-                "trip_label": trip_label,
+                "trip_label": trip_label, "holiday_name": holiday_names.get(date_iso),
             })
         problem_count += emp_problems
         unrecorded_count += emp_unrecorded

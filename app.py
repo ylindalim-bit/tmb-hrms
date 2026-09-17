@@ -3215,6 +3215,61 @@ def _can_review_application(application):
     return application["assigned_reviewer_username"] == session.get("hr_username")
 
 
+@app.route("/hr/recruitment/<int:app_id>/generate-bank-info-link", methods=["POST"])
+def recruitment_generate_bank_info_link(app_id):
+    """Creates (if not already set) a long random token for this
+    application, giving HR a no-login link to send the candidate so they
+    can fill in their own Bank Name/Account No/EPF No/Tax No directly -
+    see careers_bank_info() below. The token never expires/rotates once
+    generated, so the same link keeps working if HR needs to resend it."""
+    db = get_db()
+    application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
+    if application is None:
+        abort(404)
+    if not _can_review_application(application):
+        abort(403)
+    if not application["bank_info_token"]:
+        db.execute(
+            "UPDATE job_applications SET bank_info_token=? WHERE id=?",
+            (uuid.uuid4().hex, app_id),
+        )
+        db.commit()
+    return redirect(url_for("recruitment_detail", app_id=app_id))
+
+
+@app.route("/careers/bank-info/<token>", methods=["GET", "POST"])
+def careers_bank_info(token):
+    """Public, no-login page a candidate reaches via the link HR sends
+    them (see recruitment_generate_bank_info_link above) - lets them type
+    in their own Bank Name/Account No/EPF No/Tax No directly into their
+    job_applications row, the same 'For Official Use' fields HR would
+    otherwise have to type in by hand from a phone call or message. The
+    token is a long random uuid4 hex, unguessable, so knowing it is
+    treated as the candidate's authorization - same trust model as the
+    /careers/apply form itself having no login."""
+    db = get_db()
+    application = db.execute(
+        "SELECT * FROM job_applications WHERE bank_info_token=?", (token,)
+    ).fetchone()
+    if application is None:
+        abort(404)
+    if request.method == "POST":
+        db.execute(
+            """UPDATE job_applications SET bank_name=?, bank_account_no=?, epf_no=?, tax_no=?
+               WHERE id=?""",
+            (
+                request.form.get("bank_name") or None,
+                request.form.get("bank_account_no") or None,
+                request.form.get("epf_no") or None,
+                request.form.get("tax_no") or None,
+                application["id"],
+            ),
+        )
+        db.commit()
+        return render_template("careers_bank_info.html", a=application, saved=True)
+    return render_template("careers_bank_info.html", a=application, saved=False)
+
+
 @app.route("/hr/recruitment/<int:app_id>/photo")
 def recruitment_photo(app_id):
     db = get_db()
@@ -5758,6 +5813,16 @@ def hr_migrate_schema():
             # Official Use section alongside Decision/Status.
             db.execute(f"ALTER TABLE job_applications ADD COLUMN {col} TEXT")
             applied.append(f"job_applications.{col}")
+
+    if "bank_info_token" not in job_app_cols:
+        # Long random token, generated on demand (see
+        # _get_or_create_bank_info_token), that lets HR send the candidate
+        # a no-login link to fill in their own Bank Name/Account No/EPF
+        # No/Tax No directly into this application, instead of HR relaying
+        # it by hand - same "unguessable link, no account needed" shape as
+        # /careers/apply itself.
+        db.execute("ALTER TABLE job_applications ADD COLUMN bank_info_token TEXT")
+        applied.append("job_applications.bank_info_token")
 
     ph_cols = [r[1] for r in db.execute("PRAGMA table_info(public_holidays)").fetchall()]
     if "state" not in ph_cols:

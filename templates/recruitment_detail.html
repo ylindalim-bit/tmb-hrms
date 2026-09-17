@@ -92,6 +92,26 @@
     <div class="form-actions"><button type="submit" class="btn">Save</button></div>
     {% if a.reviewed_by %}<p style="font-size:12px; color:var(--muted);">Last reviewed by {{ a.reviewed_by }} at {{ a.reviewed_at }}</p>{% endif %}
   </form>
+  {% if hr_role != "approver" %}
+  <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
+    <label style="display:block; margin-bottom:4px;">Candidate self-entry link</label>
+    {% if a.bank_info_token %}
+    <p style="color:var(--muted); font-size:12px; margin:0 0 6px;">
+      Send this link to the candidate so they can fill in their own Bank Name/Account No./EPF No./Tax No. above directly.
+    </p>
+    <div style="display:flex; gap:6px;">
+      <input id="bank-info-link" type="text" readonly
+             value="{{ url_for('careers_bank_info', token=a.bank_info_token, _external=True) }}"
+             style="flex:1; font-size:12px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text);">
+      <button type="button" class="btn secondary" style="padding:4px 10px; font-size:12px;" onclick="navigator.clipboard.writeText(document.getElementById('bank-info-link').value); this.textContent='Copied!';">Copy</button>
+    </div>
+    {% else %}
+    <form method="post" action="{{ url_for('recruitment_generate_bank_info_link', app_id=a.id) }}">
+      <button type="submit" class="btn secondary" style="padding:4px 10px; font-size:12px;">Generate link</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
 </div>
 
 {% if a.photo_stored_name or hr_role != "approver" %}

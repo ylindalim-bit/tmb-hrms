@@ -15,6 +15,29 @@ import zipfile
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.page import PageMargins
+from xml.sax.saxutils import escape as xml_escape
+
+from pypdf import PdfReader, PdfWriter
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import cm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.pdfgen import canvas as pdfcanvas
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from PIL import Image as PILImage
+
+# Built-in CJK CID font (no font file to bundle/deploy) - needed so a
+# candidate's Chinese name/text renders correctly in the generated PDF
+# instead of as missing-glyph boxes, which the base Helvetica font can't
+# show at all. Registered once at import time, aliased to itself for
+# bold/italic since no separate CJK bold face is available here - a <b>
+# tag just renders as regular weight rather than erroring.
+pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+pdfmetrics.registerFontFamily(
+    "STSong-Light", normal="STSong-Light", bold="STSong-Light", italic="STSong-Light", boldItalic="STSong-Light",
+)
 
 
 def _set_a4_one_page(ws):
@@ -209,7 +232,7 @@ def _add_zero_pay_notes(ws, start_row, notes):
     return row - 1
 
 
-from flask import Flask, Response, abort, g, redirect, render_template, request, send_from_directory, session, url_for
+from flask import Flask, Response, abort, g, redirect, render_template, request, send_file, send_from_directory, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
@@ -3405,6 +3428,296 @@ def recruitment_detail(app_id):
         other_quals=json.loads(application["other_qualifications_json"] or "[]"),
         languages=json.loads(application["languages_json"] or "[]"),
         employment=json.loads(application["employment_history_json"] or "[]"),
+    )
+
+
+def _esc(value):
+    """Escapes user-typed text for safe embedding inside a reportlab
+    Paragraph, which interprets a small subset of HTML/XML markup in its
+    string - without this, a stray '&' or '<' in someone's typed address
+    or name would break PDF generation for that application."""
+    return xml_escape(str(value)) if value else ""
+
+
+def _application_pdf_styles():
+    styles = getSampleStyleSheet()
+    font = "STSong-Light"
+    return {
+        "company": ParagraphStyle("TMBCompany", parent=styles["Normal"], fontName=font, fontSize=10, alignment=1, spaceAfter=2),
+        "title": ParagraphStyle("TMBTitle", parent=styles["Title"], fontName=font, fontSize=14, spaceAfter=8),
+        "section": ParagraphStyle(
+            "TMBSection", parent=styles["Heading2"], fontName=font, fontSize=10.5, spaceBefore=12, spaceAfter=5,
+            textColor=colors.white, backColor=colors.HexColor("#374151"), leftIndent=4, borderPadding=4,
+        ),
+        "value": ParagraphStyle("TMBValue", parent=styles["Normal"], fontName=font, fontSize=9.5, leading=13),
+        "cell": ParagraphStyle("TMBCell", parent=styles["Normal"], fontName=font, fontSize=8.5, leading=11),
+        "header_cell": ParagraphStyle("TMBHeaderCell", parent=styles["Normal"], fontName=font, fontSize=8.5, leading=11),
+    }
+
+
+def _build_application_form_pdf(a, family, education, other_quals, languages, employment, documents):
+    """Renders the application's data (same fields as the Recruitment
+    detail page) as a fresh, clean PDF using reportlab - not a copy of
+    the on-screen HTML, since that page's CSS (grid layout, print
+    media) isn't something a Python PDF library can reliably reproduce.
+    Used by recruitment_combined_pdf() as the first pages of the merged
+    PDF, followed by the candidate's actual uploaded documents."""
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4, topMargin=1.5 * cm, bottomMargin=1.5 * cm, leftMargin=1.5 * cm, rightMargin=1.5 * cm,
+    )
+    s = _application_pdf_styles()
+    story = []
+
+    story.append(Paragraph("TIANMA PRECISION SDN. BHD.", s["company"]))
+    story.append(Paragraph("APPLICATION FORM", s["title"]))
+    story.append(Paragraph(f"<b>Position Applied For:</b> {_esc(a['position_applied'])}", s["value"]))
+    story.append(Spacer(1, 8))
+
+    def section(title):
+        story.append(Paragraph(title, s["section"]))
+
+    def kv_grid(pairs, cols=2):
+        rows = []
+        for i in range(0, len(pairs), cols):
+            row = [Paragraph(f"<b>{_esc(label)}:</b> {_esc(value) or '-'}", s["value"]) for label, value in pairs[i:i + cols]]
+            while len(row) < cols:
+                row.append("")
+            rows.append(row)
+        t = Table(rows, colWidths=[doc.width / cols] * cols)
+        t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
+        story.append(t)
+
+    def data_table(headers, rows):
+        rows = [r for r in rows if any(r)]
+        if not rows:
+            story.append(Paragraph("None given.", s["value"]))
+            return
+        table_data = [[Paragraph(_esc(h), s["header_cell"]) for h in headers]]
+        for r in rows:
+            table_data.append([Paragraph(_esc(c), s["cell"]) for c in r])
+        t = Table(table_data, colWidths=[doc.width / len(headers)] * len(headers), repeatRows=1)
+        t.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e5e7eb")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(t)
+
+    section("PERSONAL INFORMATION")
+    kv_grid([
+        ("Full Name", f"{a['salutation'] or ''} {a['full_name'] or ''}".strip()),
+        ("Chinese Name", a["chinese_name"]), ("Gender", a["gender"]),
+        ("IC / Passport No", a["ic_passport_no"]), ("Marital Status", a["marital_status"]),
+        ("IC Colour", a["ic_color"]), ("Date of Birth", a["date_of_birth"]),
+        ("Age", a["age"]), ("Height (cm)", a["height_cm"]), ("Weight (kg)", a["weight_kg"]),
+        ("Home Tel No", a["home_tel_no"]), ("Office Tel No", a["office_tel_no"]),
+        ("Handphone No", a["handphone_no"]), ("E-mail", a["email"]),
+        ("Religion", a["religion"]), ("Race", a["race"]), ("Dialect", a["dialect"]),
+        ("Place of Birth", a["place_of_birth"]), ("Nationality", a["nationality"]),
+        ("Driving License", f"{a['driving_license'] or ''} {a['driving_license_class'] or ''}".strip()),
+        ("Car Owner", a["car_owner"]), ("National Service", a["national_service_status"]),
+        ("ORD / Vocation / Rank", f"{a['national_service_ord'] or '-'} / {a['national_service_vocation'] or '-'} / {a['national_service_last_rank'] or '-'}"),
+    ])
+    story.append(Paragraph(f"<b>Address:</b> {_esc(a['address']) or '-'}", s["value"]))
+
+    section("FAMILY PARTICULARS (Spouse, Children, Parents, Siblings)")
+    data_table(["Name", "Relationship", "DOB", "Occupation", "Employer / School"],
+               [[r.get("name"), r.get("relationship"), r.get("dob"), r.get("occupation"), r.get("employer")] for r in family])
+
+    section("EDUCATIONAL BACKGROUND")
+    data_table(["From", "To", "Institution", "Certificate / Diploma / Degree"],
+               [[r.get("from"), r.get("to"), r.get("institution"), r.get("certificate")] for r in education])
+
+    if other_quals:
+        section("OTHER QUALIFICATIONS / COURSES CURRENTLY ATTENDING")
+        data_table(["From", "To", "Institution", "Course"],
+                   [[r.get("from"), r.get("to"), r.get("institution"), r.get("course")] for r in other_quals])
+
+    section("LANGUAGE AND DIALECT PROFICIENCY")
+    data_table(["Language", "Speak", "Read", "Write"],
+               [[r.get("language"), r.get("speak"), r.get("read"), r.get("write")] for r in languages])
+
+    if a["computer_skills"]:
+        section("COMPUTER LITERACY AND OTHER SKILLS")
+        story.append(Paragraph(_esc(a["computer_skills"]), s["value"]))
+
+    section("HEALTH AND INTERESTS")
+    for label, ans_key, detail_key in [
+        ("Mental/physical illness or serious condition", "health_illness", "health_illness_details"),
+        ("Pre-existing illness / long-term treatment", "health_treatment", "health_treatment_details"),
+        ("Smoke / Vape", "smoke_vape", "smoke_vape_details"),
+    ]:
+        text = f"<b>{label}:</b> {_esc(a[ans_key]) or '-'}"
+        if a[detail_key]:
+            text += f" - {_esc(a[detail_key])}"
+        story.append(Paragraph(text, s["value"]))
+    if a["hobbies"]:
+        story.append(Paragraph(f"<b>Hobbies, Interests and Games:</b> {_esc(a['hobbies'])}", s["value"]))
+    if a["memberships"]:
+        story.append(Paragraph(f"<b>Club / Association Memberships:</b> {_esc(a['memberships'])}", s["value"]))
+
+    section("EMPLOYMENT HISTORY (start with your present/most recent employer)")
+    if employment:
+        for r in employment:
+            story.append(Paragraph(
+                f"<b>{_esc(r.get('employer_name'))}</b> - {_esc(r.get('job_title'))} "
+                f"({_esc(r.get('from'))} to {_esc(r.get('to'))})", s["value"],
+            ))
+            kv_grid([
+                ("Supervisor's Title", r.get("supervisor_title")), ("Basic Salary", r.get("basic_salary")),
+                ("Gross Salary", r.get("gross_salary")), ("13th Month Bonus (Months)", r.get("bonus_months")),
+                ("Other Allowances", r.get("other_allowances")), ("Reasons for Leaving", r.get("reasons_leaving")),
+            ])
+            if r.get("duties"):
+                story.append(Paragraph(f"<b>Major Duties &amp; Responsibilities:</b> {_esc(r['duties'])}", s["value"]))
+            story.append(Spacer(1, 6))
+    else:
+        story.append(Paragraph("None given.", s["value"]))
+    kv_grid([
+        ("Length of Notice Required", a["notice_period"]), ("Earliest Start Date", a["earliest_start_date"]),
+        ("Expected Salary", a["expected_salary"]),
+    ])
+
+    section("REFERENCES (do not include relatives; one should have supervised you before)")
+    data_table(["Name", "Occupation", "Address", "Contact Tel No", "Years Known"], [
+        [a["reference_1_name"], a["reference_1_occupation"], a["reference_1_address"], a["reference_1_tel"], a["reference_1_years_known"]],
+        [a["reference_2_name"], a["reference_2_occupation"], a["reference_2_address"], a["reference_2_tel"], a["reference_2_years_known"]],
+    ])
+
+    section("SUPPLEMENTARY INFORMATION")
+    supp_labels = [
+        ("supp_relatives_in_group", "Relatives/friends employed by or dealing with Tianma Group"),
+        ("supp_family_similar_industry", "Immediate family working in a similar industry"),
+        ("supp_suspended_discharged", "Suspended, discharged or dismissed by a previous employer"),
+        ("supp_financial_embarrassment", "Under financial embarrassment"),
+        ("supp_police_investigation", "Under police investigation / charged / convicted"),
+        ("supp_business_share", "Share in a business undertaking (non public-listed)"),
+        ("supp_directorship", "Holding directorship or other appointment"),
+    ]
+    data_table(["Question", "Answer", "Details"],
+               [[label, a[key] or "-", a[key + "_details"] or ""] for key, label in supp_labels])
+
+    section("PERSON TO CONTACT IN CASE OF EMERGENCY")
+    any_contact = False
+    for n in (1, 2):
+        name = a[f"emergency_contact_{n}_name"]
+        if not name:
+            continue
+        any_contact = True
+        story.append(Paragraph(
+            f"<b>Contact {n}:</b> {_esc(name)} ({_esc(a[f'emergency_contact_{n}_relationship']) or '-'})<br/>"
+            f"{_esc(a[f'emergency_contact_{n}_address'])}<br/>"
+            f"Home: {_esc(a[f'emergency_contact_{n}_home_tel']) or '-'} &middot; "
+            f"Office: {_esc(a[f'emergency_contact_{n}_office_tel']) or '-'} &middot; "
+            f"Mobile: {_esc(a[f'emergency_contact_{n}_handphone']) or '-'}<br/>"
+            f"{_esc(a[f'emergency_contact_{n}_email'])}",
+            s["value"],
+        ))
+    if not any_contact:
+        story.append(Paragraph("None given.", s["value"]))
+
+    section("DECLARATION")
+    story.append(Paragraph(
+        "I declare that the information given by me in this application for employment is accurate and true. "
+        "By providing the information set out in this form, I agree and consent to the Company and its related "
+        "corporations collecting, using, disclosing and sharing my personal data as set out in the Group's Data "
+        "Protection Policy, accessible at http://www.tianmaco.com.",
+        s["value"],
+    ))
+    story.append(Paragraph(
+        f"<b>Agreed:</b> {'Yes' if a['declaration_agreed'] == 'Y' else 'No'} &middot; "
+        f"<b>Electronic signature (typed name):</b> {_esc(a['applicant_signature_name']) or '-'} &middot; "
+        f"<b>Date:</b> {_esc(a['declaration_date']) or '-'}",
+        s["value"],
+    ))
+
+    if documents:
+        section("SUPPORTING DOCUMENTS INCLUDED IN THIS PDF")
+        data_table(["Type", "File"], [[d["doc_type"], d["original_name"]] for d in documents])
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
+
+
+def _image_to_pdf_page_bytes(image_path):
+    """Renders one image file as a single full A4 PDF page, scaled to
+    fit - so a candidate's JPG/PNG certificate can be appended into the
+    merged PDF alongside real PDF documents, instead of just being
+    listed by name."""
+    buf = io.BytesIO()
+    c = pdfcanvas.Canvas(buf, pagesize=A4)
+    page_w, page_h = A4
+    margin = 1.5 * cm
+    max_w, max_h = page_w - 2 * margin, page_h - 2 * margin
+    with PILImage.open(image_path) as im:
+        im_w, im_h = im.size
+    scale = min(max_w / im_w, max_h / im_h, 1.0)
+    draw_w, draw_h = im_w * scale, im_h * scale
+    x, y = (page_w - draw_w) / 2, (page_h - draw_h) / 2
+    c.drawImage(image_path, x, y, width=draw_w, height=draw_h, preserveAspectRatio=True, mask="auto")
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return buf.read()
+
+
+@app.route("/hr/recruitment/<int:app_id>/combined-pdf")
+def recruitment_combined_pdf(app_id):
+    """Merges a freshly generated PDF of the application's data with
+    every uploaded supporting document (PDFs appended as-is, JPG/PNG
+    images converted to a full page each) into one downloadable PDF -
+    so HR gets the actual document content in one file, not just a list
+    of links that only work on-screen. A document that's gone missing
+    from disk, or fails to parse (corrupt/encrypted PDF), is silently
+    skipped rather than failing the whole download."""
+    db = get_db()
+    application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
+    if application is None:
+        abort(404)
+    if not _can_review_application(application):
+        abort(403)
+    documents = db.execute(
+        "SELECT * FROM job_application_documents WHERE application_id=? ORDER BY id", (app_id,)
+    ).fetchall()
+    family = json.loads(application["family_particulars_json"] or "[]")
+    education = json.loads(application["education_json"] or "[]")
+    other_quals = json.loads(application["other_qualifications_json"] or "[]")
+    languages = json.loads(application["languages_json"] or "[]")
+    employment = json.loads(application["employment_history_json"] or "[]")
+
+    form_pdf_bytes = _build_application_form_pdf(application, family, education, other_quals, languages, employment, documents)
+
+    writer = PdfWriter()
+    for page in PdfReader(io.BytesIO(form_pdf_bytes)).pages:
+        writer.add_page(page)
+
+    app_dir = os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(app_id))
+    for d in documents:
+        path = os.path.join(app_dir, d["stored_name"])
+        if not os.path.exists(path):
+            continue
+        ext = d["stored_name"].rsplit(".", 1)[-1].lower()
+        try:
+            if ext == "pdf":
+                for page in PdfReader(path).pages:
+                    writer.add_page(page)
+            elif ext in ("jpg", "jpeg", "png"):
+                for page in PdfReader(io.BytesIO(_image_to_pdf_page_bytes(path))).pages:
+                    writer.add_page(page)
+        except Exception:
+            continue
+
+    out = io.BytesIO()
+    writer.write(out)
+    out.seek(0)
+    safe_name = "".join(ch if ch.isalnum() or ch in " -_" else "" for ch in (application["full_name"] or "application")).strip().replace(" ", "_")
+    return send_file(
+        out, mimetype="application/pdf", as_attachment=True,
+        download_name=f"{safe_name or 'application'}_application.pdf",
     )
 
 

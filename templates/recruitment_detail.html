@@ -53,6 +53,7 @@
       <button type="button" id="lang-btn-zh" onclick="setLang('zh')">简体中文</button>
     </div>
     <button type="button" class="btn" onclick="window.print()">Print / Save as PDF</button>
+    <a class="btn secondary" href="{{ url_for('recruitment_combined_pdf', app_id=a.id) }}">Download Combined PDF (with documents)</a>
     {% if hr_role != "approver" %}
     <form id="delete-app-{{ a.id }}" method="post" action="{{ url_for('recruitment_delete', app_id=a.id) }}"
           onsubmit="return confirm('Permanently delete this application for {{ a.full_name }}? This cannot be undone.');"></form>

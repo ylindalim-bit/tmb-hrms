@@ -483,6 +483,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/fill-k002-september-sundays",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fill-w001-w002-september-attendance",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fill-s001-september-sundays",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/split-al-bf-and-adjustment",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -1384,9 +1385,11 @@ def delete_company_payment(emp_id, payment_id):
 def add_al_adjustment(emp_id):
     """Records a specific date as the reason for an AL credit (e.g. a
     replacement day for working a rest day/public holiday) - adding a
-    row here also adds the same number of days onto employees.al_bf_days
-    so the AL balance shown everywhere else updates immediately, without
-    those other pages needing to know about this table at all."""
+    row here also adds the same number of days onto
+    employees.al_adjustment_days (separate from al_bf_days, the true
+    year-end brought-forward number keyed in directly) so the AL balance
+    shown everywhere else updates immediately, without those other pages
+    needing to know about this table at all."""
     db = get_db()
     adj_date = request.form.get("adj_date")
     days_raw = request.form.get("days")
@@ -1401,7 +1404,7 @@ def add_al_adjustment(emp_id):
          session.get("hr_username")),
     )
     db.execute(
-        "UPDATE employees SET al_bf_days = COALESCE(al_bf_days,0) + ? WHERE emp_id=?", (days, emp_id),
+        "UPDATE employees SET al_adjustment_days = COALESCE(al_adjustment_days,0) + ? WHERE emp_id=?", (days, emp_id),
     )
     db.commit()
     return redirect(url_for("edit_employee", emp_id=emp_id))
@@ -1417,7 +1420,7 @@ def delete_al_adjustment(emp_id, adj_id):
         return redirect(url_for("edit_employee", emp_id=emp_id))
     db.execute("DELETE FROM al_adjustments WHERE id=? AND emp_id=?", (adj_id, emp_id))
     db.execute(
-        "UPDATE employees SET al_bf_days = COALESCE(al_bf_days,0) - ? WHERE emp_id=?", (row["days"], emp_id),
+        "UPDATE employees SET al_adjustment_days = COALESCE(al_adjustment_days,0) - ? WHERE emp_id=?", (row["days"], emp_id),
     )
     db.commit()
     return redirect(url_for("edit_employee", emp_id=emp_id))
@@ -4870,15 +4873,25 @@ def _prorated_al_note(e, year):
 
 
 def _al_bf_for_year(e, year):
-    """AL brought forward is keyed in once/year and represents days carried
-    into the year currently in progress - it only applies when looking at
-    the current calendar year, not to past or future years' balances."""
+    """Extra AL for the year currently in progress, from two separate
+    sources that both only apply to the current calendar year (never to
+    past or future years' balances): al_bf_days, keyed in once/year as
+    days carried over from last year, and al_adjustment_days, the running
+    total behind the AL Adjustment Log (dated entries like a replacement
+    day for working a rest day/public holiday - see add_al_adjustment).
+    Kept as one combined helper (rather than splitting call sites) so
+    every balance calculation in the app picks up both automatically."""
     if year != datetime.date.today().year:
         return 0
     try:
-        return e["al_bf_days"] or 0
+        bf = e["al_bf_days"] or 0
     except (IndexError, KeyError):
-        return 0
+        bf = 0
+    try:
+        adj = e["al_adjustment_days"] or 0
+    except (IndexError, KeyError):
+        adj = 0
+    return bf + adj
 
 
 def _prorated_medical_claim_limit(e, year):
@@ -4895,7 +4908,7 @@ def leave_report():
 
     emps = db.execute(
         """SELECT emp_id, full_name, department, date_joined, last_working_day, resignation_date,
-                  annual_leave_entitlement, al_bf_days, mc_entitlement
+                  annual_leave_entitlement, al_bf_days, al_adjustment_days, mc_entitlement
            FROM employees
            WHERE status != 'Inactive'
               OR (last_working_day IS NOT NULL AND last_working_day LIKE ?)
@@ -5932,6 +5945,13 @@ def hr_migrate_schema():
     if "al_bf_days" not in emp_cols:
         db.execute("ALTER TABLE employees ADD COLUMN al_bf_days REAL DEFAULT 0")
         applied.append("employees.al_bf_days")
+    if "al_adjustment_days" not in emp_cols:
+        # Separate from al_bf_days (true year-end brought-forward, keyed
+        # in once/year) - this is the running total behind the AL
+        # Adjustment Log (add_al_adjustment/delete_al_adjustment), driven
+        # only by that log's dated entries, never typed in directly.
+        db.execute("ALTER TABLE employees ADD COLUMN al_adjustment_days REAL DEFAULT 0")
+        applied.append("employees.al_adjustment_days")
     if "base" not in emp_cols:
         db.execute("ALTER TABLE employees ADD COLUMN base TEXT")
         applied.append("employees.base")
@@ -8225,6 +8245,44 @@ def hr_fill_s001_september_sundays():
         + f" | payroll: {emp_id} re-finalized Sept 2026 (days_worked="
         + f"{result['working_days_in_month'] - result['unpaid_days'] - result['paid_leave_days']}, net_pay={result['net_pay']})"
     ), 200
+
+
+@app.route("/hr/split-al-bf-and-adjustment", methods=["POST"])
+def hr_split_al_bf_and_adjustment():
+    """One-time fix: the AL Adjustment Log briefly wrote its running
+    total onto employees.al_bf_days (the true year-end brought-forward
+    field) before al_adjustment_days existed as its own separate column
+    - Linda pointed out AL Brought Forward needs to stay meaningful on
+    its own (days carried from last year), separate from ad-hoc AL
+    Adjustment entries (e.g. a replacement day for working a rest day/
+    public holiday). For every employee with rows in al_adjustments,
+    moves the sum of those days off al_bf_days and onto
+    al_adjustment_days - net balance (al_bf_days + al_adjustment_days)
+    is unchanged, this only re-labels which bucket it sits in. Safe to
+    re-run (each employee's total is recomputed fresh, not incremented
+    again)."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    sums = db.execute(
+        "SELECT emp_id, COALESCE(SUM(days),0) AS total FROM al_adjustments GROUP BY emp_id"
+    ).fetchall()
+    applied = []
+    for row in sums:
+        emp_id, total = row["emp_id"], row["total"]
+        before = db.execute("SELECT al_bf_days, al_adjustment_days FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+        if before is None:
+            continue
+        if (before["al_adjustment_days"] or 0) != 0:
+            continue  # already split for this employee - re-running must not subtract al_bf_days again
+        db.execute(
+            "UPDATE employees SET al_bf_days = COALESCE(al_bf_days,0) - ?, al_adjustment_days = ? WHERE emp_id=?",
+            (total, total, emp_id),
+        )
+        applied.append(f"{emp_id}: al_bf_days {before['al_bf_days'] or 0} -> {(before['al_bf_days'] or 0) - total}, al_adjustment_days -> {total}")
+    db.commit()
+    return "OK - " + ("; ".join(applied) if applied else "(nothing to split, already applied)"), 200
 
 
 if __name__ == "__main__":

@@ -3553,7 +3553,7 @@ def _build_application_form_pdf(a, family, education, other_quals, languages, em
     if os.path.exists(logo_path):
         with PILImage.open(logo_path) as im:
             logo_w, logo_h = im.size
-        logo_draw_h = 1.4 * cm
+        logo_draw_h = 0.8 * cm
         logo_draw_w = logo_draw_h * logo_w / logo_h
         header_tbl = Table(
             [[RLImage(logo_path, width=logo_draw_w, height=logo_draw_h),

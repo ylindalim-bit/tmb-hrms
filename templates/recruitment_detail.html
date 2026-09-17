@@ -3,6 +3,9 @@
 {% block extra_style %}
 <style>
   .print-only, .official-form { display: none; }
+  .lang-toggle button { font-size: 12px; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border);
+                         background: var(--card); color: var(--text); cursor: pointer; }
+  .lang-toggle button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   @media print {
     .card { border: 1px solid #ccc; box-shadow: none; break-inside: avoid; }
     .print-only { display: block; }
@@ -22,14 +25,32 @@
     table.of-table td, table.of-table th { border: 1px solid #000; padding: 3px 5px; vertical-align: top; font-size: 9.5px; }
     table.of-table td.of-label { color: #333; white-space: nowrap; width: 1%; background: #f5f5f5; }
     .of-declaration-text { border: 1px solid #000; border-top: none; padding: 6px; font-size: 9px; }
+    .lang-toggle { display: none; }
   }
 </style>
 {% endblock %}
 {% block content %}
+{% set YN_ZH = {"Yes": "是", "No": "否"} %}
+{% set SALUTATION_ZH = {"Mr.": "先生", "Mdm.": "夫人", "Ms.": "女士"} %}
+{% set GENDER_ZH = {"Male": "男", "Female": "女"} %}
+{% set MARITAL_ZH = {"Single": "单身", "Married": "已婚", "Divorced": "离异", "Widowed": "丧偶"} %}
+{% set NS_ZH = {"Completed": "已完成", "Exempted": "已豁免", "Reservist": "后备军人", "Others": "其他"} %}
+{% set PROF_ZH = {"Slight": "略懂", "Fair": "一般", "Fluent": "流利"} %}
+{% macro bi(en, zh, tag="span") -%}
+<{{ tag }} data-en="{{ en }}" data-zh="{{ zh }}">{{ en }}</{{ tag }}>
+{%- endmacro %}
+{% macro biv(value, map, tag="span") -%}
+{% set v = value or "-" %}
+<{{ tag }} data-en="{{ v }}" data-zh="{{ map.get(value, v) if value else "-" }}">{{ v }}</{{ tag }}>
+{%- endmacro %}
 <p class="no-print"><a href="{{ url_for('recruitment_list') }}">&larr; Back to Recruitment</a></p>
-<div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+<div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
   <h1 style="margin-bottom:0;">{{ a.full_name }}</h1>
-  <div class="no-print" style="display:flex; gap:8px;">
+  <div class="no-print" style="display:flex; gap:8px; align-items:center;">
+    <div class="lang-toggle" style="display:flex; gap:6px;">
+      <button type="button" id="lang-btn-en" class="active" onclick="setLang('en')">English</button>
+      <button type="button" id="lang-btn-zh" onclick="setLang('zh')">简体中文</button>
+    </div>
     <button type="button" class="btn" onclick="window.print()">Print / Save as PDF</button>
     {% if hr_role != "approver" %}
     <form id="delete-app-{{ a.id }}" method="post" action="{{ url_for('recruitment_delete', app_id=a.id) }}"
@@ -152,67 +173,67 @@
 </div>
 
 <div class="card no-print">
-  <h2 style="margin-top:0;">Personal Information</h2>
+  <h2 style="margin-top:0;" data-en="Personal Information" data-zh="个人资料">Personal Information</h2>
   <div class="form-grid">
-    <div><label>Salutation</label>{{ a.salutation or "-" }}</div>
-    <div><label>Chinese Name</label>{{ a.chinese_name or "-" }}</div>
-    <div><label>Gender</label>{{ a.gender or "-" }}</div>
-    <div><label>IC / Passport No</label>{{ a.ic_passport_no or "-" }}</div>
-    <div><label>Marital Status</label>{{ a.marital_status or "-" }}</div>
-    <div><label>IC Colour</label>{{ a.ic_color or "-" }}</div>
-    <div><label>Date of Birth</label>{{ a.date_of_birth or "-" }}</div>
-    <div><label>Age</label>{{ a.age or "-" }}</div>
-    <div><label>Height (cm)</label>{{ a.height_cm or "-" }}</div>
-    <div><label>Weight (kg)</label>{{ a.weight_kg or "-" }}</div>
-    <div><label>Home Tel No</label>{{ a.home_tel_no or "-" }}</div>
-    <div><label>Office Tel No</label>{{ a.office_tel_no or "-" }}</div>
-    <div><label>Handphone No</label>{{ a.handphone_no or "-" }}</div>
-    <div><label>E-mail</label>{{ a.email or "-" }}</div>
-    <div><label>Religion</label>{{ a.religion or "-" }}</div>
-    <div><label>Race</label>{{ a.race or "-" }}</div>
-    <div><label>Dialect</label>{{ a.dialect or "-" }}</div>
-    <div><label>Place of Birth</label>{{ a.place_of_birth or "-" }}</div>
-    <div><label>Nationality</label>{{ a.nationality or "-" }}</div>
-    <div><label>Driving License</label>{{ a.driving_license or "-" }} {{ a.driving_license_class or "" }}</div>
-    <div><label>Car Owner</label>{{ a.car_owner or "-" }}</div>
-    <div><label>National Service</label>{{ a.national_service_status or "-" }}</div>
-    <div><label>ORD / Vocation / Rank</label>{{ a.national_service_ord or "-" }} / {{ a.national_service_vocation or "-" }} / {{ a.national_service_last_rank or "-" }}</div>
+    <div><label data-en="Salutation" data-zh="称谓">Salutation</label>{{ biv(a.salutation, SALUTATION_ZH) }}</div>
+    <div><label data-en="Chinese Name" data-zh="中文姓名">Chinese Name</label>{{ a.chinese_name or "-" }}</div>
+    <div><label data-en="Gender" data-zh="性别">Gender</label>{{ biv(a.gender, GENDER_ZH) }}</div>
+    <div><label data-en="IC / Passport No" data-zh="身份证/护照号码">IC / Passport No</label>{{ a.ic_passport_no or "-" }}</div>
+    <div><label data-en="Marital Status" data-zh="婚姻状况">Marital Status</label>{{ biv(a.marital_status, MARITAL_ZH) }}</div>
+    <div><label data-en="IC Colour" data-zh="身份证颜色">IC Colour</label>{{ a.ic_color or "-" }}</div>
+    <div><label data-en="Date of Birth" data-zh="出生日期">Date of Birth</label>{{ a.date_of_birth or "-" }}</div>
+    <div><label data-en="Age" data-zh="年龄">Age</label>{{ a.age or "-" }}</div>
+    <div><label data-en="Height (cm)" data-zh="身高（厘米）">Height (cm)</label>{{ a.height_cm or "-" }}</div>
+    <div><label data-en="Weight (kg)" data-zh="体重（公斤）">Weight (kg)</label>{{ a.weight_kg or "-" }}</div>
+    <div><label data-en="Home Tel No" data-zh="住宅电话号码">Home Tel No</label>{{ a.home_tel_no or "-" }}</div>
+    <div><label data-en="Office Tel No" data-zh="办公室电话号码">Office Tel No</label>{{ a.office_tel_no or "-" }}</div>
+    <div><label data-en="Handphone No" data-zh="手机号码">Handphone No</label>{{ a.handphone_no or "-" }}</div>
+    <div><label data-en="E-mail" data-zh="电子邮箱">E-mail</label>{{ a.email or "-" }}</div>
+    <div><label data-en="Religion" data-zh="宗教信仰">Religion</label>{{ a.religion or "-" }}</div>
+    <div><label data-en="Race" data-zh="种族">Race</label>{{ a.race or "-" }}</div>
+    <div><label data-en="Dialect" data-zh="方言">Dialect</label>{{ a.dialect or "-" }}</div>
+    <div><label data-en="Place of Birth" data-zh="出生地点">Place of Birth</label>{{ a.place_of_birth or "-" }}</div>
+    <div><label data-en="Nationality" data-zh="国籍">Nationality</label>{{ a.nationality or "-" }}</div>
+    <div><label data-en="Driving License" data-zh="驾驶执照">Driving License</label>{{ biv(a.driving_license, YN_ZH) }} {{ a.driving_license_class or "" }}</div>
+    <div><label data-en="Car Owner" data-zh="是否拥有汽车">Car Owner</label>{{ biv(a.car_owner, YN_ZH) }}</div>
+    <div><label data-en="National Service" data-zh="国民服役状况">National Service</label>{{ biv(a.national_service_status, NS_ZH) }}</div>
+    <div><label data-en="ORD / Vocation / Rank" data-zh="退伍日期/职务/军阶">ORD / Vocation / Rank</label>{{ a.national_service_ord or "-" }} / {{ a.national_service_vocation or "-" }} / {{ a.national_service_last_rank or "-" }}</div>
   </div>
-  <label style="margin-top:10px;">Address</label>
+  <label style="margin-top:10px;" data-en="Address" data-zh="地址">Address</label>
   <div>{{ a.address or "-" }}</div>
 </div>
 
 <div class="card no-print">
-  <h2 style="margin-top:0;">Family Particulars</h2>
+  <h2 style="margin-top:0;" data-en="Family Particulars" data-zh="家庭成员资料">Family Particulars</h2>
   <div class="table-wrap">
   <table>
-    <thead><tr><th class="text">Name</th><th class="text">Relationship</th><th class="text">DOB</th><th class="text">Occupation</th><th class="text">Employer / School</th></tr></thead>
+    <thead><tr><th class="text" data-en="Name" data-zh="姓名">Name</th><th class="text" data-en="Relationship" data-zh="关系">Relationship</th><th class="text" data-en="DOB" data-zh="出生日期">DOB</th><th class="text" data-en="Occupation" data-zh="职业">Occupation</th><th class="text" data-en="Employer / School" data-zh="雇主/学校">Employer / School</th></tr></thead>
     <tbody>
       {% for r in family %}
       <tr><td class="text">{{ r.name }}</td><td class="text">{{ r.relationship }}</td><td class="text">{{ r.dob }}</td><td class="text">{{ r.occupation }}</td><td class="text">{{ r.employer }}</td></tr>
-      {% else %}<tr><td colspan="5" class="text" style="color:var(--muted);">None given.</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="5" class="text" style="color:var(--muted);" data-en="None given." data-zh="未填写。">None given.</td></tr>{% endfor %}
     </tbody>
   </table>
   </div>
 </div>
 
 <div class="card no-print">
-  <h2 style="margin-top:0;">Educational Background</h2>
+  <h2 style="margin-top:0;" data-en="Educational Background" data-zh="教育背景">Educational Background</h2>
   <div class="table-wrap">
   <table>
-    <thead><tr><th class="text">From</th><th class="text">To</th><th class="text">Institution</th><th class="text">Certificate / Diploma / Degree</th></tr></thead>
+    <thead><tr><th class="text" data-en="From" data-zh="起始">From</th><th class="text" data-en="To" data-zh="结束">To</th><th class="text" data-en="Institution" data-zh="院校">Institution</th><th class="text" data-en="Certificate / Diploma / Degree" data-zh="证书/文凭/学位">Certificate / Diploma / Degree</th></tr></thead>
     <tbody>
       {% for r in education %}
       <tr><td class="text">{{ r.from }}</td><td class="text">{{ r.to }}</td><td class="text">{{ r.institution }}</td><td class="text">{{ r.certificate }}</td></tr>
-      {% else %}<tr><td colspan="4" class="text" style="color:var(--muted);">None given.</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="4" class="text" style="color:var(--muted);" data-en="None given." data-zh="未填写。">None given.</td></tr>{% endfor %}
     </tbody>
   </table>
   </div>
   {% if other_quals %}
-  <h3>Other Qualifications / Courses Currently Attending</h3>
+  <h3 data-en="Other Qualifications / Courses Currently Attending" data-zh="其他资格证书/目前在读课程">Other Qualifications / Courses Currently Attending</h3>
   <div class="table-wrap">
   <table>
-    <thead><tr><th class="text">From</th><th class="text">To</th><th class="text">Institution</th><th class="text">Course</th></tr></thead>
+    <thead><tr><th class="text" data-en="From" data-zh="起始">From</th><th class="text" data-en="To" data-zh="结束">To</th><th class="text" data-en="Institution" data-zh="院校">Institution</th><th class="text" data-en="Course" data-zh="课程">Course</th></tr></thead>
     <tbody>
       {% for r in other_quals %}
       <tr><td class="text">{{ r.from }}</td><td class="text">{{ r.to }}</td><td class="text">{{ r.institution }}</td><td class="text">{{ r.course }}</td></tr>
@@ -222,88 +243,88 @@
   </div>
   {% endif %}
   {% if languages %}
-  <h3>Language and Dialect Proficiency</h3>
+  <h3 data-en="Language and Dialect Proficiency" data-zh="语言及方言能力">Language and Dialect Proficiency</h3>
   <div class="table-wrap">
   <table>
-    <thead><tr><th class="text">Language</th><th class="text">Speak</th><th class="text">Read</th><th class="text">Write</th></tr></thead>
+    <thead><tr><th class="text" data-en="Language" data-zh="语言">Language</th><th class="text" data-en="Speak" data-zh="口语">Speak</th><th class="text" data-en="Read" data-zh="阅读">Read</th><th class="text" data-en="Write" data-zh="写作">Write</th></tr></thead>
     <tbody>
       {% for r in languages %}
-      <tr><td class="text">{{ r.language }}</td><td class="text">{{ r.speak }}</td><td class="text">{{ r.read }}</td><td class="text">{{ r.write }}</td></tr>
+      <tr><td class="text">{{ r.language }}</td><td class="text">{{ biv(r.speak, PROF_ZH) }}</td><td class="text">{{ biv(r.read, PROF_ZH) }}</td><td class="text">{{ biv(r.write, PROF_ZH) }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
   </div>
   {% endif %}
   {% if a.computer_skills %}
-  <h3>Computer Literacy and Other Skills</h3>
+  <h3 data-en="Computer Literacy and Other Skills" data-zh="电脑技能及其他技能">Computer Literacy and Other Skills</h3>
   <p>{{ a.computer_skills }}</p>
   {% endif %}
 </div>
 
 <div class="card no-print">
-  <h2 style="margin-top:0;">Health and Interests</h2>
+  <h2 style="margin-top:0;" data-en="Health and Interests" data-zh="健康状况及兴趣爱好">Health and Interests</h2>
   <div class="form-grid">
-    <div><label>Mental/physical illness or serious condition</label>{{ a.health_illness or "-" }}
+    <div><label data-en="Mental/physical illness or serious condition" data-zh="精神/身体疾病或严重疾病">Mental/physical illness or serious condition</label>{{ biv(a.health_illness, YN_ZH) }}
       {% if a.health_illness_details %}<div style="color:var(--muted); font-size:12px;">{{ a.health_illness_details }}</div>{% endif %}</div>
-    <div><label>Pre-existing illness / long-term treatment</label>{{ a.health_treatment or "-" }}
+    <div><label data-en="Pre-existing illness / long-term treatment" data-zh="既往病史/长期治疗">Pre-existing illness / long-term treatment</label>{{ biv(a.health_treatment, YN_ZH) }}
       {% if a.health_treatment_details %}<div style="color:var(--muted); font-size:12px;">{{ a.health_treatment_details }}</div>{% endif %}</div>
-    <div><label>Smoke / Vape</label>{{ a.smoke_vape or "-" }}
+    <div><label data-en="Smoke / Vape" data-zh="吸烟/电子烟">Smoke / Vape</label>{{ biv(a.smoke_vape, YN_ZH) }}
       {% if a.smoke_vape_details %}<div style="color:var(--muted); font-size:12px;">{{ a.smoke_vape_details }}</div>{% endif %}</div>
   </div>
-  {% if a.hobbies %}<label style="margin-top:10px;">Hobbies, Interests and Games</label><div>{{ a.hobbies }}</div>{% endif %}
-  {% if a.memberships %}<label style="margin-top:10px;">Club / Association Memberships</label><div>{{ a.memberships }}</div>{% endif %}
+  {% if a.hobbies %}<label style="margin-top:10px;" data-en="Hobbies, Interests and Games" data-zh="爱好、兴趣及运动">Hobbies, Interests and Games</label><div>{{ a.hobbies }}</div>{% endif %}
+  {% if a.memberships %}<label style="margin-top:10px;" data-en="Club / Association Memberships" data-zh="俱乐部/社团会员资格">Club / Association Memberships</label><div>{{ a.memberships }}</div>{% endif %}
 </div>
 
 <div class="card no-print">
-  <h2 style="margin-top:0;">Employment History</h2>
+  <h2 style="margin-top:0;" data-en="Employment History" data-zh="工作经历">Employment History</h2>
   {% for r in employment %}
   <div style="border-top:1px solid var(--border); padding-top:10px; margin-top:10px;">
     <strong>{{ r.employer_name }}</strong> &mdash; {{ r.job_title }} ({{ r.from }} to {{ r.to }})
     <div class="form-grid" style="margin-top:6px;">
-      <div><label>Supervisor's Title</label>{{ r.supervisor_title or "-" }}</div>
-      <div><label>Basic Salary</label>{{ r.basic_salary or "-" }}</div>
-      <div><label>Gross Salary</label>{{ r.gross_salary or "-" }}</div>
-      <div><label>13th Month Bonus (Months)</label>{{ r.bonus_months or "-" }}</div>
-      <div><label>Other Allowances</label>{{ r.other_allowances or "-" }}</div>
-      <div><label>Reasons for Leaving</label>{{ r.reasons_leaving or "-" }}</div>
+      <div><label data-en="Supervisor's Title" data-zh="主管职位名称">Supervisor's Title</label>{{ r.supervisor_title or "-" }}</div>
+      <div><label data-en="Basic Salary" data-zh="基本薪金">Basic Salary</label>{{ r.basic_salary or "-" }}</div>
+      <div><label data-en="Gross Salary" data-zh="总薪金">Gross Salary</label>{{ r.gross_salary or "-" }}</div>
+      <div><label data-en="13th Month Bonus (Months)" data-zh="第13个月花红（月数）">13th Month Bonus (Months)</label>{{ r.bonus_months or "-" }}</div>
+      <div><label data-en="Other Allowances" data-zh="其他津贴">Other Allowances</label>{{ r.other_allowances or "-" }}</div>
+      <div><label data-en="Reasons for Leaving" data-zh="离职原因">Reasons for Leaving</label>{{ r.reasons_leaving or "-" }}</div>
     </div>
-    {% if r.duties %}<label style="margin-top:6px;">Major Duties &amp; Responsibilities</label><div>{{ r.duties }}</div>{% endif %}
+    {% if r.duties %}<label style="margin-top:6px;" data-en="Major Duties &amp; Responsibilities" data-zh="主要职责">Major Duties &amp; Responsibilities</label><div>{{ r.duties }}</div>{% endif %}
   </div>
-  {% else %}<p style="color:var(--muted);">None given.</p>{% endfor %}
+  {% else %}<p style="color:var(--muted);" data-en="None given." data-zh="未填写。">None given.</p>{% endfor %}
   <div class="form-grid" style="margin-top:10px; border-top:1px solid var(--border); padding-top:10px;">
-    <div><label>Length of Notice Required</label>{{ a.notice_period or "-" }}</div>
-    <div><label>Earliest Start Date</label>{{ a.earliest_start_date or "-" }}</div>
-    <div><label>Expected Salary</label>{{ a.expected_salary or "-" }}</div>
+    <div><label data-en="Length of Notice Required" data-zh="所需通知期">Length of Notice Required</label>{{ a.notice_period or "-" }}</div>
+    <div><label data-en="Earliest Start Date" data-zh="最早可上班日期">Earliest Start Date</label>{{ a.earliest_start_date or "-" }}</div>
+    <div><label data-en="Expected Salary" data-zh="期望薪金">Expected Salary</label>{{ a.expected_salary or "-" }}</div>
   </div>
 </div>
 
 <div class="card no-print">
-  <h2 style="margin-top:0;">References</h2>
+  <h2 style="margin-top:0;" data-en="References" data-zh="推荐人">References</h2>
   <div class="form-grid">
-    <div><label>Reference 1</label>{{ a.reference_1_name or "-" }}, {{ a.reference_1_occupation or "-" }}<br>
-      {{ a.reference_1_address or "" }}<br>Tel: {{ a.reference_1_tel or "-" }} &middot; Years Known: {{ a.reference_1_years_known or "-" }}</div>
-    <div><label>Reference 2</label>{{ a.reference_2_name or "-" }}, {{ a.reference_2_occupation or "-" }}<br>
-      {{ a.reference_2_address or "" }}<br>Tel: {{ a.reference_2_tel or "-" }} &middot; Years Known: {{ a.reference_2_years_known or "-" }}</div>
+    <div><label data-en="Reference 1" data-zh="推荐人 1">Reference 1</label>{{ a.reference_1_name or "-" }}, {{ a.reference_1_occupation or "-" }}<br>
+      {{ a.reference_1_address or "" }}<br><span data-en="Tel:" data-zh="电话：">Tel:</span> {{ a.reference_1_tel or "-" }} &middot; <span data-en="Years Known:" data-zh="认识年数：">Years Known:</span> {{ a.reference_1_years_known or "-" }}</div>
+    <div><label data-en="Reference 2" data-zh="推荐人 2">Reference 2</label>{{ a.reference_2_name or "-" }}, {{ a.reference_2_occupation or "-" }}<br>
+      {{ a.reference_2_address or "" }}<br><span data-en="Tel:" data-zh="电话：">Tel:</span> {{ a.reference_2_tel or "-" }} &middot; <span data-en="Years Known:" data-zh="认识年数：">Years Known:</span> {{ a.reference_2_years_known or "-" }}</div>
   </div>
 </div>
 
 <div class="card no-print">
-  <h2 style="margin-top:0;">Supplementary Information</h2>
+  <h2 style="margin-top:0;" data-en="Supplementary Information" data-zh="补充资料">Supplementary Information</h2>
   {% set supp_questions = [
-    ("supp_relatives_in_group", "Relatives/friends employed by or dealing with Tianma Group"),
-    ("supp_family_similar_industry", "Immediate family working in a similar industry"),
-    ("supp_suspended_discharged", "Suspended, discharged or dismissed by a previous employer"),
-    ("supp_financial_embarrassment", "Under financial embarrassment"),
-    ("supp_police_investigation", "Under police investigation / charged / convicted"),
-    ("supp_business_share", "Share in a business undertaking (non public-listed)"),
-    ("supp_directorship", "Holding directorship or other appointment"),
+    ("supp_relatives_in_group", "Relatives/friends employed by or dealing with Tianma Group", "亲属/朋友受雇于或与天马集团有业务往来"),
+    ("supp_family_similar_industry", "Immediate family working in a similar industry", "直系亲属从事相关行业"),
+    ("supp_suspended_discharged", "Suspended, discharged or dismissed by a previous employer", "曾被前雇主停职、革职或解雇"),
+    ("supp_financial_embarrassment", "Under financial embarrassment", "陷入财务困境"),
+    ("supp_police_investigation", "Under police investigation / charged / convicted", "接受警方调查/被起诉/被定罪"),
+    ("supp_business_share", "Share in a business undertaking (non public-listed)", "持有非上市商业机构股权"),
+    ("supp_directorship", "Holding directorship or other appointment", "担任董事或其他职务"),
   ] %}
   <div class="table-wrap">
   <table>
-    <thead><tr><th class="text">Question</th><th class="text">Answer</th><th class="text">Details</th></tr></thead>
+    <thead><tr><th class="text" data-en="Question" data-zh="问题">Question</th><th class="text" data-en="Answer" data-zh="答案">Answer</th><th class="text" data-en="Details" data-zh="详情">Details</th></tr></thead>
     <tbody>
-      {% for key, label in supp_questions %}
-      <tr><td class="text">{{ label }}</td><td class="text">{{ a[key] or "-" }}</td><td class="text">{{ a[key ~ "_details"] or "" }}</td></tr>
+      {% for key, label, label_zh in supp_questions %}
+      <tr><td class="text" data-en="{{ label }}" data-zh="{{ label_zh }}">{{ label }}</td><td class="text">{{ biv(a[key], YN_ZH) }}</td><td class="text">{{ a[key ~ "_details"] or "" }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -311,16 +332,16 @@
 </div>
 
 <div class="card no-print">
-  <h2 style="margin-top:0;">Person to Contact in Case of Emergency</h2>
+  <h2 style="margin-top:0;" data-en="Person to Contact in Case of Emergency" data-zh="紧急联络人">Person to Contact in Case of Emergency</h2>
   <div class="form-grid">
     {% for n in [1, 2] %}
     <div>
-      <label>Contact {{ n }}</label>
+      <label data-en="Contact {{ n }}" data-zh="联络人 {{ n }}">Contact {{ n }}</label>
       {{ a["emergency_contact_" ~ n ~ "_name"] or "-" }} ({{ a["emergency_contact_" ~ n ~ "_relationship"] or "-" }})<br>
       {{ a["emergency_contact_" ~ n ~ "_address"] or "" }}<br>
-      Home: {{ a["emergency_contact_" ~ n ~ "_home_tel"] or "-" }} &middot;
-      Office: {{ a["emergency_contact_" ~ n ~ "_office_tel"] or "-" }} &middot;
-      Mobile: {{ a["emergency_contact_" ~ n ~ "_handphone"] or "-" }}<br>
+      <span data-en="Home:" data-zh="住宅：">Home:</span> {{ a["emergency_contact_" ~ n ~ "_home_tel"] or "-" }} &middot;
+      <span data-en="Office:" data-zh="办公室：">Office:</span> {{ a["emergency_contact_" ~ n ~ "_office_tel"] or "-" }} &middot;
+      <span data-en="Mobile:" data-zh="手机：">Mobile:</span> {{ a["emergency_contact_" ~ n ~ "_handphone"] or "-" }}<br>
       {{ a["emergency_contact_" ~ n ~ "_email"] or "" }}
     </div>
     {% endfor %}
@@ -328,10 +349,10 @@
 </div>
 
 <div class="card no-print">
-  <h2 style="margin-top:0;">Declaration</h2>
-  <p>Agreed: <strong>{{ "Yes" if a.declaration_agreed == "Y" else "No" }}</strong> &middot;
-     Electronic signature (typed name): <strong>{{ a.applicant_signature_name or "-" }}</strong> &middot;
-     Date: {{ a.declaration_date or "-" }}</p>
+  <h2 style="margin-top:0;" data-en="Declaration" data-zh="声明">Declaration</h2>
+  <p><span data-en="Agreed:" data-zh="已同意：">Agreed:</span> <strong>{{ biv("Yes" if a.declaration_agreed == "Y" else "No", YN_ZH) }}</strong> &middot;
+     <span data-en="Electronic signature (typed name):" data-zh="电子签名（打字姓名）：">Electronic signature (typed name):</span> <strong>{{ a.applicant_signature_name or "-" }}</strong> &middot;
+     <span data-en="Date:" data-zh="日期：">Date:</span> {{ a.declaration_date or "-" }}</p>
 </div>
 
 <!-- ============ PRINT-ONLY: recreation of the company's paper Job Application Form ============ -->
@@ -346,69 +367,69 @@
       {% if a.photo_stored_name %}
       <img src="{{ url_for('recruitment_photo', app_id=a.id) }}" alt="Photo">
       {% else %}
-      Recent Passport photo
+      <span data-en="Recent Passport photo" data-zh="最近护照照片">Recent Passport photo</span>
       {% endif %}
     </div>
   </div>
-  <div class="of-title">APPLICATION FORM</div>
-  <div class="of-position-row"><strong>Position Applied For :</strong> {{ a.position_applied or "" }}</div>
+  <div class="of-title" data-en="APPLICATION FORM" data-zh="求职申请表">APPLICATION FORM</div>
+  <div class="of-position-row"><strong data-en="Position Applied For :" data-zh="应聘职位：">Position Applied For :</strong> {{ a.position_applied or "" }}</div>
 
-  <div class="of-section-header">PERSONAL INFORMATION</div>
+  <div class="of-section-header" data-en="PERSONAL INFORMATION" data-zh="个人资料">PERSONAL INFORMATION</div>
   <table class="of-table">
     <tr>
-      <td class="of-label">Full Name (Underline Surname) :</td>
+      <td class="of-label" data-en="Full Name (Underline Surname) :" data-zh="姓名（姓氏请加底线）：">Full Name (Underline Surname) :</td>
       <td colspan="5">{{ a.salutation or "" }} {{ a.full_name }}</td>
     </tr>
     <tr>
-      <td class="of-label">Chinese Name (if any)</td><td>{{ a.chinese_name or "" }}</td>
-      <td class="of-label">Gender</td><td>{{ a.gender or "" }}</td>
-      <td class="of-label">Identity Card / Passport No / FIN No</td><td>{{ a.ic_passport_no or "" }}</td>
+      <td class="of-label" data-en="Chinese Name (if any)" data-zh="中文姓名（如有）">Chinese Name (if any)</td><td>{{ a.chinese_name or "" }}</td>
+      <td class="of-label" data-en="Gender" data-zh="性别">Gender</td><td>{{ biv(a.gender, GENDER_ZH, "td") }}</td>
+      <td class="of-label" data-en="Identity Card / Passport No / FIN No" data-zh="身份证/护照号码/FIN号码">Identity Card / Passport No / FIN No</td><td>{{ a.ic_passport_no or "" }}</td>
     </tr>
     <tr>
-      <td class="of-label">Marital Status</td><td>{{ a.marital_status or "" }}</td>
-      <td class="of-label">Identity Card Colour</td><td>{{ a.ic_color or "" }}</td>
-      <td class="of-label">Date of Birth / Age</td><td>{{ a.date_of_birth or "" }} / {{ a.age or "" }}</td>
+      <td class="of-label" data-en="Marital Status" data-zh="婚姻状况">Marital Status</td><td>{{ biv(a.marital_status, MARITAL_ZH, "td") }}</td>
+      <td class="of-label" data-en="Identity Card Colour" data-zh="身份证颜色">Identity Card Colour</td><td>{{ a.ic_color or "" }}</td>
+      <td class="of-label" data-en="Date of Birth / Age" data-zh="出生日期/年龄">Date of Birth / Age</td><td>{{ a.date_of_birth or "" }} / {{ a.age or "" }}</td>
     </tr>
     <tr>
-      <td class="of-label">Height (cm)</td><td>{{ a.height_cm or "" }}</td>
-      <td class="of-label">Weight (kg)</td><td colspan="3">{{ a.weight_kg or "" }}</td>
+      <td class="of-label" data-en="Height (cm)" data-zh="身高（厘米）">Height (cm)</td><td>{{ a.height_cm or "" }}</td>
+      <td class="of-label" data-en="Weight (kg)" data-zh="体重（公斤）">Weight (kg)</td><td colspan="3">{{ a.weight_kg or "" }}</td>
     </tr>
     <tr>
-      <td class="of-label">Address</td><td colspan="5">{{ a.address or "" }}</td>
+      <td class="of-label" data-en="Address" data-zh="地址">Address</td><td colspan="5">{{ a.address or "" }}</td>
     </tr>
     <tr>
-      <td class="of-label">Home Tel No</td><td>{{ a.home_tel_no or "" }}</td>
-      <td class="of-label">Religion</td><td>{{ a.religion or "" }}</td>
-      <td class="of-label">Place of Birth</td><td>{{ a.place_of_birth or "" }}</td>
+      <td class="of-label" data-en="Home Tel No" data-zh="住宅电话号码">Home Tel No</td><td>{{ a.home_tel_no or "" }}</td>
+      <td class="of-label" data-en="Religion" data-zh="宗教信仰">Religion</td><td>{{ a.religion or "" }}</td>
+      <td class="of-label" data-en="Place of Birth" data-zh="出生地点">Place of Birth</td><td>{{ a.place_of_birth or "" }}</td>
     </tr>
     <tr>
-      <td class="of-label">Office Tel No</td><td>{{ a.office_tel_no or "" }}</td>
-      <td class="of-label">Race</td><td>{{ a.race or "" }}</td>
-      <td class="of-label">Nationality</td><td>{{ a.nationality or "" }}</td>
+      <td class="of-label" data-en="Office Tel No" data-zh="办公室电话号码">Office Tel No</td><td>{{ a.office_tel_no or "" }}</td>
+      <td class="of-label" data-en="Race" data-zh="种族">Race</td><td>{{ a.race or "" }}</td>
+      <td class="of-label" data-en="Nationality" data-zh="国籍">Nationality</td><td>{{ a.nationality or "" }}</td>
     </tr>
     <tr>
-      <td class="of-label">Home Telephone</td><td>{{ a.home_telephone or "" }}</td>
-      <td class="of-label">Handphone No</td><td>{{ a.handphone_no or "" }}</td>
-      <td class="of-label">Dialect</td><td>{{ a.dialect or "" }}</td>
+      <td class="of-label" data-en="Home Telephone" data-zh="住宅电话">Home Telephone</td><td>{{ a.home_telephone or "" }}</td>
+      <td class="of-label" data-en="Handphone No" data-zh="手机号码">Handphone No</td><td>{{ a.handphone_no or "" }}</td>
+      <td class="of-label" data-en="Dialect" data-zh="方言">Dialect</td><td>{{ a.dialect or "" }}</td>
     </tr>
     <tr>
-      <td class="of-label">E-mail Address</td><td colspan="3">{{ a.email or "" }}</td>
-      <td class="of-label">Driving License</td><td>{{ a.driving_license or "" }} {{ a.driving_license_class or "" }}</td>
+      <td class="of-label" data-en="E-mail Address" data-zh="电子邮箱地址">E-mail Address</td><td colspan="3">{{ a.email or "" }}</td>
+      <td class="of-label" data-en="Driving License" data-zh="驾驶执照">Driving License</td><td>{{ biv(a.driving_license, YN_ZH, "td") }} {{ a.driving_license_class or "" }}</td>
     </tr>
     <tr>
-      <td class="of-label">Car Owner</td><td>{{ a.car_owner or "" }}</td>
-      <td class="of-label" colspan="2">National Service Status</td><td colspan="2">{{ a.national_service_status or "" }}</td>
+      <td class="of-label" data-en="Car Owner" data-zh="是否拥有汽车">Car Owner</td><td>{{ biv(a.car_owner, YN_ZH, "td") }}</td>
+      <td class="of-label" colspan="2" data-en="National Service Status" data-zh="国民服役状况">National Service Status</td><td colspan="2">{{ biv(a.national_service_status, NS_ZH, "td") }}</td>
     </tr>
     <tr>
-      <td class="of-label">ORD</td><td>{{ a.national_service_ord or "" }}</td>
-      <td class="of-label">Vocation</td><td>{{ a.national_service_vocation or "" }}</td>
-      <td class="of-label">Last Rank Held</td><td>{{ a.national_service_last_rank or "" }}</td>
+      <td class="of-label" data-en="ORD" data-zh="退伍日期（ORD）">ORD</td><td>{{ a.national_service_ord or "" }}</td>
+      <td class="of-label" data-en="Vocation" data-zh="职务/兵种">Vocation</td><td>{{ a.national_service_vocation or "" }}</td>
+      <td class="of-label" data-en="Last Rank Held" data-zh="最后军阶">Last Rank Held</td><td>{{ a.national_service_last_rank or "" }}</td>
     </tr>
   </table>
 
-  <div class="of-section-header">FAMILY PARTICULARS (Spouse, Children, Parents, Siblings)</div>
+  <div class="of-section-header" data-en="FAMILY PARTICULARS (Spouse, Children, Parents, Siblings)" data-zh="家庭成员资料（配偶、子女、父母、兄弟姐妹）">FAMILY PARTICULARS (Spouse, Children, Parents, Siblings)</div>
   <table class="of-table">
-    <tr><th>Name</th><th>Relationship</th><th>DOB</th><th>Occupation</th><th>Name of Employer / School</th></tr>
+    <tr><th data-en="Name" data-zh="姓名">Name</th><th data-en="Relationship" data-zh="关系">Relationship</th><th data-en="DOB" data-zh="出生日期">DOB</th><th data-en="Occupation" data-zh="职业">Occupation</th><th data-en="Name of Employer / School" data-zh="雇主/学校名称">Name of Employer / School</th></tr>
     {% for r in family %}
     <tr><td>{{ r.name }}</td><td>{{ r.relationship }}</td><td>{{ r.dob }}</td><td>{{ r.occupation }}</td><td>{{ r.employer }}</td></tr>
     {% else %}
@@ -416,9 +437,9 @@
     {% endfor %}
   </table>
 
-  <div class="of-section-header">EDUCATIONAL BACKGROUND</div>
+  <div class="of-section-header" data-en="EDUCATIONAL BACKGROUND" data-zh="教育背景">EDUCATIONAL BACKGROUND</div>
   <table class="of-table">
-    <tr><th>From (mm/yy)</th><th>To (mm/yy)</th><th>School / Institution</th><th>Certificate / Diploma / Degree Awarded</th></tr>
+    <tr><th data-en="From (mm/yy)" data-zh="起始（月/年）">From (mm/yy)</th><th data-en="To (mm/yy)" data-zh="结束（月/年）">To (mm/yy)</th><th data-en="School / Institution" data-zh="学校/院校">School / Institution</th><th data-en="Certificate / Diploma / Degree Awarded" data-zh="所获证书/文凭/学位">Certificate / Diploma / Degree Awarded</th></tr>
     {% for r in education %}
     <tr><td>{{ r.from }}</td><td>{{ r.to }}</td><td>{{ r.institution }}</td><td>{{ r.certificate }}</td></tr>
     {% else %}
@@ -427,86 +448,86 @@
   </table>
 
   {% if other_quals %}
-  <div class="of-section-header">OTHER QUALIFICATIONS / COURSES CURRENTLY ATTENDING</div>
+  <div class="of-section-header" data-en="OTHER QUALIFICATIONS / COURSES CURRENTLY ATTENDING" data-zh="其他资格证书/目前在读课程">OTHER QUALIFICATIONS / COURSES CURRENTLY ATTENDING</div>
   <table class="of-table">
-    <tr><th>From (mm/yy)</th><th>To (mm/yy)</th><th>Institution</th><th>Name of Course</th></tr>
+    <tr><th data-en="From (mm/yy)" data-zh="起始（月/年）">From (mm/yy)</th><th data-en="To (mm/yy)" data-zh="结束（月/年）">To (mm/yy)</th><th data-en="Institution" data-zh="院校">Institution</th><th data-en="Name of Course" data-zh="课程名称">Name of Course</th></tr>
     {% for r in other_quals %}
     <tr><td>{{ r.from }}</td><td>{{ r.to }}</td><td>{{ r.institution }}</td><td>{{ r.course }}</td></tr>
     {% endfor %}
   </table>
   {% endif %}
 
-  <div class="of-section-header">LANGUAGE AND DIALECT PROFICIENCY</div>
+  <div class="of-section-header" data-en="LANGUAGE AND DIALECT PROFICIENCY" data-zh="语言及方言能力">LANGUAGE AND DIALECT PROFICIENCY</div>
   <table class="of-table">
-    <tr><th>Language / Dialect</th><th>Speak</th><th>Read</th><th>Write</th></tr>
+    <tr><th data-en="Language / Dialect" data-zh="语言/方言">Language / Dialect</th><th data-en="Speak" data-zh="口语">Speak</th><th data-en="Read" data-zh="阅读">Read</th><th data-en="Write" data-zh="写作">Write</th></tr>
     {% for r in languages %}
-    <tr><td>{{ r.language }}</td><td>{{ r.speak }}</td><td>{{ r.read }}</td><td>{{ r.write }}</td></tr>
+    <tr><td>{{ r.language }}</td><td>{{ biv(r.speak, PROF_ZH, "td") }}</td><td>{{ biv(r.read, PROF_ZH, "td") }}</td><td>{{ biv(r.write, PROF_ZH, "td") }}</td></tr>
     {% else %}
     <tr><td>&nbsp;</td><td></td><td></td><td></td></tr>
     {% endfor %}
   </table>
 
   {% if a.computer_skills %}
-  <div class="of-section-header">COMPUTER LITERACY AND OTHER SKILLS</div>
+  <div class="of-section-header" data-en="COMPUTER LITERACY AND OTHER SKILLS" data-zh="电脑技能及其他技能">COMPUTER LITERACY AND OTHER SKILLS</div>
   <table class="of-table"><tr><td>{{ a.computer_skills }}</td></tr></table>
   {% endif %}
 
-  <div class="of-section-header">HEALTH AND INTERESTS</div>
+  <div class="of-section-header" data-en="HEALTH AND INTERESTS" data-zh="健康状况及兴趣爱好">HEALTH AND INTERESTS</div>
   <table class="of-table">
     <tr>
-      <td>Have you been or are you suffering from any mental illness, physical disability, disease, medical condition or serious illness?</td>
-      <td style="width:15%;">{{ a.health_illness or "" }}</td>
+      <td data-en="Have you been or are you suffering from any mental illness, physical disability, disease, medical condition or serious illness?" data-zh="您是否曾经或目前患有任何精神疾病、身体残疾、疾病、医疗状况或严重疾病？">Have you been or are you suffering from any mental illness, physical disability, disease, medical condition or serious illness?</td>
+      <td style="width:15%;">{{ biv(a.health_illness, YN_ZH, "span") }}</td>
       <td>{{ a.health_illness_details or "" }}</td>
     </tr>
     <tr>
-      <td>Do you have any pre-existing illness or are you currently undergoing long term medical treatment?</td>
-      <td>{{ a.health_treatment or "" }}</td>
+      <td data-en="Do you have any pre-existing illness or are you currently undergoing long term medical treatment?" data-zh="您是否有任何既往病史，或目前正在接受长期医疗治疗？">Do you have any pre-existing illness or are you currently undergoing long term medical treatment?</td>
+      <td>{{ biv(a.health_treatment, YN_ZH, "span") }}</td>
       <td>{{ a.health_treatment_details or "" }}</td>
     </tr>
     <tr>
-      <td>Do you smoke or vape?</td>
-      <td>{{ a.smoke_vape or "" }}</td>
+      <td data-en="Do you smoke or vape?" data-zh="您是否吸烟或使用电子烟？">Do you smoke or vape?</td>
+      <td>{{ biv(a.smoke_vape, YN_ZH, "span") }}</td>
       <td>{{ a.smoke_vape_details or "" }}</td>
     </tr>
-    <tr><td class="of-label">Hobbies, Interests and Games</td><td colspan="2">{{ a.hobbies or "" }}</td></tr>
-    <tr><td class="of-label">Membership of Clubs, Associations, Societies and Community Centres</td><td colspan="2">{{ a.memberships or "" }}</td></tr>
+    <tr><td class="of-label" data-en="Hobbies, Interests and Games" data-zh="爱好、兴趣及运动">Hobbies, Interests and Games</td><td colspan="2">{{ a.hobbies or "" }}</td></tr>
+    <tr><td class="of-label" data-en="Membership of Clubs, Associations, Societies and Community Centres" data-zh="俱乐部、社团、协会及社区中心会员资格">Membership of Clubs, Associations, Societies and Community Centres</td><td colspan="2">{{ a.memberships or "" }}</td></tr>
   </table>
 
-  <div class="of-section-header">EMPLOYMENT HISTORY (start with your present/most recent employer)</div>
+  <div class="of-section-header" data-en="EMPLOYMENT HISTORY (start with your present/most recent employer)" data-zh="工作经历（请从目前/最近的雇主开始填写）">EMPLOYMENT HISTORY (start with your present/most recent employer)</div>
   <table class="of-table">
     {% for r in employment %}
     <tr>
-      <td class="of-label">Name of Employer</td><td colspan="3">{{ r.employer_name }}</td>
-      <td class="of-label">From</td><td>{{ r.from }}</td>
-      <td class="of-label">To</td><td>{{ r.to }}</td>
+      <td class="of-label" data-en="Name of Employer" data-zh="雇主名称">Name of Employer</td><td colspan="3">{{ r.employer_name }}</td>
+      <td class="of-label" data-en="From" data-zh="起始">From</td><td>{{ r.from }}</td>
+      <td class="of-label" data-en="To" data-zh="结束">To</td><td>{{ r.to }}</td>
     </tr>
     <tr>
-      <td class="of-label">Job Title</td><td>{{ r.job_title }}</td>
-      <td class="of-label">Supervisor's Title</td><td>{{ r.supervisor_title }}</td>
-      <td class="of-label">Basic Salary</td><td>{{ r.basic_salary }}</td>
-      <td class="of-label">Gross Salary</td><td>{{ r.gross_salary }}</td>
+      <td class="of-label" data-en="Job Title" data-zh="职位名称">Job Title</td><td>{{ r.job_title }}</td>
+      <td class="of-label" data-en="Supervisor's Title" data-zh="主管职位名称">Supervisor's Title</td><td>{{ r.supervisor_title }}</td>
+      <td class="of-label" data-en="Basic Salary" data-zh="基本薪金">Basic Salary</td><td>{{ r.basic_salary }}</td>
+      <td class="of-label" data-en="Gross Salary" data-zh="总薪金">Gross Salary</td><td>{{ r.gross_salary }}</td>
     </tr>
     <tr>
-      <td class="of-label">13th Mth Bonus (mths)</td><td>{{ r.bonus_months }}</td>
-      <td class="of-label">Other Allowances</td><td>{{ r.other_allowances }}</td>
-      <td class="of-label">Reasons for Leaving</td><td colspan="3">{{ r.reasons_leaving }}</td>
+      <td class="of-label" data-en="13th Mth Bonus (mths)" data-zh="第13个月花红（月数）">13th Mth Bonus (mths)</td><td>{{ r.bonus_months }}</td>
+      <td class="of-label" data-en="Other Allowances" data-zh="其他津贴">Other Allowances</td><td>{{ r.other_allowances }}</td>
+      <td class="of-label" data-en="Reasons for Leaving" data-zh="离职原因">Reasons for Leaving</td><td colspan="3">{{ r.reasons_leaving }}</td>
     </tr>
-    {% if r.duties %}<tr><td class="of-label">Major Duties &amp; Responsibilities</td><td colspan="7">{{ r.duties }}</td></tr>{% endif %}
+    {% if r.duties %}<tr><td class="of-label" data-en="Major Duties &amp; Responsibilities" data-zh="主要职责">Major Duties &amp; Responsibilities</td><td colspan="7">{{ r.duties }}</td></tr>{% endif %}
     {% else %}
-    <tr><td class="of-label">Name of Employer</td><td colspan="7">&nbsp;</td></tr>
+    <tr><td class="of-label" data-en="Name of Employer" data-zh="雇主名称">Name of Employer</td><td colspan="7">&nbsp;</td></tr>
     {% endfor %}
   </table>
   <table class="of-table">
     <tr>
-      <td class="of-label">Length of Notice Required</td><td>{{ a.notice_period or "" }}</td>
-      <td class="of-label">Earliest Start Date</td><td>{{ a.earliest_start_date or "" }}</td>
-      <td class="of-label">Expected Salary</td><td>{{ a.expected_salary or "" }}</td>
+      <td class="of-label" data-en="Length of Notice Required" data-zh="所需通知期">Length of Notice Required</td><td>{{ a.notice_period or "" }}</td>
+      <td class="of-label" data-en="Earliest Start Date" data-zh="最早可上班日期">Earliest Start Date</td><td>{{ a.earliest_start_date or "" }}</td>
+      <td class="of-label" data-en="Expected Salary" data-zh="期望薪金">Expected Salary</td><td>{{ a.expected_salary or "" }}</td>
     </tr>
   </table>
 
-  <div class="of-section-header">REFERENCES (do not include relatives; one should have supervised you before)</div>
+  <div class="of-section-header" data-en="REFERENCES (do not include relatives; one should have supervised you before)" data-zh="推荐人（请勿填写亲属，其中一位应曾是您的主管）">REFERENCES (do not include relatives; one should have supervised you before)</div>
   <table class="of-table">
-    <tr><th>Name</th><th>Occupation</th><th>Address</th><th>Contact Tel No</th><th>Years Known</th></tr>
+    <tr><th data-en="Name" data-zh="姓名">Name</th><th data-en="Occupation" data-zh="职业">Occupation</th><th data-en="Address" data-zh="地址">Address</th><th data-en="Contact Tel No" data-zh="联络电话号码">Contact Tel No</th><th data-en="Years Known" data-zh="认识年数">Years Known</th></tr>
     <tr>
       <td>{{ a.reference_1_name or "" }}</td><td>{{ a.reference_1_occupation or "" }}</td>
       <td>{{ a.reference_1_address or "" }}</td><td>{{ a.reference_1_tel or "" }}</td><td>{{ a.reference_1_years_known or "" }}</td>
@@ -517,32 +538,32 @@
     </tr>
   </table>
 
-  <div class="of-section-header">SUPPLEMENTARY INFORMATION</div>
+  <div class="of-section-header" data-en="SUPPLEMENTARY INFORMATION" data-zh="补充资料">SUPPLEMENTARY INFORMATION</div>
   <table class="of-table">
-    {% for key, label in supp_questions %}
-    <tr><td>{{ label }}</td><td style="width:12%;">{{ a[key] or "" }}</td><td>{{ a[key ~ "_details"] or "" }}</td></tr>
+    {% for key, label, label_zh in supp_questions %}
+    <tr><td data-en="{{ label }}" data-zh="{{ label_zh }}">{{ label }}</td><td style="width:12%;">{{ biv(a[key], YN_ZH, "span") }}</td><td>{{ a[key ~ "_details"] or "" }}</td></tr>
     {% endfor %}
   </table>
 
-  <div class="of-section-header">PERSON TO CONTACT IN CASE OF EMERGENCY</div>
+  <div class="of-section-header" data-en="PERSON TO CONTACT IN CASE OF EMERGENCY" data-zh="紧急联络人">PERSON TO CONTACT IN CASE OF EMERGENCY</div>
   <table class="of-table">
     {% for n in [1, 2] %}
     <tr>
-      <td class="of-label">Name</td><td>{{ a["emergency_contact_" ~ n ~ "_name"] or "" }}</td>
-      <td class="of-label">Relationship</td><td>{{ a["emergency_contact_" ~ n ~ "_relationship"] or "" }}</td>
-      <td class="of-label">Address</td><td rowspan="2">{{ a["emergency_contact_" ~ n ~ "_address"] or "" }}</td>
+      <td class="of-label" data-en="Name" data-zh="姓名">Name</td><td>{{ a["emergency_contact_" ~ n ~ "_name"] or "" }}</td>
+      <td class="of-label" data-en="Relationship" data-zh="关系">Relationship</td><td>{{ a["emergency_contact_" ~ n ~ "_relationship"] or "" }}</td>
+      <td class="of-label" data-en="Address" data-zh="地址">Address</td><td rowspan="2">{{ a["emergency_contact_" ~ n ~ "_address"] or "" }}</td>
     </tr>
     <tr>
-      <td class="of-label">Home Tel / Office Tel</td>
+      <td class="of-label" data-en="Home Tel / Office Tel" data-zh="住宅电话/办公室电话">Home Tel / Office Tel</td>
       <td>{{ a["emergency_contact_" ~ n ~ "_home_tel"] or "" }} / {{ a["emergency_contact_" ~ n ~ "_office_tel"] or "" }}</td>
-      <td class="of-label">Handphone / E-mail</td>
+      <td class="of-label" data-en="Handphone / E-mail" data-zh="手机/电子邮箱">Handphone / E-mail</td>
       <td colspan="2">{{ a["emergency_contact_" ~ n ~ "_handphone"] or "" }} / {{ a["emergency_contact_" ~ n ~ "_email"] or "" }}</td>
     </tr>
     {% endfor %}
   </table>
 
-  <div class="of-section-header">DECLARATION</div>
-  <div class="of-declaration-text">
+  <div class="of-section-header" data-en="DECLARATION" data-zh="声明">DECLARATION</div>
+  <div class="of-declaration-text lang-en">
     I declare that the information given by me in this application for employment is accurate and true and
     that I have withheld no information which would in any way affect my employment by the Company. I accept
     that if any information given by me in this application is in any way false or incorrect, the Company
@@ -551,32 +572,52 @@
     corporations collecting, using, disclosing and sharing my personal data as set out in the Group's Data
     Protection Policy, accessible at http://www.tianmaco.com.
   </div>
+  <div class="of-declaration-text lang-zh" style="display:none;">
+    本人声明，本求职申请表中所提供的资料均属准确真实，并无隐瞒任何可能影响本人受聘于本公司的信息。本人同意，若本申请表中所提供的任何资料有任何不实或不正确之处，
+    公司有权在不另行通知及无需说明理由的情况下终止本人的雇佣关系。本人透过提供本表格所载资料，同意并允许公司及其关联企业收集、使用、披露及分享本人的个人资料，
+    详情载于集团的《数据保护政策》，可于 http://www.tianmaco.com 查阅。
+  </div>
   <table class="of-table">
     <tr>
-      <td class="of-label">Applicant's Signature (typed name)</td><td>{{ a.applicant_signature_name or "" }}</td>
-      <td class="of-label">Date</td><td>{{ a.declaration_date or "" }}</td>
+      <td class="of-label" data-en="Applicant's Signature (typed name)" data-zh="申请人签名（打字姓名）">Applicant's Signature (typed name)</td><td>{{ a.applicant_signature_name or "" }}</td>
+      <td class="of-label" data-en="Date" data-zh="日期">Date</td><td>{{ a.declaration_date or "" }}</td>
     </tr>
   </table>
 
-  <div class="of-section-header">FOR OFFICIAL USE</div>
+  <div class="of-section-header" data-en="FOR OFFICIAL USE" data-zh="公司专用">FOR OFFICIAL USE</div>
   <table class="of-table">
     <tr>
-      <td class="of-label">Decision</td><td>{{ a.decision or "" }}</td>
-      <td class="of-label">Status</td><td>{{ a.status }}</td>
+      <td class="of-label" data-en="Decision" data-zh="决定">Decision</td><td>{{ a.decision or "" }}</td>
+      <td class="of-label" data-en="Status" data-zh="状态">Status</td><td>{{ a.status }}</td>
     </tr>
-    <tr><td class="of-label">Comments</td><td colspan="3">{{ a.comments or "" }}</td></tr>
+    <tr><td class="of-label" data-en="Comments" data-zh="备注">Comments</td><td colspan="3">{{ a.comments or "" }}</td></tr>
     <tr>
-      <td class="of-label">Appointment / Department</td><td>{{ a.appointment_department or "" }}</td>
-      <td class="of-label">Date</td><td>{{ a.official_use_date or "" }}</td>
-    </tr>
-    <tr>
-      <td class="of-label">Bank Name</td><td>{{ a.bank_name or "" }}</td>
-      <td class="of-label">Bank Account No.</td><td>{{ a.bank_account_no or "" }}</td>
+      <td class="of-label" data-en="Appointment / Department" data-zh="职位/部门">Appointment / Department</td><td>{{ a.appointment_department or "" }}</td>
+      <td class="of-label" data-en="Date" data-zh="日期">Date</td><td>{{ a.official_use_date or "" }}</td>
     </tr>
     <tr>
-      <td class="of-label">EPF No.</td><td>{{ a.epf_no or "" }}</td>
-      <td class="of-label">Tax No.</td><td>{{ a.tax_no or "" }}</td>
+      <td class="of-label" data-en="Bank Name" data-zh="银行名称">Bank Name</td><td>{{ a.bank_name or "" }}</td>
+      <td class="of-label" data-en="Bank Account No." data-zh="银行账户号码">Bank Account No.</td><td>{{ a.bank_account_no or "" }}</td>
+    </tr>
+    <tr>
+      <td class="of-label" data-en="EPF No." data-zh="公积金号码">EPF No.</td><td>{{ a.epf_no or "" }}</td>
+      <td class="of-label" data-en="Tax No." data-zh="税务号码">Tax No.</td><td>{{ a.tax_no or "" }}</td>
     </tr>
   </table>
 </div>
+<script>
+  var currentLang = 'en';
+  function setLang(lang) {
+    currentLang = lang;
+    document.querySelectorAll('[data-en]').forEach(function (el) {
+      el.textContent = lang === 'zh' ? (el.dataset.zh || el.dataset.en) : el.dataset.en;
+    });
+    document.querySelectorAll('.lang-en').forEach(function (el) { el.style.display = lang === 'zh' ? 'none' : ''; });
+    document.querySelectorAll('.lang-zh').forEach(function (el) { el.style.display = lang === 'zh' ? '' : 'none'; });
+    var btnEn = document.getElementById('lang-btn-en');
+    var btnZh = document.getElementById('lang-btn-zh');
+    if (btnEn) btnEn.classList.toggle('active', lang === 'en');
+    if (btnZh) btnZh.classList.toggle('active', lang === 'zh');
+  }
+</script>
 {% endblock %}

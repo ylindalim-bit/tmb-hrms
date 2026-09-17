@@ -476,7 +476,7 @@
     <div><label>Annual Leave (days/year)</label>
       <input type="number" step="1" form="employee-form" name="annual_leave_entitlement" value="{{ emp.annual_leave_entitlement or 0 }}" style="color:var(--accent); border-color:var(--accent); font-weight:600;">
     </div>
-    <div><label>AL Brought Forward (days, this year only)</label>
+    <div><label>AL Adjustment (days, this year only)</label>
       <input type="number" step="0.5" form="employee-form" name="al_bf_days" value="{{ emp.al_bf_days or 0 }}" style="color:var(--accent); border-color:var(--accent); font-weight:600;">
     </div>
     <div><label>Medical Leave (days/year)</label>
@@ -491,7 +491,7 @@
   </div>
   <p style="color:var(--muted); font-size:12px; margin-top:6px;">
     Sets each employee's yearly leave entitlement, used to calculate their Leave Balance on the Staff Portal (Entitlement minus days already taken this year).
-    AL Brought Forward is keyed in once a year and only applies to the current year's balance &mdash; it does not carry over automatically to next year.
+    AL Adjustment is keyed in as needed and only applies to the current year's balance &mdash; it does not carry over automatically to next year.
     Medical Claim Limit works the same way, but in RM instead of days &mdash; against approved Medical Claims submitted this year.
   </p>
   {% if al_note or al_bf %}
@@ -499,7 +499,7 @@
     {% if al_note %}<strong>Prorated AL ({{ al_year }}):</strong> {{ al_note }}<br>{% endif %}
     {% if al_entitlement_effective is not none %}
     AL Entitlement: <strong>{{ al_entitlement_effective }} days</strong> &mdash;
-    B/F: <strong>{{ al_bf }} days</strong> &mdash;
+    Adj: <strong>{{ al_bf }} days</strong> &mdash;
     Total Available: <strong>{{ al_total_available }} days</strong> &mdash;
     Used: {{ al_used }} days &mdash;
     Balance: <strong{% if al_balance < 0 %} style="color:var(--danger);"{% endif %}>{{ al_balance }} days</strong>
@@ -519,11 +519,11 @@
   <h2 style="margin-top:0;">AL Adjustment Log</h2>
   <p style="color:var(--muted); font-size:12px; margin-top:-4px;">
     Record the specific date behind an AL credit or deduction (e.g. a replacement day for working a rest day/
-    public holiday) instead of just changing the "AL Brought Forward" number above. Adding or deleting a row
-    here automatically adjusts "AL Brought Forward" by the same amount.
+    public holiday) instead of just changing the "AL Adjustment" number above. Adding or deleting a row
+    here automatically adjusts "AL Adjustment" by the same amount.
   </p>
   {% for adj in al_adjustments %}
-  <form id="al-adj-delete-{{ adj.id }}" method="post" action="{{ url_for('delete_al_adjustment', emp_id=emp.emp_id, adj_id=adj.id) }}" onsubmit="return confirm('Delete this AL adjustment? This will also subtract {{ adj.days }} day(s) from AL Brought Forward.');"></form>
+  <form id="al-adj-delete-{{ adj.id }}" method="post" action="{{ url_for('delete_al_adjustment', emp_id=emp.emp_id, adj_id=adj.id) }}" onsubmit="return confirm('Delete this AL adjustment? This will also subtract {{ adj.days }} day(s) from AL Adjustment.');"></form>
   {% endfor %}
   {% if al_adjustments %}
   <div class="table-wrap">

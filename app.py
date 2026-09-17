@@ -1158,8 +1158,8 @@ def edit_employee(emp_id):
     else:
         al_entitlement_effective = None
     al_bf = _al_bf_for_year(emp, al_year)
-    al_total_available = (al_entitlement_effective + al_bf) if al_entitlement_effective is not None else None
-    al_balance = (al_total_available - al_used) if al_total_available is not None else None
+    al_total_available = round(al_entitlement_effective + al_bf, 2) if al_entitlement_effective is not None else None
+    al_balance = round(al_total_available - al_used, 2) if al_total_available is not None else None
 
     appraisal_supervisors = db.execute(
         "SELECT username, full_name FROM hr_users WHERE can_approve_appraisal='Y' ORDER BY full_name"
@@ -2405,7 +2405,7 @@ def leave_application_form():
         prorated_al, _al_note = _prorated_al_note(emp, year)
         al_entitlement = prorated_al if prorated_al is not None else (emp["annual_leave_entitlement"] or 0)
         balances = {
-            "al": al_entitlement + _al_bf_for_year(emp, year) - totals["al"],
+            "al": round(al_entitlement + _al_bf_for_year(emp, year) - totals["al"], 2),
             "mc": (emp["mc_entitlement"] or 0) - totals["mc"],
             "hl": (emp["hospitalisation_leave_entitlement"] or 0) - totals["hl"],
         }
@@ -4018,7 +4018,7 @@ def portal_dashboard():
     ).fetchone()["used"]
     prorated_al, _al_note = _prorated_al_note(emp, today.year)
     al_entitlement = prorated_al if prorated_al is not None else (emp["annual_leave_entitlement"] or 0)
-    al_balance = al_entitlement + _al_bf_for_year(emp, today.year) - al_used
+    al_balance = round(al_entitlement + _al_bf_for_year(emp, today.year) - al_used, 2)
 
     pending_leave = db.execute(
         """SELECT COUNT(*) AS n FROM leave_requests WHERE emp_id=? AND status='Pending'""",
@@ -4183,7 +4183,7 @@ def portal_attendance():
     hl_used = sum(r["hl_days"] or 0 for r in rows)
     prorated_al, _al_note = _prorated_al_note(emp, year)
     al_entitlement = prorated_al if prorated_al is not None else (emp["annual_leave_entitlement"] or 0)
-    al_balance = al_entitlement + _al_bf_for_year(emp, year) - al_used
+    al_balance = round(al_entitlement + _al_bf_for_year(emp, year) - al_used, 2)
     mc_balance = (emp["mc_entitlement"] or 0) - mc_used
     hl_balance = (emp["hospitalisation_leave_entitlement"] or 0) - hl_used
 
@@ -4404,7 +4404,7 @@ def portal_leave():
     hl_used = sum(r["hl_days"] or 0 for r in year_rows)
     prorated_al, _al_note = _prorated_al_note(emp, cur_year)
     al_entitlement = prorated_al if prorated_al is not None else (emp["annual_leave_entitlement"] or 0)
-    al_balance = al_entitlement + _al_bf_for_year(emp, cur_year) - al_used
+    al_balance = round(al_entitlement + _al_bf_for_year(emp, cur_year) - al_used, 2)
     mc_balance = (emp["mc_entitlement"] or 0) - mc_used
     hl_balance = (emp["hospitalisation_leave_entitlement"] or 0) - hl_used
 

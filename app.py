@@ -1410,6 +1410,36 @@ def add_al_adjustment(emp_id):
     return redirect(url_for("edit_employee", emp_id=emp_id))
 
 
+@app.route("/employees/<emp_id>/al-adjustments/<int:adj_id>/update", methods=["POST"])
+def update_al_adjustment(emp_id, adj_id):
+    """Edits an existing AL Adjustment Log entry in place - removes the
+    old days value from employees.al_adjustment_days and adds back the
+    new one, so a correction (wrong date, wrong day count, typo in
+    reason) doesn't require deleting and re-adding."""
+    db = get_db()
+    row = db.execute(
+        "SELECT days FROM al_adjustments WHERE id=? AND emp_id=?", (adj_id, emp_id)
+    ).fetchone()
+    if row is None:
+        return redirect(url_for("edit_employee", emp_id=emp_id))
+    adj_date = request.form.get("adj_date")
+    days_raw = request.form.get("days")
+    reason = (request.form.get("reason") or "").strip()
+    if not adj_date or not days_raw:
+        return redirect(url_for("edit_employee", emp_id=emp_id))
+    new_days = float(days_raw)
+    db.execute(
+        "UPDATE al_adjustments SET adj_date=?, days=?, reason=? WHERE id=? AND emp_id=?",
+        (adj_date, new_days, reason, adj_id, emp_id),
+    )
+    db.execute(
+        "UPDATE employees SET al_adjustment_days = COALESCE(al_adjustment_days,0) - ? + ? WHERE emp_id=?",
+        (row["days"], new_days, emp_id),
+    )
+    db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id))
+
+
 @app.route("/employees/<emp_id>/al-adjustments/<int:adj_id>/delete", methods=["POST"])
 def delete_al_adjustment(emp_id, adj_id):
     db = get_db()

@@ -25,7 +25,7 @@ from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfgen import canvas as pdfcanvas
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Image as RLImage, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from PIL import Image as PILImage
 
 # Built-in CJK CID font (no font file to bundle/deploy) - needed so a
@@ -3469,8 +3469,23 @@ def _build_application_form_pdf(a, family, education, other_quals, languages, em
     s = _application_pdf_styles()
     story = []
 
-    story.append(Paragraph("TIANMA PRECISION SDN. BHD.", s["company"]))
-    story.append(Paragraph("APPLICATION FORM", s["title"]))
+    logo_path = os.path.join(app.static_folder, "img", "tmb_logo.jpg")
+    if os.path.exists(logo_path):
+        with PILImage.open(logo_path) as im:
+            logo_w, logo_h = im.size
+        logo_draw_h = 1.4 * cm
+        logo_draw_w = logo_draw_h * logo_w / logo_h
+        header_tbl = Table(
+            [[RLImage(logo_path, width=logo_draw_w, height=logo_draw_h),
+              [Paragraph("TIANMA PRECISION SDN. BHD.", s["company"]), Paragraph("APPLICATION FORM", s["title"])]]],
+            colWidths=[logo_draw_w + 0.3 * cm, doc.width - logo_draw_w - 0.3 * cm],
+        )
+        header_tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+        story.append(header_tbl)
+        story.append(Spacer(1, 6))
+    else:
+        story.append(Paragraph("TIANMA PRECISION SDN. BHD.", s["company"]))
+        story.append(Paragraph("APPLICATION FORM", s["title"]))
     story.append(Paragraph(f"<b>Position Applied For:</b> {_esc(a['position_applied'])}", s["value"]))
     story.append(Spacer(1, 8))
 

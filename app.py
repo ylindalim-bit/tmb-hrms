@@ -1496,16 +1496,16 @@ def _default_day_type_for_pattern(work_pattern, weekday):
     """What Daily Attendance should show as the Status default for a day
     with no saved record yet, so a fixed-schedule employee's Sat/Sun don't
     read as WORKED before HR has entered anything. Sunday (weekday 6) is
-    always the statutory REST day; a weekday the pattern doesn't cover
-    (e.g. Saturday on '5-day (Mon-Fri)') is OFF; everything else is
-    WORKED. 'Manual'/irregular patterns aren't in WORK_PATTERN_WEEKDAY_WEIGHTS
-    (can't be predicted - see _calc_working_days_from_pattern), so they keep
-    defaulting to WORKED, same as before this existed."""
+    always the statutory REST day, regardless of work_pattern - confirmed
+    against every employee's actual history this month (K002 included,
+    who's on 'Manual') - so it defaults to REST even for 'Manual'/
+    irregular patterns, whose Sat-Fri days still can't be predicted (see
+    _calc_working_days_from_pattern) and keep defaulting to WORKED."""
+    if weekday == 6:
+        return "REST"
     weekday_weights = WORK_PATTERN_WEEKDAY_WEIGHTS.get(work_pattern)
     if weekday_weights is None:
         return "WORKED"
-    if weekday == 6:
-        return "REST"
     if weekday not in weekday_weights:
         return "OFF"
     return "WORKED"

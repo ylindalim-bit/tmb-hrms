@@ -488,6 +488,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/fix-n001-may-al-days",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/assign-w001-w002-k004-to-kee",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/clear-k004-pre-join-attendance",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/clear-k004-blank-placeholder-attendance",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -8704,6 +8705,36 @@ def hr_clear_k004_pre_join_attendance():
     _sync_daily_to_monthly(db, emp_id, 2026, 9)
     db.commit()
     return f"OK - deleted {deleted} pre-join attendance row(s) for {emp_id} (before {emp['date_joined']})", 200
+
+
+@app.route("/hr/clear-k004-blank-placeholder-attendance", methods=["POST"])
+def hr_clear_k004_blank_placeholder_attendance():
+    """One-time fix: after the pre-join rows above were cleared, K004's
+    September Daily Attendance page was Saved once more before the Save
+    Month code fix (skip blank untouched WORKED days) went live, which
+    wrote the same placeholder WORKED/blank rows straight back - both the
+    pre-join days again and blank rows for future dates she has no real
+    data for yet. Deletes every attendance_daily row for K004 that is
+    still just the untouched WORKED default (day_type='WORKED', no Time
+    In, no Time Out), leaving her real 16/17 September entries and her
+    REST Sundays untouched, then re-syncs attendance_monthly. Safe to
+    re-run - matches exactly what the deployed Save Month fix now
+    prevents going forward."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    emp_id = "K004"
+    cur = db.execute(
+        """DELETE FROM attendance_daily
+           WHERE emp_id=? AND day_type='WORKED' AND (time_in IS NULL OR time_in='')
+             AND (time_out IS NULL OR time_out='')""",
+        (emp_id,),
+    )
+    deleted = cur.rowcount
+    _sync_daily_to_monthly(db, emp_id, 2026, 9)
+    db.commit()
+    return f"OK - deleted {deleted} blank placeholder attendance row(s) for {emp_id}", 200
 
 
 if __name__ == "__main__":

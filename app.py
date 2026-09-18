@@ -3511,6 +3511,52 @@ def recruitment_detail(app_id):
     )
 
 
+@app.route("/hr/recruitment/<int:app_id>/create-employee")
+def recruitment_create_employee(app_id):
+    """Opens the New Employee form pre-filled with everything this hired
+    candidate already gave us (name, IC, DOB, contact info, address,
+    bank/EPF/tax details), so HR doesn't have to retype it - same "New
+    Employee" form/route as always (add_employee), nothing is saved
+    until HR reviews, picks an Employee ID, fills in salary/position/
+    department/work pattern (none of which the application has), and
+    clicks Save. Date Joined defaults to today; HR can change it to the
+    candidate's actual start date."""
+    db = get_db()
+    application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
+    if application is None:
+        abort(404)
+    if not _can_review_application(application):
+        abort(403)
+    prefill = {
+        "full_name": application["full_name"],
+        "ic_passport_no": application["ic_passport_no"],
+        "date_of_birth": application["date_of_birth"],
+        "marital_status": application["marital_status"],
+        "race": application["race"],
+        "religion": application["religion"],
+        "email": application["email"],
+        "hp_no": application["handphone_no"],
+        "phone_number": application["home_tel_no"],
+        "address": application["address"],
+        "bank_name": application["bank_name"],
+        "bank_account_no": application["bank_account_no"],
+        "epf_no": application["epf_no"],
+        "tax_no": application["tax_no"],
+        "position": application["position_applied"],
+        "department": application["appointment_department"],
+        "date_joined": datetime.date.today().isoformat(),
+    }
+    clockin_locations = db.execute(
+        "SELECT id, base, label FROM clockin_locations ORDER BY base, id"
+    ).fetchall()
+    return render_template(
+        "employee_edit.html", emp=prefill, is_new=True, error=None,
+        race_options=RACE_OPTIONS, religion_options=RELIGION_OPTIONS,
+        holiday_state_options=HOLIDAY_STATE_OPTIONS, base_options=BASE_OPTIONS,
+        clockin_locations=clockin_locations,
+    )
+
+
 def _esc(value):
     """Escapes user-typed text for safe embedding inside a reportlab
     Paragraph, which interprets a small subset of HTML/XML markup in its

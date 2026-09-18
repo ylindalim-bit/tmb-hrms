@@ -55,6 +55,7 @@
     <button type="button" class="btn" onclick="window.print()">Print / Save as PDF</button>
     <a class="btn secondary" id="combined-pdf-link" href="{{ url_for('recruitment_combined_pdf', app_id=a.id) }}" data-en="Download Combined PDF (with documents)" data-zh="下载合并PDF（含证明文件）">Download Combined PDF (with documents)</a>
     {% if hr_role != "approver" %}
+    <a class="btn" style="background:var(--good); border-color:var(--good);" href="{{ url_for('recruitment_create_employee', app_id=a.id) }}">Create Employee Record &rarr;</a>
     <form id="delete-app-{{ a.id }}" method="post" action="{{ url_for('recruitment_delete', app_id=a.id) }}"
           onsubmit="return confirm('Permanently delete this application for {{ a.full_name }}? This cannot be undone.');"></form>
     <button form="delete-app-{{ a.id }}" type="submit" class="btn secondary" style="color:var(--danger);">Delete</button>

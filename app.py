@@ -1854,6 +1854,12 @@ def attendance_daily(emp_id, year, month):
     days_in_month = calendar.monthrange(year, month)[1]
 
     if request.method == "POST":
+        existing_dates = {
+            r["date"] for r in db.execute(
+                "SELECT date FROM attendance_daily WHERE emp_id=? AND date LIKE ?",
+                (emp_id, f"{year:04d}-{month:02d}-%"),
+            ).fetchall()
+        }
         for day in range(1, days_in_month + 1):
             date_str = f"{year:04d}-{month:02d}-{day:02d}"
             day_type = request.form.get(f"day_type__{day}") or "WORKED"
@@ -1861,6 +1867,15 @@ def attendance_daily(emp_id, year, month):
                 day_type = "WORKED"
             time_in = request.form.get(f"time_in__{day}") or None
             time_out = request.form.get(f"time_out__{day}") or None
+            # A day that's never had a row before, still sitting on the
+            # untouched "WORKED" default with no punch time entered, isn't
+            # a real record - saving it anyway is exactly how a Save Month
+            # ends up writing a "WORKED" row for every blank day, including
+            # ones HR never looked at (weekends, days before the employee
+            # even joined). Skipping it here leaves it correctly unrecorded
+            # instead of turning it into a false, stale WORKED entry.
+            if date_str not in existing_dates and day_type == "WORKED" and not time_in and not time_out:
+                continue
             meal_flag = "Y" if request.form.get(f"meal__{day}") else "N"
             cewi_flag = "Y" if request.form.get(f"cewi__{day}") else "N"
             ot_1_5 = float(request.form.get(f"ot_1_5__{day}", 0) or 0)

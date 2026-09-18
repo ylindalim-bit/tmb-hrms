@@ -27,7 +27,7 @@
 <div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger);">{{ error }}</div>
 {% endif %}
 <div class="card">
-<form method="post" id="employee-form">
+<form method="post" id="employee-form" action="{{ url_for('add_employee') if is_new else url_for('edit_employee', emp_id=emp.emp_id) }}">
   <h2 style="margin-top:0;">Status</h2>
   <div class="form-grid">
     <div><label>Status</label>

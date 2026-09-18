@@ -51,7 +51,8 @@
   <div class="form-grid">
     {% if is_new %}
     <div><label>Employee ID</label>
-      <input type="text" id="emp_id" name="emp_id" value="{{ emp.emp_id or '' }}" placeholder="e.g. E026" required>
+      <input type="text" id="emp_id" name="emp_id" value="{{ emp.emp_id or '' }}" placeholder="e.g. E026" required
+             {% if emp_id_suggestions %}oninput="autoSuggestEmpId(this)"{% endif %}>
       {% if emp_id_suggestions %}
       <select id="emp_id_prefix_helper" onchange="if(this.value){document.getElementById('emp_id').value=this.value;} this.selectedIndex=0;" style="margin-top:4px; font-size:12px;">
         <option value="">Pick a letter for the next ID&hellip;</option>
@@ -59,6 +60,7 @@
         <option value="{{ next_id }}">{{ prefix }} &rarr; next is {{ next_id }}</option>
         {% endfor %}
       </select>
+      <div style="font-size:11px; color:var(--muted); margin-top:2px;">Type just a letter (e.g. "K") and the next number fills in automatically.</div>
       {% endif %}
     </div>
     {% endif %}
@@ -759,6 +761,18 @@
   </div>
 </div>
 <script>
+{% if emp_id_suggestions %}
+var EMP_ID_SUGGESTIONS = {{ emp_id_suggestions | tojson }};
+function autoSuggestEmpId(el) {
+  var v = el.value.trim().toUpperCase();
+  if (v.length === 1 && /^[A-Z]$/.test(v) && EMP_ID_SUGGESTIONS[v]) {
+    var suggestion = EMP_ID_SUGGESTIONS[v];
+    el.value = suggestion;
+    el.setSelectionRange(1, suggestion.length);
+  }
+}
+{% endif %}
+
 function updateStatusColor() {
   var sel = document.getElementById('status_select');
   if (sel.value === 'Inactive') {

@@ -3535,7 +3535,75 @@ def _application_pdf_styles():
     }
 
 
-def _build_application_form_pdf(a, family, education, other_quals, languages, employment, documents, photo_path=None):
+# English label/question text -> Simplified Chinese, reused verbatim from the
+# same translations already built into recruitment_detail.html's bilingual
+# toggle - kept as one flat dict (rather than per-string keys) so every
+# hardcoded label in _build_application_form_pdf can just be wrapped in t().
+PDF_TX = {
+    "APPLICATION FORM": "求职申请表", "Position Applied For": "应聘职位",
+    "PERSONAL INFORMATION": "个人资料", "Full Name": "姓名", "Chinese Name": "中文姓名",
+    "Gender": "性别", "IC / Passport No": "身份证/护照号码", "Marital Status": "婚姻状况",
+    "IC Colour": "身份证颜色", "Date of Birth": "出生日期", "Age": "年龄",
+    "Height (cm)": "身高（厘米）", "Weight (kg)": "体重（公斤）", "Home Tel No": "住宅电话号码",
+    "Office Tel No": "办公室电话号码", "Handphone No": "手机号码", "E-mail": "电子邮箱",
+    "Religion": "宗教信仰", "Race": "种族", "Dialect": "方言", "Place of Birth": "出生地点",
+    "Nationality": "国籍", "Driving License": "驾驶执照", "Car Owner": "是否拥有汽车",
+    "National Service": "国民服役状况", "ORD / Vocation / Rank": "退伍日期/职务/军阶",
+    "Address": "地址",
+    "FAMILY PARTICULARS (Spouse, Children, Parents, Siblings)": "家庭成员资料（配偶、子女、父母、兄弟姐妹）",
+    "Name": "姓名", "Relationship": "关系", "DOB": "出生日期", "Occupation": "职业",
+    "Employer / School": "雇主/学校",
+    "EDUCATIONAL BACKGROUND": "教育背景", "From": "起始", "To": "结束", "Institution": "院校",
+    "Certificate / Diploma / Degree": "证书/文凭/学位",
+    "OTHER QUALIFICATIONS / COURSES CURRENTLY ATTENDING": "其他资格证书/目前在读课程",
+    "Course": "课程",
+    "LANGUAGE AND DIALECT PROFICIENCY": "语言及方言能力", "Language": "语言", "Speak": "口语",
+    "Read": "阅读", "Write": "写作",
+    "COMPUTER LITERACY AND OTHER SKILLS": "电脑技能及其他技能",
+    "HEALTH AND INTERESTS": "健康状况及兴趣爱好",
+    "Mental/physical illness or serious condition": "精神/身体疾病或严重疾病",
+    "Pre-existing illness / long-term treatment": "既往病史/长期治疗",
+    "Smoke / Vape": "吸烟/电子烟", "Hobbies, Interests and Games": "爱好、兴趣及运动",
+    "Club / Association Memberships": "俱乐部/社团会员资格",
+    "EMPLOYMENT HISTORY (start with your present/most recent employer)": "工作经历（请从目前/最近的雇主开始填写）",
+    "Supervisor's Title": "主管职位名称", "Basic Salary": "基本薪金", "Gross Salary": "总薪金",
+    "13th Month Bonus (Months)": "第13个月花红（月数）", "Other Allowances": "其他津贴",
+    "Reasons for Leaving": "离职原因", "Major Duties & Responsibilities": "主要职责",
+    "Length of Notice Required": "所需通知期", "Earliest Start Date": "最早可上班日期",
+    "Expected Salary": "期望薪金",
+    "REFERENCES (do not include relatives; one should have supervised you before)": "推荐人（请勿填写亲属，其中一位应曾是您的主管）",
+    "Contact Tel No": "联络电话号码", "Years Known": "认识年数",
+    "SUPPLEMENTARY INFORMATION": "补充资料", "Question": "问题", "Answer": "答案", "Details": "详情",
+    "Relatives/friends employed by or dealing with Tianma Group": "亲属/朋友受雇于或与天马集团有业务往来",
+    "Immediate family working in a similar industry": "直系亲属从事相关行业",
+    "Suspended, discharged or dismissed by a previous employer": "曾被前雇主停职、革职或解雇",
+    "Under financial embarrassment": "陷入财务困境",
+    "Under police investigation / charged / convicted": "接受警方调查/被起诉/被定罪",
+    "Share in a business undertaking (non public-listed)": "持有非上市商业机构股权",
+    "Holding directorship or other appointment": "担任董事或其他职务",
+    "PERSON TO CONTACT IN CASE OF EMERGENCY": "紧急联络人", "Contact": "联络人",
+    "Home": "住宅", "Office": "办公室", "Mobile": "手机",
+    "DECLARATION": "声明", "Agreed": "已同意",
+    "Electronic signature (typed name)": "电子签名（打字姓名）", "Date": "日期",
+    "SUPPORTING DOCUMENTS INCLUDED IN THIS PDF": "本PDF包含的证明文件",
+    "Type": "类型", "File": "文件", "None given.": "未填写。",
+    "I declare that the information given by me in this application for employment is accurate and true. "
+    "By providing the information set out in this form, I agree and consent to the Company and its related "
+    "corporations collecting, using, disclosing and sharing my personal data as set out in the Group's Data "
+    "Protection Policy, accessible at http://www.tianmaco.com.":
+        "本人声明，本求职申请表中所提供的资料均属准确真实。本人透过提供本表格所载资料，同意并允许公司及其关联企业收集、使用、"
+        "披露及分享本人的个人资料，详情载于集团的《数据保护政策》，可于 http://www.tianmaco.com 查阅。",
+}
+PDF_YN_ZH = {"Yes": "是", "No": "否"}
+PDF_SALUTATION_ZH = {"Mr.": "先生", "Mdm.": "夫人", "Ms.": "女士"}
+PDF_GENDER_ZH = {"Male": "男", "Female": "女"}
+PDF_MARITAL_ZH = {"Single": "单身", "Married": "已婚", "Divorced": "离异", "Widowed": "丧偶"}
+PDF_NS_ZH = {"Completed": "已完成", "Exempted": "已豁免", "Reservist": "后备军人", "Others": "其他"}
+PDF_PROF_ZH = {"Slight": "略懂", "Fair": "一般", "Fluent": "流利"}
+PDF_DOC_TYPE_ZH = {"Resume / CV": "简历", "Certificate / Diploma": "证书/文凭", "License": "执照", "Other Supporting Document": "其他证明文件"}
+
+
+def _build_application_form_pdf(a, family, education, other_quals, languages, employment, documents, photo_path=None, lang="en"):
     """Renders the application's data (same fields as the Recruitment
     detail page) as a fresh, clean PDF using reportlab - not a copy of
     the on-screen HTML, since that page's CSS (grid layout, print
@@ -3544,13 +3612,22 @@ def _build_application_form_pdf(a, family, education, other_quals, languages, em
     PDF, followed by the candidate's actual uploaded documents.
     photo_path, if given and it exists on disk, is the candidate's own
     uploaded photo (job_applications.photo_stored_name) - placed top
-    right, same spot as the photo box on the paper form."""
+    right, same spot as the photo box on the paper form. lang="zh"
+    switches every static label/question to Simplified Chinese via
+    PDF_TX (see above) - free-text answers the candidate typed always
+    stay exactly as submitted, same rule as the on-screen toggle."""
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=A4, topMargin=1.5 * cm, bottomMargin=1.5 * cm, leftMargin=1.5 * cm, rightMargin=1.5 * cm,
     )
     s = _application_pdf_styles()
     story = []
+
+    def t(text):
+        return PDF_TX.get(text, text) if lang == "zh" else text
+
+    def tv(value, value_map):
+        return value_map.get(value, value) if (lang == "zh" and value) else value
 
     logo_path = os.path.join(app.static_folder, "img", "tmb_logo.jpg")
     photo_draw_w = 2.5 * cm
@@ -3567,7 +3644,7 @@ def _build_application_form_pdf(a, family, education, other_quals, languages, em
         logo_draw_w = logo_draw_h * logo_w / logo_h
         header_row = [
             RLImage(logo_path, width=logo_draw_w, height=logo_draw_h),
-            [Paragraph("TIANMA PRECISION SDN. BHD.", s["company"]), Paragraph("APPLICATION FORM", s["title"])],
+            [Paragraph("TIANMA PRECISION SDN. BHD.", s["company"]), Paragraph(t("APPLICATION FORM"), s["title"])],
         ]
         col_widths = [logo_draw_w + 0.3 * cm, doc.width - logo_draw_w - photo_draw_w - 0.6 * cm]
         if photo_flowable:
@@ -3579,58 +3656,58 @@ def _build_application_form_pdf(a, family, education, other_quals, languages, em
         story.append(Spacer(1, 6))
     else:
         story.append(Paragraph("TIANMA PRECISION SDN. BHD.", s["company"]))
-        story.append(Paragraph("APPLICATION FORM", s["title"]))
-    story.append(Paragraph(f"<b>Position Applied For:</b> {_esc(a['position_applied'])}", s["value"]))
+        story.append(Paragraph(t("APPLICATION FORM"), s["title"]))
+    story.append(Paragraph(f"<b>{t('Position Applied For')}:</b> {_esc(a['position_applied'])}", s["value"]))
     story.append(Spacer(1, 8))
 
     def section(title):
-        story.append(Paragraph(title, s["section"]))
+        story.append(Paragraph(t(title), s["section"]))
 
     def kv_grid(pairs, cols=2):
         rows = []
         for i in range(0, len(pairs), cols):
-            row = [Paragraph(f"<b>{_esc(label)}:</b> {_esc(value) or '-'}", s["value"]) for label, value in pairs[i:i + cols]]
+            row = [Paragraph(f"<b>{_esc(t(label))}:</b> {_esc(value) or '-'}", s["value"]) for label, value in pairs[i:i + cols]]
             while len(row) < cols:
                 row.append("")
             rows.append(row)
-        t = Table(rows, colWidths=[doc.width / cols] * cols)
-        t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
-        story.append(t)
+        tbl = Table(rows, colWidths=[doc.width / cols] * cols)
+        tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
+        story.append(tbl)
 
     def data_table(headers, rows):
         rows = [r for r in rows if any(r)]
         if not rows:
-            story.append(Paragraph("None given.", s["value"]))
+            story.append(Paragraph(t("None given."), s["value"]))
             return
-        table_data = [[Paragraph(_esc(h), s["header_cell"]) for h in headers]]
+        table_data = [[Paragraph(_esc(t(h)), s["header_cell"]) for h in headers]]
         for r in rows:
             table_data.append([Paragraph(_esc(c), s["cell"]) for c in r])
-        t = Table(table_data, colWidths=[doc.width / len(headers)] * len(headers), repeatRows=1)
-        t.setStyle(TableStyle([
+        tbl = Table(table_data, colWidths=[doc.width / len(headers)] * len(headers), repeatRows=1)
+        tbl.setStyle(TableStyle([
             ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e5e7eb")),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("LEFTPADDING", (0, 0), (-1, -1), 4),
             ("RIGHTPADDING", (0, 0), (-1, -1), 4),
         ]))
-        story.append(t)
+        story.append(tbl)
 
     section("PERSONAL INFORMATION")
     kv_grid([
-        ("Full Name", f"{a['salutation'] or ''} {a['full_name'] or ''}".strip()),
-        ("Chinese Name", a["chinese_name"]), ("Gender", a["gender"]),
-        ("IC / Passport No", a["ic_passport_no"]), ("Marital Status", a["marital_status"]),
+        ("Full Name", f"{tv(a['salutation'], PDF_SALUTATION_ZH) or ''} {a['full_name'] or ''}".strip()),
+        ("Chinese Name", a["chinese_name"]), ("Gender", tv(a["gender"], PDF_GENDER_ZH)),
+        ("IC / Passport No", a["ic_passport_no"]), ("Marital Status", tv(a["marital_status"], PDF_MARITAL_ZH)),
         ("IC Colour", a["ic_color"]), ("Date of Birth", a["date_of_birth"]),
         ("Age", a["age"]), ("Height (cm)", a["height_cm"]), ("Weight (kg)", a["weight_kg"]),
         ("Home Tel No", a["home_tel_no"]), ("Office Tel No", a["office_tel_no"]),
         ("Handphone No", a["handphone_no"]), ("E-mail", a["email"]),
         ("Religion", a["religion"]), ("Race", a["race"]), ("Dialect", a["dialect"]),
         ("Place of Birth", a["place_of_birth"]), ("Nationality", a["nationality"]),
-        ("Driving License", f"{a['driving_license'] or ''} {a['driving_license_class'] or ''}".strip()),
-        ("Car Owner", a["car_owner"]), ("National Service", a["national_service_status"]),
+        ("Driving License", f"{tv(a['driving_license'], PDF_YN_ZH) or ''} {a['driving_license_class'] or ''}".strip()),
+        ("Car Owner", tv(a["car_owner"], PDF_YN_ZH)), ("National Service", tv(a["national_service_status"], PDF_NS_ZH)),
         ("ORD / Vocation / Rank", f"{a['national_service_ord'] or '-'} / {a['national_service_vocation'] or '-'} / {a['national_service_last_rank'] or '-'}"),
     ])
-    story.append(Paragraph(f"<b>Address:</b> {_esc(a['address']) or '-'}", s["value"]))
+    story.append(Paragraph(f"<b>{t('Address')}:</b> {_esc(a['address']) or '-'}", s["value"]))
 
     section("FAMILY PARTICULARS (Spouse, Children, Parents, Siblings)")
     data_table(["Name", "Relationship", "DOB", "Occupation", "Employer / School"],
@@ -3647,7 +3724,7 @@ def _build_application_form_pdf(a, family, education, other_quals, languages, em
 
     section("LANGUAGE AND DIALECT PROFICIENCY")
     data_table(["Language", "Speak", "Read", "Write"],
-               [[r.get("language"), r.get("speak"), r.get("read"), r.get("write")] for r in languages])
+               [[r.get("language"), tv(r.get("speak"), PDF_PROF_ZH), tv(r.get("read"), PDF_PROF_ZH), tv(r.get("write"), PDF_PROF_ZH)] for r in languages])
 
     if a["computer_skills"]:
         section("COMPUTER LITERACY AND OTHER SKILLS")
@@ -3659,14 +3736,14 @@ def _build_application_form_pdf(a, family, education, other_quals, languages, em
         ("Pre-existing illness / long-term treatment", "health_treatment", "health_treatment_details"),
         ("Smoke / Vape", "smoke_vape", "smoke_vape_details"),
     ]:
-        text = f"<b>{label}:</b> {_esc(a[ans_key]) or '-'}"
+        text = f"<b>{t(label)}:</b> {_esc(tv(a[ans_key], PDF_YN_ZH)) or '-'}"
         if a[detail_key]:
             text += f" - {_esc(a[detail_key])}"
         story.append(Paragraph(text, s["value"]))
     if a["hobbies"]:
-        story.append(Paragraph(f"<b>Hobbies, Interests and Games:</b> {_esc(a['hobbies'])}", s["value"]))
+        story.append(Paragraph(f"<b>{t('Hobbies, Interests and Games')}:</b> {_esc(a['hobbies'])}", s["value"]))
     if a["memberships"]:
-        story.append(Paragraph(f"<b>Club / Association Memberships:</b> {_esc(a['memberships'])}", s["value"]))
+        story.append(Paragraph(f"<b>{t('Club / Association Memberships')}:</b> {_esc(a['memberships'])}", s["value"]))
 
     section("EMPLOYMENT HISTORY (start with your present/most recent employer)")
     if employment:
@@ -3681,10 +3758,10 @@ def _build_application_form_pdf(a, family, education, other_quals, languages, em
                 ("Other Allowances", r.get("other_allowances")), ("Reasons for Leaving", r.get("reasons_leaving")),
             ])
             if r.get("duties"):
-                story.append(Paragraph(f"<b>Major Duties &amp; Responsibilities:</b> {_esc(r['duties'])}", s["value"]))
+                story.append(Paragraph(f"<b>{t('Major Duties & Responsibilities')}:</b> {_esc(r['duties'])}", s["value"]))
             story.append(Spacer(1, 6))
     else:
-        story.append(Paragraph("None given.", s["value"]))
+        story.append(Paragraph(t("None given."), s["value"]))
     kv_grid([
         ("Length of Notice Required", a["notice_period"]), ("Earliest Start Date", a["earliest_start_date"]),
         ("Expected Salary", a["expected_salary"]),
@@ -3707,7 +3784,7 @@ def _build_application_form_pdf(a, family, education, other_quals, languages, em
         ("supp_directorship", "Holding directorship or other appointment"),
     ]
     data_table(["Question", "Answer", "Details"],
-               [[label, a[key] or "-", a[key + "_details"] or ""] for key, label in supp_labels])
+               [[t(label), tv(a[key], PDF_YN_ZH) or "-", a[key + "_details"] or ""] for key, label in supp_labels])
 
     section("PERSON TO CONTACT IN CASE OF EMERGENCY")
     any_contact = False
@@ -3717,35 +3794,37 @@ def _build_application_form_pdf(a, family, education, other_quals, languages, em
             continue
         any_contact = True
         story.append(Paragraph(
-            f"<b>Contact {n}:</b> {_esc(name)} ({_esc(a[f'emergency_contact_{n}_relationship']) or '-'})<br/>"
+            f"<b>{t('Contact')} {n}:</b> {_esc(name)} ({_esc(a[f'emergency_contact_{n}_relationship']) or '-'})<br/>"
             f"{_esc(a[f'emergency_contact_{n}_address'])}<br/>"
-            f"Home: {_esc(a[f'emergency_contact_{n}_home_tel']) or '-'} &middot; "
-            f"Office: {_esc(a[f'emergency_contact_{n}_office_tel']) or '-'} &middot; "
-            f"Mobile: {_esc(a[f'emergency_contact_{n}_handphone']) or '-'}<br/>"
+            f"{t('Home')}: {_esc(a[f'emergency_contact_{n}_home_tel']) or '-'} &middot; "
+            f"{t('Office')}: {_esc(a[f'emergency_contact_{n}_office_tel']) or '-'} &middot; "
+            f"{t('Mobile')}: {_esc(a[f'emergency_contact_{n}_handphone']) or '-'}<br/>"
             f"{_esc(a[f'emergency_contact_{n}_email'])}",
             s["value"],
         ))
     if not any_contact:
-        story.append(Paragraph("None given.", s["value"]))
+        story.append(Paragraph(t("None given."), s["value"]))
 
     section("DECLARATION")
     story.append(Paragraph(
-        "I declare that the information given by me in this application for employment is accurate and true. "
-        "By providing the information set out in this form, I agree and consent to the Company and its related "
-        "corporations collecting, using, disclosing and sharing my personal data as set out in the Group's Data "
-        "Protection Policy, accessible at http://www.tianmaco.com.",
+        t(
+            "I declare that the information given by me in this application for employment is accurate and true. "
+            "By providing the information set out in this form, I agree and consent to the Company and its related "
+            "corporations collecting, using, disclosing and sharing my personal data as set out in the Group's Data "
+            "Protection Policy, accessible at http://www.tianmaco.com."
+        ),
         s["value"],
     ))
     story.append(Paragraph(
-        f"<b>Agreed:</b> {'Yes' if a['declaration_agreed'] == 'Y' else 'No'} &middot; "
-        f"<b>Electronic signature (typed name):</b> {_esc(a['applicant_signature_name']) or '-'} &middot; "
-        f"<b>Date:</b> {_esc(a['declaration_date']) or '-'}",
+        f"<b>{t('Agreed')}:</b> {tv('Yes' if a['declaration_agreed'] == 'Y' else 'No', PDF_YN_ZH)} &middot; "
+        f"<b>{t('Electronic signature (typed name)')}:</b> {_esc(a['applicant_signature_name']) or '-'} &middot; "
+        f"<b>{t('Date')}:</b> {_esc(a['declaration_date']) or '-'}",
         s["value"],
     ))
 
     if documents:
         section("SUPPORTING DOCUMENTS INCLUDED IN THIS PDF")
-        data_table(["Type", "File"], [[d["doc_type"], d["original_name"]] for d in documents])
+        data_table(["Type", "File"], [[tv(d["doc_type"], PDF_DOC_TYPE_ZH), d["original_name"]] for d in documents])
 
     doc.build(story)
     buf.seek(0)
@@ -3800,8 +3879,9 @@ def recruitment_combined_pdf(app_id):
 
     app_dir = os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(app_id))
     photo_path = os.path.join(app_dir, application["photo_stored_name"]) if application["photo_stored_name"] else None
+    lang = "zh" if request.args.get("lang") == "zh" else "en"
     form_pdf_bytes = _build_application_form_pdf(
-        application, family, education, other_quals, languages, employment, documents, photo_path=photo_path,
+        application, family, education, other_quals, languages, employment, documents, photo_path=photo_path, lang=lang,
     )
 
     writer = PdfWriter()

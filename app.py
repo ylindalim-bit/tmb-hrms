@@ -486,6 +486,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/fill-s001-september-sundays",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/split-al-bf-and-adjustment",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fix-n001-may-al-days",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/assign-w001-w002-k004-to-kee",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -8626,6 +8627,31 @@ def hr_split_al_bf_and_adjustment():
         applied.append(f"{emp_id}: al_bf_days {before['al_bf_days'] or 0} -> {(before['al_bf_days'] or 0) - total}, al_adjustment_days -> {total}")
     db.commit()
     return "OK - " + ("; ".join(applied) if applied else "(nothing to split, already applied)"), 200
+
+
+@app.route("/hr/assign-w001-w002-k004-to-kee", methods=["POST"])
+def hr_assign_w001_w002_k004_to_kee():
+    """One-time fix: W001, W002, and K004 had no Appraisal supervisor or
+    Leave Approver set, so they never showed up under Mr Kee's own
+    restricted Appraisals/Leave Requests views - sets both fields to
+    'kee' (hr_users.username) for all three. K003 is deliberately
+    excluded - that's Kee's own employee record, so he can't be his own
+    supervisor/approver. Safe to re-run."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    emp_ids = ["W001", "W002", "K004"]
+    applied = []
+    for emp_id in emp_ids:
+        cur = db.execute(
+            "UPDATE employees SET appraisal_supervisor_username='kee', leave_approver_username='kee' WHERE emp_id=?",
+            (emp_id,),
+        )
+        if cur.rowcount:
+            applied.append(emp_id)
+    db.commit()
+    return "OK - assigned to Kee: " + (", ".join(applied) if applied else "(no matching employees found)"), 200
 
 
 if __name__ == "__main__":

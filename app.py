@@ -487,6 +487,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/split-al-bf-and-adjustment",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fix-n001-may-al-days",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/assign-w001-w002-k004-to-kee",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/clear-k004-pre-join-attendance",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -8660,6 +8661,34 @@ def hr_assign_w001_w002_k004_to_kee():
             applied.append(emp_id)
     db.commit()
     return "OK - assigned to Kee: " + (", ".join(applied) if applied else "(no matching employees found)"), 200
+
+
+@app.route("/hr/clear-k004-pre-join-attendance", methods=["POST"])
+def hr_clear_k004_pre_join_attendance():
+    """One-time fix: K004 (Kong Wen Ho) joined 2026-09-16, but a Save
+    Month on her Daily Attendance page wrote a row for every day of
+    September - the same "whole-month Save defaults every blank day to
+    WORKED" pattern behind most of this session's other fixes, just
+    happening on day one for a brand-new employee this time. Deletes
+    the rows for dates before her actual Date Joined (they were never
+    real attendance - she wasn't employed yet), then re-syncs
+    attendance_monthly. No payroll_runs exists yet for her, so nothing
+    payroll-related to touch. Safe to re-run."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    emp_id = "K004"
+    emp = db.execute("SELECT date_joined FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+    if emp is None or not emp["date_joined"]:
+        return "OK - (employee not found or no date_joined on file)", 200
+    cur = db.execute(
+        "DELETE FROM attendance_daily WHERE emp_id=? AND date < ?", (emp_id, emp["date_joined"]),
+    )
+    deleted = cur.rowcount
+    _sync_daily_to_monthly(db, emp_id, 2026, 9)
+    db.commit()
+    return f"OK - deleted {deleted} pre-join attendance row(s) for {emp_id} (before {emp['date_joined']})", 200
 
 
 if __name__ == "__main__":

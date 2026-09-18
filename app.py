@@ -485,6 +485,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/fill-w001-w002-september-attendance",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/fill-s001-september-sundays",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/split-al-bf-and-adjustment",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/fix-n001-may-al-days",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -8548,6 +8549,44 @@ def hr_fill_s001_september_sundays():
         "OK - attendance filled: " + ("; ".join(applied) if applied else "(nothing to fill, already applied)")
         + f" | payroll: {emp_id} re-finalized Sept 2026 (days_worked="
         + f"{result['working_days_in_month'] - result['unpaid_days'] - result['paid_leave_days']}, net_pay={result['net_pay']})"
+    ), 200
+
+
+@app.route("/hr/fix-n001-may-al-days", methods=["POST"])
+def hr_fix_n001_may_al_days():
+    """One-time fix: N001's attendance_monthly for May 2026 had al_days=7,
+    but the actual attendance_daily records for that month only have 5
+    days marked AL (5/8, 5/9, 5/11, 5/12, 5/13) - matching her 2 Approved
+    leave_requests for May (2 days + 3 days = 5). The extra 2 days were
+    stale, left over from before those requests were properly reflected
+    day-by-day, never re-synced since. Re-syncing from attendance_daily
+    (the authoritative source) corrects it to 5, fixing her Staff Portal
+    AL balance (was showing -2 days used 14, should be 0 used 12).
+    Deliberately does NOT touch payroll_runs/re-finalize payroll - a
+    much bigger, separate discrepancy was found there (May's finalized
+    payroll_runs shows working_days_in_month=26/days_worked=26/
+    paid_leave_days=0, completely disconnected from attendance_monthly,
+    and the same pattern repeats across most of Jan-Jul 2026) that
+    needs its own review with Linda before anything payroll-related is
+    touched, not bundled into this display fix. Safe to re-run."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    emp_id = "N001"
+
+    before = db.execute(
+        "SELECT al_days FROM attendance_monthly WHERE emp_id=? AND year=2026 AND month=5", (emp_id,)
+    ).fetchone()
+    _sync_daily_to_monthly(db, emp_id, 2026, 5)
+    after = db.execute(
+        "SELECT al_days FROM attendance_monthly WHERE emp_id=? AND year=2026 AND month=5", (emp_id,)
+    ).fetchone()
+    db.commit()
+    return (
+        f"OK - {emp_id} May 2026 attendance_monthly.al_days: "
+        f"{before['al_days'] if before else None} -> {after['al_days'] if after else None} "
+        "(payroll_runs deliberately untouched - see docstring)"
     ), 200
 
 

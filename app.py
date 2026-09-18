@@ -3567,6 +3567,20 @@ def recruitment_create_employee(app_id):
         "position": application["position_applied"],
         "department": application["appointment_department"],
         "date_joined": datetime.date.today().isoformat(),
+        "emergency_contact_1_name": application["emergency_contact_1_name"],
+        "emergency_contact_1_relationship": application["emergency_contact_1_relationship"],
+        "emergency_contact_1_phone": (
+            application["emergency_contact_1_handphone"]
+            or application["emergency_contact_1_home_tel"]
+            or application["emergency_contact_1_office_tel"]
+        ),
+        "emergency_contact_2_name": application["emergency_contact_2_name"],
+        "emergency_contact_2_relationship": application["emergency_contact_2_relationship"],
+        "emergency_contact_2_phone": (
+            application["emergency_contact_2_handphone"]
+            or application["emergency_contact_2_home_tel"]
+            or application["emergency_contact_2_office_tel"]
+        ),
     }
     clockin_locations = db.execute(
         "SELECT id, base, label FROM clockin_locations ORDER BY base, id"

@@ -1903,9 +1903,17 @@ def attendance_daily(emp_id, year, month):
         row = saved.get(date_iso)
         trip_label = trip_labels.get((emp_id, date_iso))
         is_late, is_early = _late_early_flags(row, emp)
+        # Same "problem" definition as attendance_daily_all() - a saved
+        # WORKED day with no Time In or Time Out - so a day-entry issue
+        # shows up the same way (pink) whichever of the two pages HR is
+        # looking at, instead of only being visible on the all-staff view.
+        is_problem = (
+            bool(row) and row["day_type"] == "WORKED"
+            and (not row["time_in"] or not row["time_out"]) and not trip_label
+        )
         days.append({
             "day": day, "date": date_iso, "weekday": date_obj.strftime("%a"),
-            "row": row, "unrecorded": row is None and not trip_label,
+            "row": row, "unrecorded": row is None and not trip_label, "problem": is_problem,
             "late_in": is_late, "early_out": is_early,
             "trip_label": trip_label, "holiday_name": holiday_names.get(date_iso),
             "default_day_type": _default_day_type_for_pattern(emp["work_pattern"], date_obj.weekday()),

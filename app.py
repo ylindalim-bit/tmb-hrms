@@ -1631,6 +1631,19 @@ WORK_PATTERN_WEEKDAY_WEIGHTS = {
 }
 
 
+def _day_not_yet_applicable(date_iso, date_joined, today_iso):
+    """True for a day HR could never have real attendance for - before the
+    employee's Date Joined, or still in the future - so those days render
+    as plain unhighlighted rows instead of amber "unrecorded", and don't
+    get counted in the unrecorded/problem totals. Without this, a brand
+    new employee's first month (or just today's not-yet-finished month
+    for anyone) shows every pre-join/future day flagged as if HR forgot
+    to fill something in, when there was never anything to fill in yet."""
+    if date_joined and date_iso < date_joined:
+        return True
+    return date_iso > today_iso
+
+
 def _default_day_type_for_pattern(work_pattern, weekday):
     """What Daily Attendance should show as the Status default for a day
     with no saved record yet, so a fixed-schedule employee's Sat/Sun don't
@@ -1913,6 +1926,7 @@ def attendance_daily(emp_id, year, month):
             (f"{year:04d}-{month:02d}-%", emp["base"] or "MY"),
         ).fetchall()
     }
+    today_iso = datetime.datetime.now(MYT).date().isoformat()
     days = []
     for day in range(1, days_in_month + 1):
         date_obj = datetime.date(year, month, day)
@@ -1920,6 +1934,7 @@ def attendance_daily(emp_id, year, month):
         row = saved.get(date_iso)
         trip_label = trip_labels.get((emp_id, date_iso))
         is_late, is_early = _late_early_flags(row, emp)
+        not_yet_applicable = _day_not_yet_applicable(date_iso, emp["date_joined"], today_iso)
         # Same "problem" definition as attendance_daily_all() - a saved
         # WORKED day with no Time In or Time Out - so a day-entry issue
         # shows up the same way (pink) whichever of the two pages HR is
@@ -1930,7 +1945,8 @@ def attendance_daily(emp_id, year, month):
         )
         days.append({
             "day": day, "date": date_iso, "weekday": date_obj.strftime("%a"),
-            "row": row, "unrecorded": row is None and not trip_label, "problem": is_problem,
+            "row": row, "unrecorded": row is None and not trip_label and not not_yet_applicable,
+            "problem": is_problem,
             "late_in": is_late, "early_out": is_early,
             "trip_label": trip_label, "holiday_name": holiday_names.get(date_iso),
             "default_day_type": _default_day_type_for_pattern(emp["work_pattern"], date_obj.weekday()),
@@ -2007,7 +2023,7 @@ def attendance_daily_all(year, month):
 
     employees = employed_this_month(
         db, year, month,
-        "emp_id, full_name, base, standard_start, standard_end, cewi_flag",
+        "emp_id, full_name, base, standard_start, standard_end, cewi_flag, date_joined",
     )
 
     trip_labels = _trip_labels_for_month(db, year, month)
@@ -2021,6 +2037,7 @@ def attendance_daily_all(year, month):
     problem_count = 0
     unrecorded_count = 0
     late_early_count = 0
+    today_iso = datetime.datetime.now(MYT).date().isoformat()
     for e in employees:
         holiday_names = holiday_names_by_base.get(e["base"] or "MY", {})
         saved = {
@@ -2046,7 +2063,8 @@ def attendance_daily_all(year, month):
                 bool(row) and row["day_type"] == "WORKED"
                 and (not row["time_in"] or not row["time_out"]) and not trip_label
             )
-            is_unrecorded = row is None and not trip_label
+            not_yet_applicable = _day_not_yet_applicable(date_iso, e["date_joined"], today_iso)
+            is_unrecorded = row is None and not trip_label and not not_yet_applicable
             is_late, is_early = _late_early_flags(row, e)
             if is_problem:
                 emp_problems += 1

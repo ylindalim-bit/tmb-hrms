@@ -1093,6 +1093,13 @@ def add_employee():
                     (emp_id, "(not set)", fields["probation_end_date"], "Initial",
                      datetime.datetime.now().isoformat(timespec="seconds")),
                 )
+            # If this employee was created via Create Employee Record on a
+            # Recruitment application (source_application_id hidden field),
+            # copy that application's uploaded documents over too - see
+            # _copy_application_documents_to_employee.
+            source_application_id = request.form.get("source_application_id")
+            if source_application_id:
+                _copy_application_documents_to_employee(db, int(source_application_id), emp_id)
             db.commit()
             return redirect(url_for("edit_employee", emp_id=emp_id))
     clockin_locations = db.execute(
@@ -3591,7 +3598,94 @@ def recruitment_create_employee(app_id):
         holiday_state_options=HOLIDAY_STATE_OPTIONS, base_options=BASE_OPTIONS,
         clockin_locations=clockin_locations,
         emp_id_suggestions=_next_emp_id_suggestions(db),
+        source_application_id=app_id,
     )
+
+
+def _copy_application_documents_to_employee(db, app_id, emp_id):
+    """Transfers a job application's paperwork over to the new
+    employee's own Documents list, so HR doesn't have to download from
+    Recruitment and re-upload by hand. Two parts: (1) the actual filled
+    application form itself, freshly generated the same way the
+    Recruitment detail page's "Download Combined PDF" does, filed as
+    'Job Application Form' - this is the one that always exists, even
+    when the candidate uploaded no separate files (e.g. only a photo);
+    (2) any uploaded resume/certificate/license/other files, filed as
+    'Other' with the original recruitment doc_type kept in Notes, since
+    employee documents don't have separate Resume/Certificate
+    categories. A source file that's gone missing from disk is skipped
+    rather than failing outright."""
+    application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
+    if application is None:
+        return 0
+    dest_dir = os.path.join(UPLOAD_DIR, emp_id)
+    os.makedirs(dest_dir, exist_ok=True)
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    copied = 0
+
+    docs = db.execute(
+        "SELECT * FROM job_application_documents WHERE application_id=? ORDER BY id", (app_id,)
+    ).fetchall()
+    form_pdf_bytes = _build_application_form_pdf(
+        application,
+        json.loads(application["family_particulars_json"] or "[]"),
+        json.loads(application["education_json"] or "[]"),
+        json.loads(application["other_qualifications_json"] or "[]"),
+        json.loads(application["languages_json"] or "[]"),
+        json.loads(application["employment_history_json"] or "[]"),
+        docs,
+        photo_path=(
+            os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(app_id), application["photo_stored_name"])
+            if application["photo_stored_name"] else None
+        ),
+    )
+    form_stored_name = f"{uuid.uuid4().hex}_Job_Application_Form.pdf"
+    with open(os.path.join(dest_dir, form_stored_name), "wb") as f:
+        f.write(form_pdf_bytes)
+    db.execute(
+        """INSERT INTO employee_documents (emp_id, doc_type, original_name, stored_name, notes, uploaded_at)
+           VALUES (?,?,?,?,?,?)""",
+        (emp_id, "Job Application Form", f"{application['full_name'] or emp_id} - Job Application Form.pdf",
+         form_stored_name, f"Transferred from Recruitment application #{app_id}", now),
+    )
+    copied += 1
+
+    src_dir = os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(app_id))
+    for d in docs:
+        src_path = os.path.join(src_dir, d["stored_name"])
+        if not os.path.exists(src_path):
+            continue
+        new_stored_name = f"{uuid.uuid4().hex}_{d['original_name']}"
+        shutil.copy2(src_path, os.path.join(dest_dir, new_stored_name))
+        db.execute(
+            """INSERT INTO employee_documents (emp_id, doc_type, original_name, stored_name, notes, uploaded_at)
+               VALUES (?,?,?,?,?,?)""",
+            (emp_id, "Other", d["original_name"], new_stored_name,
+             f"Transferred from Recruitment application #{app_id} ({d['doc_type']})", now),
+        )
+        copied += 1
+    return copied
+
+
+@app.route("/hr/recruitment/<int:app_id>/transfer-documents", methods=["POST"])
+def recruitment_transfer_documents(app_id):
+    """Manual counterpart to the automatic transfer in add_employee() -
+    for an employee that was already created before this document
+    transfer existed, or created without going through Create Employee
+    Record at all. HR types in the target Employee ID and every
+    document on this application gets copied over."""
+    db = get_db()
+    application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
+    if application is None:
+        abort(404)
+    if not _can_review_application(application):
+        abort(403)
+    emp_id = (request.form.get("emp_id") or "").strip()
+    if not emp_id or db.execute("SELECT 1 FROM employees WHERE emp_id=?", (emp_id,)).fetchone() is None:
+        return redirect(url_for("recruitment_detail", app_id=app_id))
+    _copy_application_documents_to_employee(db, app_id, emp_id)
+    db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id))
 
 
 def _esc(value):

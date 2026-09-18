@@ -28,6 +28,7 @@
 {% endif %}
 <div class="card">
 <form method="post" id="employee-form" action="{{ url_for('add_employee') if is_new else url_for('edit_employee', emp_id=emp.emp_id) }}">
+  {% if source_application_id %}<input type="hidden" name="source_application_id" value="{{ source_application_id }}">{% endif %}
   <h2 style="margin-top:0;">Status</h2>
   <div class="form-grid">
     <div><label>Status</label>

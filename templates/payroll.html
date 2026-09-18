@@ -12,8 +12,16 @@
   <a class="btn secondary" href="{{ url_for('socso_eis_textfile', year=year, month=month) }}">Download SOCSO+EIS Text File</a>
 </div>
 
+<div style="margin-bottom:10px;">
+  <label style="font-size:13px; color:var(--muted); margin-right:6px;">Base:</label>
+  <button type="button" class="btn base-filter-btn" data-base="" style="padding:4px 10px;" onclick="filterByBase('')">All ({{ results|length }})</button>
+  {% for b in base_options %}
+  <button type="button" class="btn secondary base-filter-btn" data-base="{{ b }}" style="padding:4px 10px;" onclick="filterByBase('{{ b }}')">{{ b }} ({{ base_counts[b] }})</button>
+  {% endfor %}
+</div>
+
 <div class="card table-wrap">
-<table>
+<table id="payroll-table">
 <thead>
 <tr>
   <th class="text sticky-col sticky-col-1">Emp ID</th><th class="text sticky-col sticky-col-2">Name</th>
@@ -28,7 +36,7 @@
 </thead>
 <tbody>
 {% for r in results %}
-<tr>
+<tr data-base="{{ base_by_emp.get(r.emp_id) or '' }}">
   <td class="text sticky-col sticky-col-1">{{ r.emp_id }}</td>
   <td class="text sticky-col sticky-col-2">{{ r.full_name }}</td>
   <td class="text sticky-col sticky-col-3">
@@ -93,7 +101,7 @@
 </tbody>
 </table>
 </div>
-<p><strong>Total Headcount: {{ results|length }} employees</strong></p>
+<p><strong>Total Headcount: <span id="headcount">{{ results|length }}</span> employees</strong></p>
 {% if zero_pay_notes %}
 <div style="background:#fef3c7; color:#92400e; padding:10px 14px; border-radius:6px; font-size:13px; margin-bottom:12px;">
   <strong>Note:</strong>
@@ -107,4 +115,31 @@
       onsubmit="return confirm('Finalize payroll for {{ month_names[month] }} {{ year }}? This locks in the numbers above and updates YTD tax records.');">
   <button class="btn" type="submit">Finalize Payroll for {{ month_names[month] }} {{ year }}</button>
 </form>
+<script>
+// Display-only filter: hides rows and re-totals the visible ones. Finalize
+// Payroll below still applies to everyone, whichever Base is selected.
+function filterByBase(base) {
+  var rows = document.querySelectorAll('#payroll-table tbody tr:not(.totals-row)');
+  var totalsRow = document.querySelector('#payroll-table tr.totals-row');
+  var sums = {};
+  var shown = 0;
+  rows.forEach(function (row) {
+    var visible = !base || row.dataset.base === base;
+    row.style.display = visible ? '' : 'none';
+    if (!visible) return;
+    shown++;
+    // Gross..NET PAY are cells 15-28 in a row; the TOTAL row's first cell spans 0-14.
+    for (var c = 15; c <= 28; c++) {
+      sums[c] = (sums[c] || 0) + (parseFloat(row.cells[c].textContent.replace(/,/g, '')) || 0);
+    }
+  });
+  for (var c = 15; c <= 28; c++) {
+    totalsRow.cells[c - 14].textContent = (sums[c] || 0).toFixed(2);
+  }
+  document.getElementById('headcount').textContent = shown;
+  document.querySelectorAll('.base-filter-btn').forEach(function (btn) {
+    btn.classList.toggle('secondary', btn.dataset.base !== base);
+  });
+}
+</script>
 {% endblock %}

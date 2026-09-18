@@ -2516,9 +2516,15 @@ def run_payroll(year, month):
                    "skbbk_employee", "hrd_levy_employer", "other_deduction",
                    "total_deductions", "net_pay"]
     }
+    base_counts = {b: 0 for b in BASE_OPTIONS}
+    for r in results:
+        b = base_by_emp.get(r["emp_id"])
+        if b in base_counts:
+            base_counts[b] += 1
     return render_template("payroll.html", results=results, year=year, month=month,
                             finalized=finalized, totals=totals, bank_info=bank_info,
-                            base_by_emp=base_by_emp, zero_pay_notes=_zero_pay_notes(results))
+                            base_by_emp=base_by_emp, zero_pay_notes=_zero_pay_notes(results),
+                            base_options=BASE_OPTIONS, base_counts=base_counts)
 
 
 PAYROLL_EXPORT_COLUMNS = [

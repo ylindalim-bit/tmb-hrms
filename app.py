@@ -6,6 +6,7 @@ import io
 import json
 import math
 import os
+import re
 import secrets
 import shutil
 import sqlite3
@@ -1033,6 +1034,26 @@ def employees():
                             depts=depts, positions=positions)
 
 
+def _next_emp_id_suggestions(db):
+    """For the Add New Employee page's ID-prefix helper - every existing
+    emp_id is a single uppercase letter + 3-digit number (e.g. K002,
+    M008), so this groups them by letter and works out the next free
+    number per letter (max used + 1, zero-padded), letting HR pick a
+    prefix and see the actual next ID instead of checking the Employees
+    list by hand. Only covers letters already in use; a brand-new
+    letter still just gets typed directly into the ID field."""
+    rows = db.execute("SELECT emp_id FROM employees").fetchall()
+    by_prefix = {}
+    for r in rows:
+        emp_id = r["emp_id"] or ""
+        m = re.fullmatch(r"([A-Za-z])(\d{3})", emp_id)
+        if not m:
+            continue
+        prefix, num = m.group(1).upper(), int(m.group(2))
+        by_prefix[prefix] = max(by_prefix.get(prefix, 0), num)
+    return {prefix: f"{prefix}{max_num + 1:03d}" for prefix, max_num in sorted(by_prefix.items())}
+
+
 @app.route("/employees/new", methods=["GET", "POST"])
 def add_employee():
     db = get_db()
@@ -1080,7 +1101,8 @@ def add_employee():
     return render_template("employee_edit.html", emp={}, is_new=True, error=error,
                             race_options=RACE_OPTIONS, religion_options=RELIGION_OPTIONS,
                             holiday_state_options=HOLIDAY_STATE_OPTIONS, base_options=BASE_OPTIONS,
-                            clockin_locations=clockin_locations)
+                            clockin_locations=clockin_locations,
+                            emp_id_suggestions=_next_emp_id_suggestions(db))
 
 
 @app.route("/employees/<emp_id>/edit", methods=["GET", "POST"])
@@ -3554,6 +3576,7 @@ def recruitment_create_employee(app_id):
         race_options=RACE_OPTIONS, religion_options=RELIGION_OPTIONS,
         holiday_state_options=HOLIDAY_STATE_OPTIONS, base_options=BASE_OPTIONS,
         clockin_locations=clockin_locations,
+        emp_id_suggestions=_next_emp_id_suggestions(db),
     )
 
 

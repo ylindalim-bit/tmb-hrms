@@ -50,7 +50,17 @@
   <h2>Personal / Identification</h2>
   <div class="form-grid">
     {% if is_new %}
-    <div><label>Employee ID</label><input type="text" name="emp_id" value="{{ emp.emp_id or '' }}" placeholder="e.g. E026" required></div>
+    <div><label>Employee ID</label>
+      <input type="text" id="emp_id" name="emp_id" value="{{ emp.emp_id or '' }}" placeholder="e.g. E026" required>
+      {% if emp_id_suggestions %}
+      <select id="emp_id_prefix_helper" onchange="if(this.value){document.getElementById('emp_id').value=this.value;} this.selectedIndex=0;" style="margin-top:4px; font-size:12px;">
+        <option value="">Pick a letter for the next ID&hellip;</option>
+        {% for prefix, next_id in emp_id_suggestions.items() %}
+        <option value="{{ next_id }}">{{ prefix }} &rarr; next is {{ next_id }}</option>
+        {% endfor %}
+      </select>
+      {% endif %}
+    </div>
     {% endif %}
     <div><label>Full Name</label><input type="text" name="full_name" value="{{ emp.full_name or '' }}" style="font-weight:700;"></div>
     <div><label>IC / Passport No.</label><input type="text" id="ic_passport_no" name="ic_passport_no" value="{{ emp.ic_passport_no or '' }}" oninput="calcDobFromIc()" style="font-weight:700;"></div>

@@ -164,6 +164,7 @@
         {% endfor %}
       </select>
     </div>
+    {% endif %}
     <div><label>OT Needs Approval</label>
       <select name="ot_approval_required" id="ot_approval_required">
         <option value="N" {% if not emp.ot_approval_required or emp.ot_approval_required=="N" %}selected{% endif %}>No</option>
@@ -171,6 +172,7 @@
       </select>
       <p style="color:var(--muted); font-size:12px; margin-top:4px;">If Yes, this employee's OT hours must be submitted as an OT Claim and approved online before counting in payroll, instead of being entered directly on Daily Attendance. Auto-suggested Yes above Basic Salary RM4,000/month (Employment Act OT-entitlement cap for non-manual staff) - override if this employee is a manual worker (covered regardless of wage) or otherwise exempt.</p>
     </div>
+    {% if not is_new %}
     <div><label>Linked HR/Approver Account</label>
       <select name="hr_username">
         <option value="">-- None --</option>

@@ -130,6 +130,8 @@ tbody tr:hover td.sticky-col { background: #fafbfc; }
 .btn.secondary { background: #fff; color: var(--accent); border: 1px solid var(--accent); }
 .month-nav { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
 .month-nav a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.month-nav a.btn { color: #fff; }
+.month-nav a.btn.secondary { color: var(--accent); }
 .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
 .pill.finalized { background: #dcfce7; color: var(--good); }
 .pill.draft { background: #fef3c7; color: #92400e; }

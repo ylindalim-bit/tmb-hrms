@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Daily Attendance - All Staff {{ month_names[month] }} {{ year }} - TMB Payroll{% endblock %}
 {% block content %}
+{% macro late_tag(word, d, size) %}<span style="color:{{ '#9a3412' if d.late_kind == 'personal' else ('var(--muted)' if d.late_kind == 'excused' else '#1e3a8a') }}; font-weight:600; font-size:{{ size }};"{% if d.excuse %} title="{{ d.excuse }}"{% endif %}>({{ word }}{% if d.late_kind == 'personal' %} - personal{% elif d.late_kind == 'excused' %} - excused{% endif %})</span>{% endmacro %}
 <h1>Daily Attendance &mdash; All Staff</h1>
 <div class="month-nav">
   <a href="{{ url_for('attendance_daily_all', year=year if month>1 else year-1, month=month-1 if month>1 else 12) }}">&laquo; Prev</a>
@@ -16,7 +17,7 @@
   WORKED day missing Time In or Time Out. Rows shaded <span style="background:#fef3c7; padding:1px 5px;">amber</span>
   have no record at all that day - no attendance, no approved leave, no Movement Notice. Rows shaded
   <span style="background:#dbeafe; padding:1px 5px;">blue</span> clocked in later or out earlier than the
-  employee's Normal Start/End Time (Employee Edit), beyond a 5-minute grace period either side. To edit, use
+  employee's Normal Start/End Time (Employee Edit), beyond a 5-minute grace period either side and not yet decided; <span style="background:#ffedd5; padding:1px 5px;">orange</span> is marked Personal (deducted), and grey "excused" needs no deduction. To edit, use
   the link on each employee's block below to open their own page.
 </p>
 
@@ -40,6 +41,12 @@
 </div>
 {% endif %}
 
+{% if personal_count %}
+<div class="card" style="background:#ffedd5; color:#9a3412; border-color:#f97316; font-weight:600;">
+  {{ personal_count }} day{{ "s" if personal_count != 1 }} across {{ blocks|selectattr("personal_count", "greaterthan", 0)|list|length }} employee{{ "s" if blocks|selectattr("personal_count", "greaterthan", 0)|list|length != 1 }} marked Personal (to be deducted) - the monthly Attendance page suggests the amount.
+</div>
+{% endif %}
+
 {% set bases = blocks | map(attribute='emp.base') | select | unique | sort | list %}
 <div style="margin-bottom:12px; display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
   <button type="button" class="btn" id="problems-only-btn" onclick="toggleProblemsOnly()">Show only problem days</button>
@@ -56,13 +63,14 @@
 <p id="visible-employee-count" style="color:var(--muted); font-size:13px; margin-top:-4px;"></p>
 
 {% for b in blocks %}
-<div class="card employee-block" data-total-flags="{{ b.problem_count + b.unrecorded_count + b.late_early_count }}" data-base="{{ b.emp.base or '' }}">
+<div class="card employee-block" data-total-flags="{{ b.problem_count + b.unrecorded_count + b.late_early_count + b.personal_count }}" data-base="{{ b.emp.base or '' }}">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
     <h2 style="margin:0;">{{ b.emp.emp_id }} &mdash; {{ b.emp.full_name }}
       {% if b.emp.base %}<span class="pill" style="margin-left:6px; background:var(--bg); color:var(--muted); border:1px solid var(--border);">{{ b.emp.base }}</span>{% endif %}
       {% if b.problem_count %}<span class="pill rejected" style="margin-left:6px;">{{ b.problem_count }} problem{{ "s" if b.problem_count != 1 }}</span>{% endif %}
       {% if b.unrecorded_count %}<span class="pill" style="margin-left:6px; background:#fef3c7; color:#92400e;">{{ b.unrecorded_count }} unrecorded</span>{% endif %}
       {% if b.late_early_count %}<span class="pill" style="margin-left:6px; background:#dbeafe; color:#1e3a8a;">{{ b.late_early_count }} late/early</span>{% endif %}
+      {% if b.personal_count %}<span class="pill" style="margin-left:6px; background:#ffedd5; color:#9a3412;">{{ b.personal_count }} personal</span>{% endif %}
     </h2>
     <a class="btn secondary" href="{{ url_for('attendance_daily', emp_id=b.emp.emp_id, year=year, month=month) }}">Edit &rarr;</a>
   </div>
@@ -71,14 +79,14 @@
   <thead>
   <tr>
     <th class="text">Date</th><th class="text">Day</th><th class="text">Status</th>
-    <th class="text">Time In</th><th class="text">Time Out</th><th class="text">Late/Early Remark</th><th>Meal</th><th>CEWI</th>
+    <th class="text">Time In</th><th class="text">Time Out</th><th class="text">Late/Early Reason</th><th>Meal</th><th>CEWI</th>
     <th>OT 1.5x</th><th>OT 2.0x</th><th>OT 3.0x</th><th class="text">OT Reason</th>
   </tr>
   </thead>
   <tbody>
   {% for d in b.days %}
   {% set r = d.row %}
-  <tr{% if d.problem %} class="flagged-row" style="background:#fee2e2;"{% elif d.unrecorded %} class="flagged-row" style="background:#fef3c7;"{% elif (d.late_in or d.early_out) and not d.excuse %} class="flagged-row" style="background:#dbeafe;"{% endif %}>
+  <tr{% if d.problem %} class="flagged-row" style="background:#fee2e2;"{% elif d.unrecorded %} class="flagged-row" style="background:#fef3c7;"{% elif d.late_kind == 'personal' %} class="flagged-row" style="background:#ffedd5;"{% elif (d.late_in or d.early_out) and not d.late_kind %} class="flagged-row" style="background:#dbeafe;"{% endif %}>
     <td class="text">{{ d.date }}</td>
     <td class="text">{{ d.weekday }}</td>
     <td class="text">
@@ -87,8 +95,8 @@
       <div style="font-size:11px; color:var(--danger); font-weight:600; margin-top:2px;">Public Holiday: {{ d.holiday_name }}</div>
       {% endif %}
     </td>
-    <td class="text">{{ r.time_in if r and r.time_in else "-" }}{% if d.late_in %} <span style="color:{{ 'var(--muted)' if d.excuse else '#1e3a8a' }}; font-weight:600;">(Late{{ ' - excused' if d.excuse }})</span>{% endif %}</td>
-    <td class="text">{{ r.time_out if r and r.time_out else "-" }}{% if d.early_out %} <span style="color:{{ 'var(--muted)' if d.excuse else '#1e3a8a' }}; font-weight:600;">(Early{{ ' - excused' if d.excuse }})</span>{% endif %}</td>
+    <td class="text">{{ r.time_in if r and r.time_in else "-" }}{% if d.late_in %} {{ late_tag('Late', d, 'inherit') }}{% endif %}</td>
+    <td class="text">{{ r.time_out if r and r.time_out else "-" }}{% if d.early_out %} {{ late_tag('Early', d, 'inherit') }}{% endif %}</td>
     <td class="text">{{ d.excuse or "" }}</td>
     <td>{{ "Y" if r and r.meal_allowance_flag == "Y" else "-" }}</td>
     <td>{{ "Y" if r and r.cewi_flag == "Y" and b.emp.cewi_flag == "Y" else "-" }}</td>

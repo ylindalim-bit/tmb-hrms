@@ -67,7 +67,22 @@
     </select>
   </td>
   <td><input type="number" step="0.01" name="other_deduction__{{ e.emp_id }}" value="{{ "%.2f"|format(adj_row.other_deduction if adj_row and adj_row.other_deduction else 0) }}"></td>
-  <td><input type="text" name="other_deduction_desc__{{ e.emp_id }}" value="{{ adj_row.other_deduction_desc if adj_row and adj_row.other_deduction_desc else '' }}" placeholder="e.g. overpayment recovery" style="width:170px; border:1px solid var(--border);"></td>
+  <td>
+    <input type="text" name="other_deduction_desc__{{ e.emp_id }}" value="{{ adj_row.other_deduction_desc if adj_row and adj_row.other_deduction_desc else '' }}" placeholder="e.g. overpayment recovery" style="width:170px; border:1px solid var(--border);">
+    {% set lp = late_personal.get(e.emp_id) %}
+    {% if lp %}
+    <div style="font-size:11px; margin-top:4px; color:#9a3412;" title="{{ lp.detail }} - beyond the 5-minute grace, at RM {{ '%.4f'|format(lp.rate) }}/hour">
+      Personal late/early: {{ lp.minutes }} min = RM {{ "%.2f"|format(lp.amount) }}
+      {% if late_desc_marker in (adj_row.other_deduction_desc if adj_row and adj_row.other_deduction_desc else '') %}
+      <span style="color:var(--muted);">(already added)</span>
+      {% else %}
+      <button type="button" class="btn secondary" style="padding:1px 6px; font-size:11px;"
+              data-emp="{{ e.emp_id }}" data-amount="{{ lp.amount }}" data-desc="{{ lp.desc }}"
+              onclick="addLateDeduction(this)">Add to Other Ded.</button>
+      {% endif %}
+    </div>
+    {% endif %}
+  </td>
 </tr>
 {% endfor %}
 </tbody>
@@ -88,6 +103,19 @@ function filterByBase(base) {
   document.querySelectorAll('.base-filter-btn').forEach(function (btn) {
     btn.classList.toggle('secondary', btn.dataset.base !== base);
   });
+}
+
+// Adds a suggested Personal late/early deduction to Other Ded. and notes it
+// in Deduction Reason. Only fills the boxes - nothing is saved (or reaches
+// pay) until "Save All Attendance" is clicked.
+function addLateDeduction(btn) {
+  var emp = btn.dataset.emp;
+  var amountBox = document.querySelector('[name="other_deduction__' + emp + '"]');
+  var descBox = document.querySelector('[name="other_deduction_desc__' + emp + '"]');
+  amountBox.value = ((parseFloat(amountBox.value) || 0) + parseFloat(btn.dataset.amount)).toFixed(2);
+  descBox.value = descBox.value ? descBox.value + '; ' + btn.dataset.desc : btn.dataset.desc;
+  btn.disabled = true;
+  btn.textContent = 'Added - now click Save All Attendance';
 }
 
 // Employees with Meal Allowance or CEWI marked "Y" on their Employee Master

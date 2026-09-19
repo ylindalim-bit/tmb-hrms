@@ -13,7 +13,7 @@
   "future": "background:var(--bg); color:var(--muted); border:1px solid var(--border);"
 } %}
 <h1>Attendance &mdash; {{ weekday }}, {{ date_iso }}{% if is_today %} <span class="pill finalized" style="vertical-align:middle;">Today</span>{% endif %}</h1>
-<div class="month-nav">
+<div class="month-nav" style="flex-wrap:wrap; row-gap:8px;">
   <a href="{{ url_for('attendance_day', date_str=prev_date) }}">&laquo; Prev day</a>
   <strong>{{ date_iso }}</strong>
   <a href="{{ url_for('attendance_day', date_str=next_date) }}">Next day &raquo;</a>
@@ -23,6 +23,15 @@
   </form>
   {% if not is_today %}<a href="{{ url_for('attendance_day_today') }}" style="margin-left:12px;">Today</a>{% endif %}
   <a href="{{ url_for('attendance_daily_all', year=the_date.year, month=the_date.month) }}" style="margin-left:16px; color:var(--muted);">Whole month, all staff &rarr;</a>
+  {% if base_options %}
+  <span style="margin-left:16px; display:inline-flex; align-items:center; gap:6px;">
+    <label style="font-size:13px; color:var(--muted);">Base:</label>
+    <button type="button" class="btn base-filter-btn" data-base="" style="padding:4px 10px;" onclick="filterByBase('')">All ({{ rows|length }})</button>
+    {% for b in base_options %}
+    <button type="button" class="btn secondary base-filter-btn" data-base="{{ b }}" style="padding:4px 10px;" onclick="filterByBase('{{ b }}')">{{ b }}</button>
+    {% endfor %}
+  </span>
+  {% endif %}
 </div>
 
 <p style="color:var(--muted); font-size:13px;">
@@ -37,16 +46,6 @@
   <span class="pill" style="{{ pill_style[key] }} font-size:13px; padding:4px 10px;">{{ label }}: {{ counts[key] }}</span>
   {% endif %}{% endfor %}
 </div>
-
-{% if base_options %}
-<div style="margin-bottom:10px;">
-  <label style="font-size:13px; color:var(--muted); margin-right:6px;">Base:</label>
-  <button type="button" class="btn base-filter-btn" data-base="" style="padding:4px 10px;" onclick="filterByBase('')">All ({{ rows|length }})</button>
-  {% for b in base_options %}
-  <button type="button" class="btn secondary base-filter-btn" data-base="{{ b }}" style="padding:4px 10px;" onclick="filterByBase('{{ b }}')">{{ b }}</button>
-  {% endfor %}
-</div>
-{% endif %}
 
 <div class="card table-wrap">
 <table id="day-table">

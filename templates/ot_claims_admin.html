@@ -19,7 +19,7 @@
           {% endfor %}
         </select>
       </div>
-      <div><label>Date</label><input type="date" id="claim_date" name="claim_date" required onchange="updateOtAutoCalc()"></div>
+      <div><label>Date</label><input type="date" id="claim_date" name="claim_date" required onchange="onClaimDateChange()"></div>
       <div><label>Time In</label><input type="time" id="time_in" name="time_in" onchange="deriveOtWindows()"></div>
       <div><label>Time Out</label><input type="time" id="time_out" name="time_out" onchange="deriveOtWindows()"></div>
     </div>
@@ -143,9 +143,34 @@ var STANDARD_HOURS_BY_EMP = {{ standard_hours_by_emp | tojson }};
 // boundaries by hand. Only fires if that employee has both normal
 // shift times on file; otherwise the OT window fields stay exactly as
 // typed, same as before.
+// The employee's Normal Start/End Time on the claim's date - their logged
+// Working Schedule History (oldest first) decides, so a claim for a day
+// before a schedule change still uses the hours that applied then.
+function hoursFor(empId, dateStr) {
+  var h = STANDARD_HOURS_BY_EMP[empId];
+  if (!h) return null;
+  var result = {standard_start: h.standard_start, standard_end: h.standard_end};
+  if (dateStr) {
+    h.schedule.forEach(function (s) {
+      if (s[0] <= dateStr) result = {standard_start: s[1], standard_end: s[2]};
+    });
+  }
+  return result;
+}
+
+// Changing the date re-derives the windows only once Time In/Out is filled
+// in, so windows typed by hand aren't wiped when just the date changes.
+function onClaimDateChange() {
+  if (document.getElementById('time_in').value || document.getElementById('time_out').value) {
+    deriveOtWindows();
+  } else {
+    updateOtAutoCalc();
+  }
+}
+
 function deriveOtWindows() {
   var empId = document.getElementById('emp_id').value;
-  var hours = STANDARD_HOURS_BY_EMP[empId];
+  var hours = hoursFor(empId, document.getElementById('claim_date').value);
   var beforeStart = document.getElementById('ot_before_start');
   var beforeEnd = document.getElementById('ot_before_end');
   var afterStart = document.getElementById('ot_start');

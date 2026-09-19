@@ -12,7 +12,7 @@
 <div class="card">
 <form method="post">
   <div class="form-grid">
-    <div><label>Date</label><input type="date" id="claim_date" name="claim_date" required onchange="updateClaimDateDay(); updateOtAutoCalc();">
+    <div><label>Date</label><input type="date" id="claim_date" name="claim_date" required onchange="updateClaimDateDay(); onClaimDateChange();">
       <span id="claim_date_day" style="font-size:12px; color:var(--muted); margin-left:6px;"></span>
     </div>
     <div><label>Time In</label><input type="time" id="time_in" name="time_in" onchange="deriveOtWindows()"></div>
@@ -99,8 +99,30 @@ function updateClaimDateDay() {
 // thereof - matches the server-side _ot_claim_hours_from_form in
 // app.py exactly, so what's previewed here is what actually gets saved.
 var HOLIDAY_DATES = {{ holiday_dates | tojson }};
-var STANDARD_START = {{ (emp.standard_start or "") | tojson }};
-var STANDARD_END = {{ (emp.standard_end or "") | tojson }};
+var CURRENT_START = {{ (emp.standard_start or "") | tojson }};
+var CURRENT_END = {{ (emp.standard_end or "") | tojson }};
+// Working Schedule History, oldest first: [effective_date, start, end].
+var SCHEDULE = {{ schedule | tojson }};
+
+// Your normal shift on the claim's date, so a claim for a day before a
+// schedule change still uses the hours that applied then.
+function shiftFor(dateStr) {
+  var result = [CURRENT_START, CURRENT_END];
+  if (dateStr) {
+    SCHEDULE.forEach(function (s) { if (s[0] <= dateStr) result = [s[1], s[2]]; });
+  }
+  return result;
+}
+
+// Changing the date re-derives the windows only once Time In/Out is filled
+// in, so windows typed by hand aren't wiped when just the date changes.
+function onClaimDateChange() {
+  if (document.getElementById('time_in').value || document.getElementById('time_out').value) {
+    deriveOtWindows();
+  } else {
+    updateOtAutoCalc();
+  }
+}
 
 // Derives the OT Before/OT windows from Time In/Time Out against your
 // normal shift (Normal Start/End Time on your profile, set by HR) - so
@@ -108,6 +130,8 @@ var STANDARD_END = {{ (emp.standard_end or "") | tojson }};
 // Only fires if both your normal shift times are on file; otherwise the
 // OT window fields stay exactly as you type them, same as before.
 function deriveOtWindows() {
+  var shift = shiftFor(document.getElementById('claim_date').value);
+  var STANDARD_START = shift[0], STANDARD_END = shift[1];
   if (!STANDARD_START || !STANDARD_END) return;
   var timeIn = document.getElementById('time_in').value;
   var timeOut = document.getElementById('time_out').value;

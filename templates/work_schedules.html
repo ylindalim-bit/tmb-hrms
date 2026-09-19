@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Working Schedules - TMB Payroll{% endblock %}
+{% block content %}
+<h1>Working Schedules</h1>
+<p style="color:var(--muted); font-size:13px;">
+  Each employee's Normal Start/End Time, with every change kept in a dated history. A change applies from its
+  <strong>Effective From</strong> date only - earlier days keep the hours that applied then (this drives the blue
+  Late / Early marks on Daily Attendance and the automatic OT time windows). To change one person only, open them on
+  Employees and use their Working Schedule History card.
+</p>
+
+{% if done is not none %}
+<div class="card" style="background:#dcfce7; color:var(--good); border-color:var(--good); font-weight:600;">
+  Logged the new hours for {{ done }} {{ done_base or "" }} employee{{ "s" if done != 1 }}.
+</div>
+{% endif %}
+{% if error %}
+<div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger); font-weight:600;">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0;">Change hours for a whole base</h2>
+  <form method="post" action="{{ url_for('work_schedules_apply') }}"
+        onsubmit="var b = this.base.value; return confirm('Set ' + this.standard_start.value + '-' + this.standard_end.value + ' for every active ' + b + ' employee, effective ' + this.effective_date.value + '?');">
+    <div class="form-grid">
+      <div><label>Base</label>
+        <select name="base" required>
+          <option value="">-- Select --</option>
+          {% for b in base_options %}<option value="{{ b }}">{{ b }} ({{ base_counts[b] }} active)</option>{% endfor %}
+        </select>
+      </div>
+      <div><label>Effective From</label><input type="date" name="effective_date" required></div>
+      <div><label>Normal Start Time</label><input type="time" name="standard_start" required></div>
+      <div><label>Normal End Time</label><input type="time" name="standard_end" required></div>
+      <div><label>Reason</label><input type="text" name="reason" placeholder="e.g. New Chengdu office hours" style="width:100%;"></div>
+    </div>
+    <div class="form-actions"><button class="btn" type="submit">Apply to this base</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">Hours in force today</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th class="text">Base</th><th class="text">Start</th><th class="text">End</th><th>Staff</th><th class="text">Employees</th></tr></thead>
+    <tbody>
+      {% for (base, start, end), emp_ids in summary %}
+      <tr>
+        <td class="text">{{ base }}</td><td class="text">{{ start }}</td><td class="text">{{ end }}</td>
+        <td>{{ emp_ids|length }}</td>
+        <td class="text" style="font-size:12px; color:var(--muted);">{{ emp_ids|join(", ") }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">History of changes</h2>
+  <div style="margin-bottom:10px;">
+    <label style="font-size:13px; color:var(--muted); margin-right:6px;">Base:</label>
+    <a class="btn{% if base_filter %} secondary{% endif %}" href="{{ url_for('work_schedules') }}" style="padding:4px 10px;">All</a>
+    {% for b in base_options %}
+    <a class="btn{% if base_filter != b %} secondary{% endif %}" href="{{ url_for('work_schedules', base=b) }}" style="padding:4px 10px;">{{ b }}</a>
+    {% endfor %}
+  </div>
+  {% if log %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr>
+      <th class="text">Effective From</th><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Base</th>
+      <th class="text">Start</th><th class="text">End</th><th class="text">Status</th><th class="text">Reason</th>
+      <th class="text">Logged By</th><th class="text">Logged On</th>
+    </tr></thead>
+    <tbody>
+      {% for h in log %}
+      <tr>
+        <td class="text">{{ "(before first change)" if h.is_baseline else h.effective_date }}</td>
+        <td class="text"><a class="emp-link" href="{{ url_for('edit_employee', emp_id=h.emp_id) }}#work-schedule-log">{{ h.emp_id }}</a></td>
+        <td class="text">{{ h.full_name }}</td>
+        <td class="text">{{ h.base or "-" }}</td>
+        <td class="text">{{ h.standard_start or "-" }}</td>
+        <td class="text">{{ h.standard_end or "-" }}</td>
+        <td class="text">
+          {% if h.status == "Scheduled" %}<span class="pill draft">Scheduled</span>
+          {% elif h.status == "Current" %}<span class="pill finalized">Current</span>
+          {% else %}<span class="pill" style="background:var(--bg); color:var(--muted); border:1px solid var(--border);">Past</span>{% endif %}
+        </td>
+        <td class="text">{{ h.reason or "" }}</td>
+        <td class="text">{{ h.created_by or "-" }}</td>
+        <td class="text" style="font-size:12px; color:var(--muted);">{{ h.created_at[:10] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p style="color:var(--muted);">No changes logged yet. Once you change someone's hours above (or on their Employee page), it's listed here.</p>
+  {% endif %}
+</div>
+{% endblock %}

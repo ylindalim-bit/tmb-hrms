@@ -187,8 +187,10 @@
     <div><label>Basic Salary (RM)</label><input type="number" step="0.01" name="basic_salary" id="basic_salary" value="{{ "%.2f"|format(emp.basic_salary or 0) }}" oninput="suggestOtApproval()"></div>
     <div><label>Working Days/Week</label><input type="number" step="0.5" name="working_days_week" value="{{ emp.working_days_week or 6 }}"></div>
     <div><label>Working Hours/Day</label><input type="number" step="0.5" name="working_hours_day" value="{{ emp.working_hours_day or 8 }}"></div>
-    <div><label>Normal Start Time</label><input type="time" name="standard_start" value="{{ emp.standard_start or '' }}"></div>
-    <div><label>Normal End Time</label><input type="time" name="standard_end" value="{{ emp.standard_end or '' }}"></div>
+    <div><label>Normal Start Time</label><input type="time" name="standard_start" value="{{ emp.standard_start or '' }}" {% if not is_new %}readonly style="color:var(--muted); background:var(--bg);" title="Change this in the Working Schedule History card below"{% endif %}></div>
+    <div><label>Normal End Time</label><input type="time" name="standard_end" value="{{ emp.standard_end or '' }}" {% if not is_new %}readonly style="color:var(--muted); background:var(--bg);" title="Change this in the Working Schedule History card below"{% endif %}>
+      {% if not is_new %}<p style="color:var(--muted); font-size:12px; margin-top:4px;">Hours in force today. To change them, use the <a href="#work-schedule-log">Working Schedule History</a> card below, so the change has a date and is kept.</p>{% endif %}
+    </div>
     <div><label>Work Pattern</label>
       <select name="work_pattern">
         <option value="Manual" {% if not emp.work_pattern or emp.work_pattern=="Manual" %}selected{% endif %}>Manual (set Working Days in Month yourself each time)</option>
@@ -579,6 +581,59 @@
     </tbody>
   </table>
   </div>
+  {% endif %}
+</div>
+
+<div class="card" id="work-schedule-log">
+  <h2 style="margin-top:0;">Working Schedule History</h2>
+  <p style="color:var(--muted); font-size:12px; margin-top:-4px;">
+    Normal Start/End Time in force today: <strong>{{ emp.standard_start or "-" }} &ndash; {{ emp.standard_end or "-" }}</strong>.
+    A change applies from its Effective From date only; earlier days keep the hours that applied then. To change a whole
+    base at once, use <a href="{{ url_for('work_schedules') }}">Working Schedules</a>.
+  </p>
+  {% if schedule_error %}
+  <div style="background:#fee2e2; color:var(--danger); padding:8px 12px; border-radius:6px; margin-bottom:10px;">{{ schedule_error }}</div>
+  {% endif %}
+  <form method="post" action="{{ url_for('add_work_schedule', emp_id=emp.emp_id) }}">
+    <div class="form-grid">
+      <div><label>Effective From</label><input type="date" name="effective_date" required></div>
+      <div><label>Normal Start Time</label><input type="time" name="standard_start" required></div>
+      <div><label>Normal End Time</label><input type="time" name="standard_end" required></div>
+      <div><label>Reason</label><input type="text" name="reason" placeholder="e.g. New Chengdu office hours" style="width:100%;"></div>
+    </div>
+    <div class="form-actions"><button class="btn" type="submit">Add Schedule Change</button></div>
+  </form>
+  {% if schedule_log %}
+  <div class="table-wrap" style="margin-top:14px;">
+  <table>
+    <thead><tr><th class="text">Effective From</th><th class="text">Start</th><th class="text">End</th><th class="text">Status</th><th class="text">Reason</th><th class="text">Logged By</th><th></th></tr></thead>
+    <tbody>
+      {% for h in schedule_log %}
+      <tr>
+        <td class="text">{{ "(before first change)" if h.is_baseline else h.effective_date }}</td>
+        <td class="text">{{ h.standard_start or "-" }}</td>
+        <td class="text">{{ h.standard_end or "-" }}</td>
+        <td class="text">
+          {% if h.status == "Scheduled" %}<span class="pill draft">Scheduled</span>
+          {% elif h.status == "Current" %}<span class="pill finalized">Current</span>
+          {% else %}<span class="pill" style="background:var(--bg); color:var(--muted); border:1px solid var(--border);">Past</span>{% endif %}
+        </td>
+        <td class="text">{{ h.reason or "" }}</td>
+        <td class="text">{{ h.created_by or "-" }}</td>
+        <td class="text">
+          {% if h.status == "Scheduled" %}
+          <form method="post" action="{{ url_for('delete_work_schedule', emp_id=emp.emp_id, schedule_id=h.id) }}" onsubmit="return confirm('Delete this scheduled change?');" style="margin:0;">
+            <button type="submit" class="btn secondary" style="padding:3px 8px; font-size:11px; color:var(--danger);">Delete</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p style="color:var(--muted); margin-top:12px;">No changes logged yet - the hours above are the only ones on file.</p>
   {% endif %}
 </div>
 

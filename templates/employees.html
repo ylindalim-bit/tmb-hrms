@@ -34,7 +34,10 @@
       Showing <span id="visible-count"></span> of {{ employees|length }}
     </span>
   </h1>
-  <a class="btn" href="{{ url_for('add_employee') }}">+ Add Employee</a>
+  <span>
+    <a class="btn secondary" href="{{ url_for('work_schedules') }}">Working Schedules</a>
+    <a class="btn" href="{{ url_for('add_employee') }}" style="margin-left:6px;">+ Add Employee</a>
+  </span>
 </div>
 <div class="tabs" style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
   <div>

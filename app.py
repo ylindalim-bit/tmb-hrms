@@ -1122,6 +1122,12 @@ def edit_employee(emp_id):
     db = get_db()
     if request.method == "POST":
         fields = _employee_fields_from_form(request.form)
+        # Normal Start/End Time on an existing employee only changes through
+        # the Working Schedule History log (dated, and kept), never by
+        # saving this form - a stale form would otherwise overwrite a
+        # scheduled change that has since taken effect.
+        fields.pop("standard_start", None)
+        fields.pop("standard_end", None)
         new_password = request.form.get("portal_password", "").strip()
         if new_password:
             fields["portal_password_hash"] = generate_password_hash(new_password)
@@ -1205,9 +1211,10 @@ def edit_employee(emp_id):
     clockin_locations = db.execute(
         "SELECT id, base, label FROM clockin_locations ORDER BY base, id"
     ).fetchall()
+    schedule_log = _schedule_log_rows(db, emp_id=emp_id)
 
     return render_template("employee_edit.html", emp=emp, is_new=False, extensions=extensions,
-                            salary_history=salary_history, eis_applies=eis_applies,
+                            schedule_log=schedule_log, salary_history=salary_history, eis_applies=eis_applies,
                             documents=documents, document_types=DOCUMENT_TYPES,
                             company_payments=company_payments, al_adjustments=al_adjustments,
                             al_note=al_note, al_year=al_year, al_entitlement_effective=al_entitlement_effective,
@@ -1216,6 +1223,7 @@ def edit_employee(emp_id):
                             holiday_state_options=HOLIDAY_STATE_OPTIONS, base_options=BASE_OPTIONS,
                             appraisal_supervisors=appraisal_supervisors, leave_approvers=leave_approvers,
                             hr_accounts=hr_accounts, clockin_locations=clockin_locations,
+                            schedule_error=SCHEDULE_ERRORS.get(request.args.get("schedule_err")),
                             tax_profile=tax_profile)
 
 
@@ -1488,6 +1496,111 @@ def delete_al_adjustment(emp_id, adj_id):
     )
     db.commit()
     return redirect(url_for("edit_employee", emp_id=emp_id))
+
+
+# ---------------- Working Schedule History ----------------
+
+SCHEDULE_ERRORS = {
+    "time": "Start and End Time must both be filled in, and End must be later than Start.",
+    "date": "Effective From date is required.",
+    "base": "Choose a Base.",
+}
+
+
+def _parse_schedule_form(f):
+    """(start, end, effective_date, reason, error_code) from the schedule
+    forms. error_code is a key of SCHEDULE_ERRORS, or None if valid."""
+    start = (f.get("standard_start") or "").strip()
+    end = (f.get("standard_end") or "").strip()
+    effective_date = (f.get("effective_date") or "").strip()
+    reason = (f.get("reason") or "").strip() or None
+    start_min, end_min = _hhmm_to_minutes(start), _hhmm_to_minutes(end)
+    if start_min is None or end_min is None or end_min <= start_min:
+        return start, end, effective_date, reason, "time"
+    try:
+        datetime.date.fromisoformat(effective_date)
+    except ValueError:
+        return start, end, effective_date, reason, "date"
+    return start, end, effective_date, reason, None
+
+
+@app.route("/work-schedules")
+def work_schedules():
+    """All staff's Normal Start/End Time in one place: today's hours by
+    base, a form to change a whole base from a given date, and the full
+    dated history of every change ever logged."""
+    db = get_db()
+    base_filter = request.args.get("base", "")
+    if base_filter not in BASE_OPTIONS:
+        base_filter = ""
+    employees = db.execute(
+        """SELECT emp_id, base, standard_start, standard_end FROM employees
+           WHERE status='Active' ORDER BY base, emp_id"""
+    ).fetchall()
+    summary = {}
+    for e in employees:
+        key = (e["base"] or "-", e["standard_start"] or "-", e["standard_end"] or "-")
+        summary.setdefault(key, []).append(e["emp_id"])
+    base_counts = {b: sum(1 for e in employees if e["base"] == b) for b in BASE_OPTIONS}
+    done = request.args.get("done", "")
+    return render_template(
+        "work_schedules.html", summary=sorted(summary.items()), base_options=BASE_OPTIONS,
+        base_counts=base_counts, base_filter=base_filter,
+        log=_schedule_log_rows(db, base=base_filter or None),
+        done=int(done) if done.isdigit() else None,
+        done_base=request.args.get("done_base") if request.args.get("done_base") in BASE_OPTIONS else None,
+        error=SCHEDULE_ERRORS.get(request.args.get("err")),
+        today_iso=datetime.datetime.now(MYT).date().isoformat(),
+    )
+
+
+@app.route("/work-schedules/apply", methods=["POST"])
+def work_schedules_apply():
+    """Logs the same new Normal Start/End Time, from an effective date, for
+    every active employee of one base."""
+    db = get_db()
+    base = request.form.get("base", "")
+    start, end, effective_date, reason, error = _parse_schedule_form(request.form)
+    if base not in BASE_OPTIONS:
+        error = "base"
+    if error:
+        return redirect(url_for("work_schedules", err=error))
+    employees = db.execute(
+        """SELECT emp_id FROM employees WHERE base=? AND status='Active'
+           AND (last_working_day IS NULL OR last_working_day = '' OR last_working_day >= ?)
+           ORDER BY emp_id""",
+        (base, effective_date),
+    ).fetchall()
+    for e in employees:
+        _record_schedule_change(db, e["emp_id"], effective_date, start, end, reason)
+    db.commit()
+    return redirect(url_for("work_schedules", done=len(employees), done_base=base))
+
+
+@app.route("/employees/<emp_id>/work-schedule/add", methods=["POST"])
+def add_work_schedule(emp_id):
+    db = get_db()
+    if db.execute("SELECT 1 FROM employees WHERE emp_id=?", (emp_id,)).fetchone() is None:
+        return "Employee not found", 404
+    start, end, effective_date, reason, error = _parse_schedule_form(request.form)
+    if not error:
+        _record_schedule_change(db, emp_id, effective_date, start, end, reason)
+        db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id, schedule_err=error) + "#work-schedule-log")
+
+
+@app.route("/employees/<emp_id>/work-schedule/<int:schedule_id>/delete", methods=["POST"])
+def delete_work_schedule(emp_id, schedule_id):
+    """Only a change that hasn't taken effect yet can be deleted - once a
+    date has passed it's history, and the days since were judged by it."""
+    db = get_db()
+    today_iso = datetime.datetime.now(MYT).date().isoformat()
+    db.execute(
+        "DELETE FROM work_schedule_history WHERE id=? AND emp_id=? AND effective_date > ?",
+        (schedule_id, emp_id, today_iso),
+    )
+    db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id) + "#work-schedule-log")
 
 
 # ---------------- Employee Photo ----------------
@@ -1928,13 +2041,14 @@ def attendance_daily(emp_id, year, month):
         ).fetchall()
     }
     today_iso = datetime.datetime.now(MYT).date().isoformat()
+    schedule_history = _load_schedule_history(db, emp_id)
     days = []
     for day in range(1, days_in_month + 1):
         date_obj = datetime.date(year, month, day)
         date_iso = date_obj.isoformat()
         row = saved.get(date_iso)
         trip_label = trip_labels.get((emp_id, date_iso))
-        is_late, is_early = _late_early_flags(row, emp)
+        is_late, is_early = _late_early_flags(row, emp, _hours_on(schedule_history, emp, date_iso))
         not_yet_applicable = _day_not_yet_applicable(date_iso, emp["date_joined"], today_iso)
         # Same "problem" definition as attendance_daily_all() - a saved
         # WORKED day with no Time In or Time Out - so a day-entry issue
@@ -1989,19 +2103,161 @@ def _hhmm_to_minutes(hhmm):
         return None
 
 
-def _late_early_flags(row, emp):
+SCHEDULE_BASELINE_DATE = "1900-01-01"
+
+
+def _load_schedule_history(db, emp_id=None):
+    """{emp_id: [(effective_date, start, end), ...]} oldest first, from
+    work_schedule_history. Empty when nobody has a logged change yet (or
+    the table isn't migrated yet), in which case every caller falls back
+    to employees.standard_start/standard_end."""
+    sql = "SELECT emp_id, effective_date, standard_start, standard_end FROM work_schedule_history"
+    params = ()
+    if emp_id is not None:
+        sql += " WHERE emp_id=?"
+        params = (emp_id,)
+    try:
+        rows = db.execute(sql + " ORDER BY effective_date", params).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    history = {}
+    for r in rows:
+        history.setdefault(r["emp_id"], []).append((r["effective_date"], r["standard_start"], r["standard_end"]))
+    return history
+
+
+def _hours_on(history, emp, date_iso):
+    """(start, end) Normal Start/End Time in force for this employee on
+    that date - the latest logged change effective on or before it, else
+    the employee's own current fields."""
+    hours = None
+    for effective_date, start, end in history.get(emp["emp_id"], []):
+        if effective_date > date_iso:
+            break
+        hours = (start, end)
+    return hours or (emp["standard_start"], emp["standard_end"])
+
+
+def _sync_current_schedule(db, emp_id=None):
+    """Copies the schedule in force today from work_schedule_history onto
+    employees.standard_start/standard_end - the columns the rest of the
+    app (OT claim forms, the Staff Portal) still reads directly - so a
+    change dated in the future takes over by itself once its date
+    arrives. Doesn't commit."""
+    today_iso = datetime.datetime.now(MYT).date().isoformat()
+    for eid, entries in _load_schedule_history(db, emp_id).items():
+        in_force = [(s, e) for eff, s, e in entries if eff <= today_iso]
+        if not in_force:
+            continue
+        start, end = in_force[-1]
+        db.execute(
+            """UPDATE employees SET standard_start=?, standard_end=?
+               WHERE emp_id=? AND (COALESCE(standard_start,'') != COALESCE(?,'')
+                                   OR COALESCE(standard_end,'') != COALESCE(?,''))""",
+            (start, end, eid, start, end),
+        )
+
+
+def _record_schedule_change(db, emp_id, effective_date, start, end, reason):
+    """Logs a Normal Start/End Time change effective from a date. The first
+    ever change for an employee also saves their existing hours as a
+    "before" baseline row, so dates earlier than the change keep resolving
+    to the old hours. Doesn't commit."""
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    user = session.get("hr_username")
+    if not db.execute("SELECT 1 FROM work_schedule_history WHERE emp_id=? LIMIT 1", (emp_id,)).fetchone():
+        current = db.execute(
+            "SELECT standard_start, standard_end FROM employees WHERE emp_id=?", (emp_id,)
+        ).fetchone()
+        db.execute(
+            """INSERT INTO work_schedule_history (emp_id, effective_date, standard_start, standard_end,
+                   reason, created_at, created_by) VALUES (?,?,?,?,?,?,?)""",
+            (emp_id, SCHEDULE_BASELINE_DATE, current["standard_start"], current["standard_end"],
+             "Before first logged change", now, user),
+        )
+    db.execute(
+        """INSERT INTO work_schedule_history (emp_id, effective_date, standard_start, standard_end,
+               reason, created_at, created_by) VALUES (?,?,?,?,?,?,?)
+           ON CONFLICT(emp_id, effective_date) DO UPDATE SET
+               standard_start=excluded.standard_start, standard_end=excluded.standard_end,
+               reason=excluded.reason, created_at=excluded.created_at, created_by=excluded.created_by""",
+        (emp_id, effective_date, start, end, reason, now, user),
+    )
+    _sync_current_schedule(db, emp_id)
+
+
+def _schedule_log_rows(db, emp_id=None, base=None):
+    """Working Schedule History rows, newest first, each with a status:
+    Scheduled (effective date still ahead), Current (the one in force
+    today for that employee) or Past."""
+    today_iso = datetime.datetime.now(MYT).date().isoformat()
+    sql = """SELECT h.*, e.full_name, e.base FROM work_schedule_history h
+             JOIN employees e ON e.emp_id = h.emp_id"""
+    where, params = [], []
+    if emp_id:
+        where.append("h.emp_id=?")
+        params.append(emp_id)
+    if base:
+        where.append("e.base=?")
+        params.append(base)
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    try:
+        rows = db.execute(sql + " ORDER BY h.effective_date DESC, h.emp_id", params).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    in_force = {}
+    for eid, entries in _load_schedule_history(db, emp_id).items():
+        dates = [eff for eff, _, _ in entries if eff <= today_iso]
+        in_force[eid] = dates[-1] if dates else None
+    log = []
+    for r in rows:
+        if r["effective_date"] > today_iso:
+            status = "Scheduled"
+        elif in_force.get(r["emp_id"]) == r["effective_date"]:
+            status = "Current"
+        else:
+            status = "Past"
+        log.append({**dict(r), "status": status, "is_baseline": r["effective_date"] == SCHEDULE_BASELINE_DATE})
+    return log
+
+
+_schedule_synced_on = None
+
+
+@app.before_request
+def apply_due_schedule_changes():
+    """Once per day (per worker), promotes any schedule change whose
+    effective date has arrived onto employees.standard_start/end."""
+    global _schedule_synced_on
+    if request.path.startswith("/static/"):
+        return None
+    today_iso = datetime.datetime.now(MYT).date().isoformat()
+    if _schedule_synced_on == today_iso:
+        return None
+    db = get_db()
+    _sync_current_schedule(db)
+    db.commit()
+    _schedule_synced_on = today_iso
+    return None
+
+
+def _late_early_flags(row, emp, hours=None):
     """Returns (is_late_in, is_early_out) for a WORKED day with both punch
-    times recorded, compared against the employee's own Normal Start/End
-    Time (employees.standard_start/standard_end), allowing a
-    LATE_EARLY_GRACE_MINUTES buffer either side before it counts.
-    (False, False) if the day isn't WORKED, is missing a punch, or the
-    employee has no standard hours on file to compare against."""
+    times recorded, compared against the employee's Normal Start/End Time
+    for that day - `hours` (start, end) from _hours_on when the caller
+    knows the date's schedule, else the employee's current
+    standard_start/standard_end - allowing a LATE_EARLY_GRACE_MINUTES
+    buffer either side before it counts. (False, False) if the day isn't
+    WORKED, is missing a punch, or there are no standard hours on file to
+    compare against."""
     if not row or row["day_type"] != "WORKED" or not row["time_in"] or not row["time_out"]:
         return False, False
     time_in = _hhmm_to_minutes(row["time_in"])
     time_out = _hhmm_to_minutes(row["time_out"])
-    std_start = _hhmm_to_minutes(emp["standard_start"])
-    std_end = _hhmm_to_minutes(emp["standard_end"])
+    raw_start, raw_end = hours if hours else (emp["standard_start"], emp["standard_end"])
+    std_start = _hhmm_to_minutes(raw_start)
+    std_end = _hhmm_to_minutes(raw_end)
     is_late = std_start is not None and time_in is not None and time_in > std_start + LATE_EARLY_GRACE_MINUTES
     is_early = std_end is not None and time_out is not None and time_out < std_end - LATE_EARLY_GRACE_MINUTES
     return is_late, is_early
@@ -2039,6 +2295,7 @@ def attendance_daily_all(year, month):
     unrecorded_count = 0
     late_early_count = 0
     today_iso = datetime.datetime.now(MYT).date().isoformat()
+    schedule_history = _load_schedule_history(db)
     for e in employees:
         holiday_names = holiday_names_by_base.get(e["base"] or "MY", {})
         saved = {
@@ -2066,7 +2323,7 @@ def attendance_daily_all(year, month):
             )
             not_yet_applicable = _day_not_yet_applicable(date_iso, e["date_joined"], today_iso)
             is_unrecorded = row is None and not trip_label and not not_yet_applicable
-            is_late, is_early = _late_early_flags(row, e)
+            is_late, is_early = _late_early_flags(row, e, _hours_on(schedule_history, e, date_iso))
             if is_problem:
                 emp_problems += 1
             if is_unrecorded:
@@ -2167,6 +2424,7 @@ def attendance_day(date_str):
     category_labels = {"none": "No record", "incomplete": "Incomplete", "pending": "Leave pending",
                         "away": "Away on duty", "leave": "On leave", "present": "Present",
                         "rest": "Rest / Off day", "holiday": "Public holiday", "future": "Not yet"}
+    schedule_history = _load_schedule_history(db)
     rows = []
     for e in employees:
         row = saved.get(e["emp_id"])
@@ -2182,7 +2440,7 @@ def attendance_day(date_str):
                 category, status = "away", trip
             elif time_in and time_out:
                 category, status = "present", "Present"
-                late, early = _late_early_flags(row, e)
+                late, early = _late_early_flags(row, e, _hours_on(schedule_history, e, date_iso))
                 note = ", ".join(x for x in ["Late in" if late else "", "Early out" if early else ""] if x)
             elif time_in and the_date < today:
                 category, status = "incomplete", "Missing Time Out"
@@ -5138,8 +5396,9 @@ def portal_ot_claim():
     holiday_dates = [r["date"] for r in db.execute(
         "SELECT date FROM public_holidays WHERE state=?", (emp["base"] or "MY",)
     ).fetchall()]
+    schedule = [list(s) for s in _load_schedule_history(db, emp["emp_id"]).get(emp["emp_id"], [])]
     return render_template("portal_ot_claim.html", emp=emp, claims=my_claims, error=error,
-                            holiday_dates=holiday_dates)
+                            holiday_dates=holiday_dates, schedule=schedule)
 
 
 @app.route("/portal/ot-claim/<int:claim_id>/delete", methods=["POST"])
@@ -6036,8 +6295,10 @@ def ot_claims_admin():
     ).fetchall()
     approver_names = ", ".join(r["full_name"] for r in approvers) or "no one yet - see Settings"
     holiday_dates = [r["date"] for r in db.execute("SELECT date FROM public_holidays").fetchall()]
+    schedule_history = _load_schedule_history(db)
     standard_hours_by_emp = {
-        e["emp_id"]: {"standard_start": e["standard_start"], "standard_end": e["standard_end"]}
+        e["emp_id"]: {"standard_start": e["standard_start"], "standard_end": e["standard_end"],
+                      "schedule": [list(s) for s in schedule_history.get(e["emp_id"], [])]}
         for e in flagged_employees
     }
     return render_template("ot_claims_admin.html", pending=pending, reviewed=reviewed,
@@ -6613,6 +6874,18 @@ def hr_migrate_schema():
             adj_date TEXT NOT NULL, days REAL NOT NULL, reason TEXT,
             created_at TEXT NOT NULL, created_by TEXT)""")
         applied.append("table: al_adjustments")
+
+    if "work_schedule_history" not in existing_tables:
+        # Dated log of each employee's Normal Start/End Time, so a change
+        # (e.g. Chengdu moving to 8am-5pm from 1 Oct 2026) takes effect from
+        # its date only, and earlier dates keep the hours that applied then.
+        # employees.standard_start/standard_end stays as "today's" hours,
+        # kept in step by _sync_current_schedule.
+        db.execute("""CREATE TABLE work_schedule_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),
+            effective_date TEXT NOT NULL, standard_start TEXT, standard_end TEXT, reason TEXT,
+            created_at TEXT NOT NULL, created_by TEXT, UNIQUE(emp_id, effective_date))""")
+        applied.append("table: work_schedule_history")
 
     if "clockin_events" not in existing_tables:
         db.execute("""CREATE TABLE clockin_events (

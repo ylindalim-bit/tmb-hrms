@@ -7,7 +7,7 @@
   <strong>{{ month_names[month] }} {{ year }}</strong>
   <a href="{{ url_for('attendance_daily_all', year=year if month<12 else year+1, month=month+1 if month<12 else 1) }}">Next &raquo;</a>
   <a href="{{ url_for('attendance', year=year, month=month) }}" style="margin-left:16px; color:var(--muted);">&larr; Back to monthly totals</a>
-  <a class="btn" href="{{ url_for('attendance_day_today') }}" style="margin-left:12px;">Check One Day</a>
+  <a class="btn" href="{{ url_for('attendance_day_today') }}" style="margin-left:12px; color:#fff;">Check One Day</a>
 </div>
 
 <p style="color:var(--muted); font-size:13px;">

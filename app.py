@@ -489,6 +489,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/assign-w001-w002-k004-to-kee",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/clear-k004-pre-join-attendance",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/clear-k004-blank-placeholder-attendance",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/set-base-off-day",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -8889,6 +8890,72 @@ def hr_clear_k004_blank_placeholder_attendance():
     _sync_daily_to_monthly(db, emp_id, 2026, 9)
     db.commit()
     return f"OK - deleted {deleted} blank placeholder attendance row(s) for {emp_id}", 200
+
+
+@app.route("/hr/set-base-off-day", methods=["POST"])
+def hr_set_base_off_day():
+    """Reusable one-off tool for a base-wide OFF day (e.g. Chengdu's
+    alternate off Saturdays, which HR confirms date by date). POST fields:
+    token, base (e.g. CD), date (YYYY-MM-DD), dry_run (optional, "1" =
+    only report, change nothing). For each employee of that base employed
+    on that date: no row, or a WORKED row with no Time In and no Time Out
+    (an untouched placeholder), becomes OFF. A WORKED row with a real
+    punch time is NOT touched and is listed in the reply - they physically
+    worked, and (as with August's off Saturdays) that's for HR to decide,
+    not for a bulk change to erase. Leave/OFF/REST/PH rows are left alone.
+    Re-syncs each changed employee's month. Safe to re-run."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    base = request.form.get("base", "")
+    date_str = request.form.get("date", "")
+    dry_run = request.form.get("dry_run") == "1"
+    if base not in BASE_OPTIONS:
+        return f"ERROR - base must be one of {BASE_OPTIONS}", 400
+    try:
+        the_date = datetime.date.fromisoformat(date_str)
+    except ValueError:
+        return "ERROR - date must be YYYY-MM-DD", 400
+    db = get_db()
+    employees = db.execute(
+        """SELECT emp_id FROM employees
+           WHERE base=? AND status='Active'
+             AND (date_joined IS NULL OR date_joined = '' OR date_joined <= ?)
+           ORDER BY emp_id""",
+        (base, date_str),
+    ).fetchall()
+    changed, kept_punched, untouched = [], [], []
+    for e in employees:
+        emp_id = e["emp_id"]
+        row = db.execute(
+            "SELECT day_type, time_in, time_out FROM attendance_daily WHERE emp_id=? AND date=?",
+            (emp_id, date_str),
+        ).fetchone()
+        if row is None or (row["day_type"] == "WORKED" and not row["time_in"] and not row["time_out"]):
+            changed.append(emp_id)
+            if not dry_run:
+                db.execute(
+                    """INSERT INTO attendance_daily (emp_id, date, day_type, time_in, time_out,
+                           meal_allowance_flag, cewi_flag, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0)
+                       VALUES (?,?, 'OFF', NULL, NULL, 'N', 'N', 0, 0, 0)
+                       ON CONFLICT(emp_id, date) DO UPDATE SET day_type='OFF', time_in=NULL,
+                           time_out=NULL, meal_allowance_flag='N', cewi_flag='N'""",
+                    (emp_id, date_str),
+                )
+        elif row["day_type"] == "WORKED":
+            kept_punched.append(f"{emp_id} ({row['time_in'] or '-'}-{row['time_out'] or '-'})")
+        else:
+            untouched.append(f"{emp_id}={row['day_type']}")
+    if not dry_run:
+        for emp_id in changed:
+            _sync_daily_to_monthly(db, emp_id, the_date.year, the_date.month)
+        db.commit()
+    return (
+        f"{'DRY RUN - nothing changed. ' if dry_run else 'OK - '}{base} {date_str}: "
+        f"{'would set' if dry_run else 'set'} OFF for {len(changed)}: {', '.join(changed) or '-'}. "
+        f"Left alone (real punch times, still WORKED): {', '.join(kept_punched) or '-'}. "
+        f"Left alone (already other status): {', '.join(untouched) or '-'}."
+    ), 200
 
 
 if __name__ == "__main__":

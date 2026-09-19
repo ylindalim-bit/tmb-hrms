@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Attendance {{ date_iso }} - TMB Payroll{% endblock %}
+{% block content %}
+{% set pill_style = {
+  "none": "background:#fef3c7; color:#92400e;",
+  "incomplete": "background:#fee2e2; color:var(--danger);",
+  "pending": "background:#fef3c7; color:#92400e;",
+  "away": "background:#dbeafe; color:#1e3a8a;",
+  "leave": "background:#dbeafe; color:#1e3a8a;",
+  "present": "background:#dcfce7; color:var(--good);",
+  "rest": "background:var(--bg); color:var(--muted); border:1px solid var(--border);",
+  "holiday": "background:var(--bg); color:var(--muted); border:1px solid var(--border);",
+  "future": "background:var(--bg); color:var(--muted); border:1px solid var(--border);"
+} %}
+<h1>Attendance &mdash; {{ weekday }}, {{ date_iso }}{% if is_today %} <span class="pill finalized" style="vertical-align:middle;">Today</span>{% endif %}</h1>
+<div class="month-nav">
+  <a href="{{ url_for('attendance_day', date_str=prev_date) }}">&laquo; Prev day</a>
+  <strong>{{ date_iso }}</strong>
+  <a href="{{ url_for('attendance_day', date_str=next_date) }}">Next day &raquo;</a>
+  <form method="get" onsubmit="if(!this.d.value) return false; window.location = '{{ url_for('attendance_day_today') }}/' + this.d.value; return false;" style="display:inline-flex; gap:6px; align-items:center; margin-left:16px;">
+    <input type="date" name="d" value="{{ date_iso }}" style="width:auto;">
+    <button class="btn secondary" type="submit" style="padding:4px 10px;">Go</button>
+  </form>
+  {% if not is_today %}<a href="{{ url_for('attendance_day_today') }}" style="margin-left:12px;">Today</a>{% endif %}
+  <a href="{{ url_for('attendance_daily_all', year=the_date.year, month=the_date.month) }}" style="margin-left:16px; color:var(--muted);">Whole month, all staff &rarr;</a>
+</div>
+
+<p style="color:var(--muted); font-size:13px;">
+  Read-only. Listed with the ones needing attention first. <strong>No record</strong> means nothing is saved for that
+  person that day - no attendance, approved leave, Movement Notice or public holiday - so it could be absent,
+  a forgotten clock-in, or not entered yet; the system can't tell which. To fix a day, open the person's own Daily
+  Attendance page from the Edit link.
+</p>
+
+<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+  {% for key, label in category_labels.items() %}{% if counts.get(key) %}
+  <span class="pill" style="{{ pill_style[key] }} font-size:13px; padding:4px 10px;">{{ label }}: {{ counts[key] }}</span>
+  {% endif %}{% endfor %}
+</div>
+
+{% if base_options %}
+<div style="margin-bottom:10px;">
+  <label style="font-size:13px; color:var(--muted); margin-right:6px;">Base:</label>
+  <button type="button" class="btn base-filter-btn" data-base="" style="padding:4px 10px;" onclick="filterByBase('')">All ({{ rows|length }})</button>
+  {% for b in base_options %}
+  <button type="button" class="btn secondary base-filter-btn" data-base="{{ b }}" style="padding:4px 10px;" onclick="filterByBase('{{ b }}')">{{ b }}</button>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="card table-wrap">
+<table id="day-table">
+<thead>
+<tr>
+  <th class="text">Emp ID</th><th class="text">Name</th><th class="text">Base</th>
+  <th class="text">Status</th><th class="text">Time In</th><th class="text">Time Out</th>
+  <th class="text">Note</th><th class="text"></th>
+</tr>
+</thead>
+<tbody>
+{% for r in rows %}
+<tr data-base="{{ r.emp.base or '' }}"{% if r.category == 'none' %} style="background:#fef3c7;"{% elif r.category == 'incomplete' %} style="background:#fee2e2;"{% endif %}>
+  <td class="text">{{ r.emp.emp_id }}</td>
+  <td class="text">{{ r.emp.full_name }}</td>
+  <td class="text">{{ r.emp.base or "-" }}</td>
+  <td class="text"><span class="pill" style="{{ pill_style[r.category] }}">{{ r.status }}</span></td>
+  <td class="text">{{ r.time_in or "-" }}</td>
+  <td class="text">{{ r.time_out or "-" }}</td>
+  <td class="text" style="color:var(--muted); font-size:12px;">{{ r.note }}</td>
+  <td class="text"><a class="emp-link" href="{{ url_for('attendance_daily', emp_id=r.emp.emp_id, year=the_date.year, month=the_date.month) }}">Edit</a></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+<p><strong>Showing <span id="shown-count">{{ rows|length }}</span> employees</strong></p>
+<script>
+function filterByBase(base) {
+  var shown = 0;
+  document.querySelectorAll('#day-table tbody tr').forEach(function (row) {
+    var visible = !base || row.dataset.base === base;
+    row.style.display = visible ? '' : 'none';
+    if (visible) shown++;
+  });
+  document.getElementById('shown-count').textContent = shown;
+  document.querySelectorAll('.base-filter-btn').forEach(function (btn) {
+    btn.classList.toggle('secondary', btn.dataset.base !== base);
+  });
+}
+</script>
+{% endblock %}

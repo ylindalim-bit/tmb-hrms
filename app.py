@@ -2103,6 +2103,136 @@ def history():
     return render_template("history.html", rows=rows)
 
 
+@app.route("/attendance-day")
+def attendance_day_today():
+    return redirect(url_for("attendance_day", date_str=datetime.datetime.now(MYT).date().isoformat()))
+
+
+@app.route("/attendance-day/<date_str>")
+def attendance_day(date_str):
+    """Read-only, one-day view of everyone's attendance - who's in, on
+    leave/away, on a rest day or public holiday, and who has no record at
+    all yet - so HR can check today (or any past day) without scrolling
+    the month-long All Staff view. Each row's Status comes from that
+    day's attendance_daily row when there is one; otherwise from an
+    approved Movement Notice, an approved/pending leave request, the
+    public holiday calendar, or the employee's default rest day. Anyone
+    with none of those is listed as "No record" - the system can't tell
+    absent from forgot-to-clock-in from not-entered-yet, so that's the
+    list for HR to chase."""
+    try:
+        the_date = datetime.date.fromisoformat(date_str)
+    except ValueError:
+        abort(404)
+    date_iso = the_date.isoformat()
+    today = datetime.datetime.now(MYT).date()
+    db = get_db()
+
+    employees = db.execute(
+        """SELECT emp_id, full_name, base, standard_start, standard_end, work_pattern
+           FROM employees
+           WHERE (date_joined IS NULL OR date_joined = '' OR date_joined <= ?)
+             AND ((last_working_day IS NOT NULL AND last_working_day != '' AND last_working_day >= ?)
+                  OR ((last_working_day IS NULL OR last_working_day = '') AND status='Active'))
+           ORDER BY emp_id""",
+        (date_iso, date_iso),
+    ).fetchall()
+
+    saved = {
+        r["emp_id"]: r for r in db.execute(
+            "SELECT * FROM attendance_daily WHERE date=?", (date_iso,)
+        ).fetchall()
+    }
+    trip_labels = _trip_labels_for_month(db, the_date.year, the_date.month)
+    holiday_by_base = {
+        r["state"]: r["name"] for r in db.execute(
+            "SELECT state, name FROM public_holidays WHERE date=?", (date_iso,)
+        ).fetchall()
+    }
+    leave_by_emp = {}
+    for r in db.execute(
+        """SELECT emp_id, leave_type, status FROM leave_requests
+           WHERE status IN ('Approved', 'Pending') AND start_date<=? AND end_date>=?
+           ORDER BY status DESC""",
+        (date_iso, date_iso),
+    ).fetchall():
+        leave_by_emp.setdefault(r["emp_id"], r)
+
+    leave_day_types = {"AL", "MC", "HL", "UL", "OTHER_PAID"}
+    # Sort order = how much attention the row needs, so "who's missing"
+    # is at the top rather than buried in emp_id order.
+    category_order = {"none": 0, "incomplete": 1, "pending": 2, "away": 3, "leave": 4,
+                       "present": 5, "rest": 6, "holiday": 7, "future": 8}
+    category_labels = {"none": "No record", "incomplete": "Incomplete", "pending": "Leave pending",
+                        "away": "Away on duty", "leave": "On leave", "present": "Present",
+                        "rest": "Rest / Off day", "holiday": "Public holiday", "future": "Not yet"}
+    rows = []
+    for e in employees:
+        row = saved.get(e["emp_id"])
+        trip = trip_labels.get((e["emp_id"], date_iso))
+        leave = leave_by_emp.get(e["emp_id"])
+        holiday = holiday_by_base.get(e["base"] or "MY")
+        default_type = _default_day_type_for_pattern(e["work_pattern"], the_date.weekday())
+        time_in = row["time_in"] if row else None
+        time_out = row["time_out"] if row else None
+        note = ""
+        if row and row["day_type"] == "WORKED":
+            if trip:
+                category, status = "away", trip
+            elif time_in and time_out:
+                category, status = "present", "Present"
+                late, early = _late_early_flags(row, e)
+                note = ", ".join(x for x in ["Late in" if late else "", "Early out" if early else ""] if x)
+            elif time_in and the_date < today:
+                category, status = "incomplete", "Missing Time Out"
+            elif time_in:
+                category, status = "present", "Clocked in"
+                note = "Not clocked out yet"
+            else:
+                category, status = "incomplete", "Marked WORKED, no Time In"
+        elif row and row["day_type"] in leave_day_types:
+            category = "leave"
+            status = {"AL": "Annual Leave", "MC": "Medical Leave", "HL": "Hospitalisation Leave",
+                      "UL": "Unpaid Leave", "OTHER_PAID": "Other Paid Leave"}[row["day_type"]]
+        elif row and row["day_type"] == "PH":
+            category, status = "holiday", "Public Holiday"
+            note = holiday or ""
+        elif row:
+            category, status = "rest", row["day_type"].title() + " day"
+        elif trip:
+            category, status = "away", trip
+        elif leave:
+            if leave["status"] == "Approved":
+                category, status = "leave", leave["leave_type"]
+            else:
+                category, status = "pending", leave["leave_type"] + " (awaiting approval)"
+        elif holiday:
+            category, status = "holiday", "Public Holiday"
+            note = holiday
+        elif default_type in ("REST", "OFF"):
+            category, status = "rest", "Rest / Off day"
+            note = "Default for work pattern - nothing saved"
+        elif the_date > today:
+            category, status = "future", "Not yet"
+        else:
+            category, status = "none", "No record"
+        rows.append({"emp": e, "category": category, "status": status, "time_in": time_in,
+                     "time_out": time_out, "note": note})
+
+    rows.sort(key=lambda r: (category_order[r["category"]], r["emp"]["emp_id"]))
+    counts = {}
+    for r in rows:
+        counts[r["category"]] = counts.get(r["category"], 0) + 1
+    base_options_present = sorted({r["emp"]["base"] for r in rows if r["emp"]["base"]})
+    return render_template(
+        "attendance_day.html", the_date=the_date, date_iso=date_iso, weekday=the_date.strftime("%A"),
+        is_today=(the_date == today), prev_date=(the_date - datetime.timedelta(days=1)).isoformat(),
+        next_date=(the_date + datetime.timedelta(days=1)).isoformat(), rows=rows, counts=counts,
+        category_order=category_order, category_labels=category_labels,
+        base_options=base_options_present,
+    )
+
+
 # ---------------- Alerts (Confirmation / Passport / Work Permit) ----------------
 
 def _rows_with_days_left(db, date_column, extra_cols="", exclude_if_confirmed=False):

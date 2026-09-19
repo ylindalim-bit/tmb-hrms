@@ -52,7 +52,7 @@
 <thead>
 <tr>
   <th class="text">Emp ID</th><th class="text">Name</th><th class="text">Base</th>
-  <th class="text">Status</th><th class="text">Time In</th><th class="text">Time Out</th>
+  <th class="text">Status</th><th class="text">Date</th><th class="text">Time In</th><th class="text">Time Out</th>
   <th class="text">Note</th><th class="text"></th>
 </tr>
 </thead>
@@ -63,6 +63,7 @@
   <td class="text">{{ r.emp.full_name }}</td>
   <td class="text">{{ r.emp.base or "-" }}</td>
   <td class="text"><span class="pill" style="{{ pill_style[r.category] }}">{{ r.status }}</span></td>
+  <td class="text">{{ date_iso }}</td>
   <td class="text">{{ r.time_in or "-" }}</td>
   <td class="text">{{ r.time_out or "-" }}</td>
   <td class="text" style="color:var(--muted); font-size:12px;">{{ r.note }}</td>

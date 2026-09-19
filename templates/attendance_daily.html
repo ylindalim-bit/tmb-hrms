@@ -20,7 +20,10 @@
   no record at all that day - no attendance, no approved leave, no Movement Notice. Rows shaded
   <span style="background:#dbeafe; padding:1px 5px;">blue</span> clocked in later or out earlier than this
   employee's Normal Start/End Time ({{ emp.standard_start or "-" }} &ndash; {{ emp.standard_end or "-" }}),
-  beyond a 5-minute grace period either side.
+  beyond a 5-minute grace period either side. If the lateness or early leaving was for a good reason (e.g.
+  out on company duty), type it in <strong>Late/Early Remark</strong> - that day turns grey "excused" instead of
+  blue, and isn't counted as late/early. A day covered by an approved Business Trip, Out-Duty or Training
+  Movement Notice is excused automatically.
 </p>
 {% if emp.ot_approval_required == "Y" %}
 <div class="card" style="background:#fef9c3; border-color:#eab308;">
@@ -36,14 +39,14 @@
 <thead>
 <tr>
   <th class="text">Date</th><th class="text">Day</th><th class="text">Status</th>
-  <th class="text">Time In</th><th class="text">Time Out</th><th>Meal</th><th>CEWI</th>
+  <th class="text">Time In</th><th class="text">Time Out</th><th class="text" style="min-width:150px;">Late/Early Remark</th><th>Meal</th><th>CEWI</th>
   <th>OT 1.5x</th><th>OT 2.0x</th><th>OT 3.0x</th><th class="text" style="min-width:200px;">OT Reason</th>
 </tr>
 </thead>
 <tbody>
 {% for d in days %}
 {% set r = d.row %}
-<tr{% if d.problem %} style="background:#fee2e2;"{% elif d.unrecorded %} style="background:#fef3c7;"{% elif d.late_in or d.early_out %} style="background:#dbeafe;"{% endif %}>
+<tr{% if d.problem %} style="background:#fee2e2;"{% elif d.unrecorded %} style="background:#fef3c7;"{% elif (d.late_in or d.early_out) and not d.excuse %} style="background:#dbeafe;"{% endif %}>
   <td class="text">{{ d.date }}</td>
   <td class="text">{{ d.weekday }}</td>
   <td class="text">
@@ -59,8 +62,9 @@
     <div style="font-size:11px; color:var(--danger); font-weight:600; margin-top:2px;">Public Holiday: {{ d.holiday_name }}</div>
     {% endif %}
   </td>
-  <td class="text"><input type="time" name="time_in__{{ d.day }}" value="{{ r.time_in if r else '' }}" style="width:110px;">{% if d.late_in %} <span style="color:#1e3a8a; font-weight:600; font-size:11px;">(Late)</span>{% endif %}</td>
-  <td class="text"><input type="time" name="time_out__{{ d.day }}" value="{{ r.time_out if r else '' }}" style="width:110px;">{% if d.early_out %} <span style="color:#1e3a8a; font-weight:600; font-size:11px;">(Early)</span>{% endif %}</td>
+  <td class="text"><input type="time" name="time_in__{{ d.day }}" value="{{ r.time_in if r else '' }}" style="width:110px;">{% if d.late_in %} <span style="color:{{ 'var(--muted)' if d.excuse else '#1e3a8a' }}; font-weight:600; font-size:11px;" {% if d.excuse %}title="Excused: {{ d.excuse }}"{% endif %}>(Late{{ ' - excused' if d.excuse }})</span>{% endif %}</td>
+  <td class="text"><input type="time" name="time_out__{{ d.day }}" value="{{ r.time_out if r else '' }}" style="width:110px;">{% if d.early_out %} <span style="color:{{ 'var(--muted)' if d.excuse else '#1e3a8a' }}; font-weight:600; font-size:11px;" {% if d.excuse %}title="Excused: {{ d.excuse }}"{% endif %}>(Early{{ ' - excused' if d.excuse }})</span>{% endif %}</td>
+  <td class="text"><input type="text" name="late_early_remark__{{ d.day }}" value="{{ r.late_early_remark if r and r.late_early_remark else '' }}" placeholder="e.g. Out duty" style="width:100%;"></td>
   <td><input type="checkbox" class="meal-input" name="meal__{{ d.day }}" {% if r and r.meal_allowance_flag == 'Y' %}checked{% endif %} onchange="updateAttendanceTotals()"></td>
   <td><input type="checkbox" class="cewi-input" name="cewi__{{ d.day }}" {% if r and r.cewi_flag == 'Y' and emp.cewi_flag == 'Y' %}checked{% endif %} {% if emp.cewi_flag != 'Y' %}disabled title="Not CEWI eligible (see Employee Edit > Allowances)"{% endif %} onchange="updateAttendanceTotals()"></td>
   <td><input type="number" step="0.5" class="ot15-input" name="ot_1_5__{{ d.day }}" value="{{ r.ot_hours_1_5 if r else 0 }}" style="width:64px;" {% if emp.ot_approval_required == "Y" %}readonly{% endif %} oninput="updateAttendanceTotals()"></td>

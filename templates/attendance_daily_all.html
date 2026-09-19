@@ -71,14 +71,14 @@
   <thead>
   <tr>
     <th class="text">Date</th><th class="text">Day</th><th class="text">Status</th>
-    <th class="text">Time In</th><th class="text">Time Out</th><th>Meal</th><th>CEWI</th>
+    <th class="text">Time In</th><th class="text">Time Out</th><th class="text">Late/Early Remark</th><th>Meal</th><th>CEWI</th>
     <th>OT 1.5x</th><th>OT 2.0x</th><th>OT 3.0x</th><th class="text">OT Reason</th>
   </tr>
   </thead>
   <tbody>
   {% for d in b.days %}
   {% set r = d.row %}
-  <tr{% if d.problem %} class="flagged-row" style="background:#fee2e2;"{% elif d.unrecorded %} class="flagged-row" style="background:#fef3c7;"{% elif d.late_in or d.early_out %} class="flagged-row" style="background:#dbeafe;"{% endif %}>
+  <tr{% if d.problem %} class="flagged-row" style="background:#fee2e2;"{% elif d.unrecorded %} class="flagged-row" style="background:#fef3c7;"{% elif (d.late_in or d.early_out) and not d.excuse %} class="flagged-row" style="background:#dbeafe;"{% endif %}>
     <td class="text">{{ d.date }}</td>
     <td class="text">{{ d.weekday }}</td>
     <td class="text">
@@ -87,8 +87,9 @@
       <div style="font-size:11px; color:var(--danger); font-weight:600; margin-top:2px;">Public Holiday: {{ d.holiday_name }}</div>
       {% endif %}
     </td>
-    <td class="text">{{ r.time_in if r and r.time_in else "-" }}{% if d.late_in %} <span style="color:#1e3a8a; font-weight:600;">(Late)</span>{% endif %}</td>
-    <td class="text">{{ r.time_out if r and r.time_out else "-" }}{% if d.early_out %} <span style="color:#1e3a8a; font-weight:600;">(Early)</span>{% endif %}</td>
+    <td class="text">{{ r.time_in if r and r.time_in else "-" }}{% if d.late_in %} <span style="color:{{ 'var(--muted)' if d.excuse else '#1e3a8a' }}; font-weight:600;">(Late{{ ' - excused' if d.excuse }})</span>{% endif %}</td>
+    <td class="text">{{ r.time_out if r and r.time_out else "-" }}{% if d.early_out %} <span style="color:{{ 'var(--muted)' if d.excuse else '#1e3a8a' }}; font-weight:600;">(Early{{ ' - excused' if d.excuse }})</span>{% endif %}</td>
+    <td class="text">{{ d.excuse or "" }}</td>
     <td>{{ "Y" if r and r.meal_allowance_flag == "Y" else "-" }}</td>
     <td>{{ "Y" if r and r.cewi_flag == "Y" and b.emp.cewi_flag == "Y" else "-" }}</td>
     <td>{{ r.ot_hours_1_5 if r else "-" }}</td>

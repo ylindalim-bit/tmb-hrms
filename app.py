@@ -2010,18 +2010,20 @@ def attendance_daily(emp_id, year, month):
             ot_2_0 = float(request.form.get(f"ot_2_0__{day}", 0) or 0)
             ot_3_0 = float(request.form.get(f"ot_3_0__{day}", 0) or 0)
             ot_reason = request.form.get(f"ot_reason__{day}") or None
+            late_early_remark = (request.form.get(f"late_early_remark__{day}") or "").strip() or None
             db.execute(
                 """INSERT INTO attendance_daily (
                        emp_id, date, day_type, time_in, time_out, meal_allowance_flag, cewi_flag,
-                       ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, ot_reason
-                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                       ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, ot_reason, late_early_remark
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(emp_id, date) DO UPDATE SET
                      day_type=excluded.day_type, time_in=excluded.time_in, time_out=excluded.time_out,
                      meal_allowance_flag=excluded.meal_allowance_flag, cewi_flag=excluded.cewi_flag,
                      ot_hours_1_5=excluded.ot_hours_1_5, ot_hours_2_0=excluded.ot_hours_2_0,
-                     ot_hours_3_0=excluded.ot_hours_3_0, ot_reason=excluded.ot_reason""",
+                     ot_hours_3_0=excluded.ot_hours_3_0, ot_reason=excluded.ot_reason,
+                     late_early_remark=excluded.late_early_remark""",
                 (emp_id, date_str, day_type, time_in, time_out, meal_flag, cewi_flag,
-                 ot_1_5, ot_2_0, ot_3_0, ot_reason),
+                 ot_1_5, ot_2_0, ot_3_0, ot_reason, late_early_remark),
             )
         _sync_daily_to_monthly(db, emp_id, year, month)
         db.commit()
@@ -2063,6 +2065,7 @@ def attendance_daily(emp_id, year, month):
             "row": row, "unrecorded": row is None and not trip_label and not not_yet_applicable,
             "problem": is_problem,
             "late_in": is_late, "early_out": is_early,
+            "excuse": _late_early_excuse(row, trip_label) if (is_late or is_early) else None,
             "trip_label": trip_label, "holiday_name": holiday_names.get(date_iso),
             "default_day_type": _default_day_type_for_pattern(emp["work_pattern"], date_obj.weekday()),
         })
@@ -2242,6 +2245,23 @@ def apply_due_schedule_changes():
     return None
 
 
+EXCUSING_NOTICE_TYPES = ("Business Trip", "Out-Duty", "Training")
+
+
+def _late_early_excuse(row, trip_label):
+    """Why a Late in / Early out on this day is not to be deducted, or None:
+    HR's own remark on that day's row, else an approved Movement Notice
+    for the day that means they were out on the company's business."""
+    remark = ""
+    if row is not None and "late_early_remark" in row.keys():
+        remark = (row["late_early_remark"] or "").strip()
+    if remark:
+        return remark
+    if trip_label in EXCUSING_NOTICE_TYPES:
+        return trip_label
+    return None
+
+
 def _late_early_flags(row, emp, hours=None):
     """Returns (is_late_in, is_early_out) for a WORKED day with both punch
     times recorded, compared against the employee's Normal Start/End Time
@@ -2328,12 +2348,13 @@ def attendance_daily_all(year, month):
                 emp_problems += 1
             if is_unrecorded:
                 emp_unrecorded += 1
-            if is_late or is_early:
+            excuse = _late_early_excuse(row, trip_label) if (is_late or is_early) else None
+            if (is_late or is_early) and not excuse:
                 emp_late_early += 1
             days.append({
                 "day": day, "date": date_iso, "weekday": date_obj.strftime("%a"),
                 "row": row, "problem": is_problem, "unrecorded": is_unrecorded,
-                "late_in": is_late, "early_out": is_early,
+                "late_in": is_late, "early_out": is_early, "excuse": excuse,
                 "trip_label": trip_label, "holiday_name": holiday_names.get(date_iso),
             })
         problem_count += emp_problems
@@ -2442,6 +2463,9 @@ def attendance_day(date_str):
                 category, status = "present", "Present"
                 late, early = _late_early_flags(row, e, _hours_on(schedule_history, e, date_iso))
                 note = ", ".join(x for x in ["Late in" if late else "", "Early out" if early else ""] if x)
+                excuse = _late_early_excuse(row, trip) if (late or early) else None
+                if excuse:
+                    note += f" - excused: {excuse}"
             elif time_in and the_date < today:
                 category, status = "incomplete", "Missing Time Out"
             elif time_in:
@@ -6874,6 +6898,13 @@ def hr_migrate_schema():
             adj_date TEXT NOT NULL, days REAL NOT NULL, reason TEXT,
             created_at TEXT NOT NULL, created_by TEXT)""")
         applied.append("table: al_adjustments")
+
+    daily_cols = [r[1] for r in db.execute("PRAGMA table_info(attendance_daily)").fetchall()]
+    if "late_early_remark" not in daily_cols:
+        # Why a Late in / Early out on that day isn't to be deducted (e.g.
+        # "Out duty - customer visit"); any text here marks the day excused.
+        db.execute("ALTER TABLE attendance_daily ADD COLUMN late_early_remark TEXT")
+        applied.append("attendance_daily.late_early_remark")
 
     if "work_schedule_history" not in existing_tables:
         # Dated log of each employee's Normal Start/End Time, so a change

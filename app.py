@@ -490,6 +490,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/clear-k004-pre-join-attendance",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/clear-k004-blank-placeholder-attendance",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/set-base-off-day",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/resync-leave-days-from-daily",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -9350,6 +9351,63 @@ def hr_set_base_off_day():
         f"{'would set' if dry_run else 'set'} OFF for {len(changed)}: {', '.join(changed) or '-'}. "
         f"Left alone (real punch times, still WORKED): {', '.join(kept_punched) or '-'}. "
         f"Left alone (already other status): {', '.join(untouched) or '-'}."
+    ), 200
+
+
+@app.route("/hr/resync-leave-days-from-daily", methods=["POST"])
+def hr_resync_leave_days_from_daily():
+    """Reusable one-off tool: sets one employee's leave-day columns on
+    attendance_monthly (AL, MC, HL, UL, Other Paid) for one month from
+    their attendance_daily rows - for a month where the monthly leave
+    figure the Staff Portal shows has drifted from the daily records (e.g.
+    an approved MC marked on the daily rows but reading 0 on the monthly
+    row). Deliberately touches ONLY those five columns: Days Worked,
+    Working Days, Meal/CEWI days and OT are often typed by hand on the
+    monthly Attendance page and a full rebuild from daily would overwrite
+    them. Never touches payroll_runs, so a finalized payroll stays as it
+    was. POST fields: token, emp_id, year, month, dry_run (optional, "1" =
+    report only)."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    emp_id = request.form.get("emp_id", "")
+    try:
+        year, month = int(request.form.get("year", "")), int(request.form.get("month", ""))
+        datetime.date(year, month, 1)
+    except ValueError:
+        return "ERROR - year and month must be a valid month", 400
+    dry_run = request.form.get("dry_run") == "1"
+    db = get_db()
+    if db.execute("SELECT 1 FROM employees WHERE emp_id=?", (emp_id,)).fetchone() is None:
+        return f"ERROR - no employee {emp_id}", 404
+    monthly = db.execute(
+        "SELECT * FROM attendance_monthly WHERE emp_id=? AND year=? AND month=?", (emp_id, year, month)
+    ).fetchone()
+    if monthly is None:
+        return f"ERROR - {emp_id} has no attendance_monthly row for {year}-{month:02d} to correct", 404
+    column_for_day_type = {"AL": "al_days", "MC": "mc_days", "HL": "hl_days", "UL": "ul_days",
+                           "OTHER_PAID": "other_paid_leave"}
+    counts = {col: 0.0 for col in column_for_day_type.values()}
+    for r in db.execute(
+        "SELECT day_type, COUNT(*) AS n FROM attendance_daily WHERE emp_id=? AND date LIKE ? GROUP BY day_type",
+        (emp_id, f"{year:04d}-{month:02d}-%"),
+    ).fetchall():
+        if r["day_type"] in column_for_day_type:
+            counts[column_for_day_type[r["day_type"]]] = float(r["n"])
+    changes = [f"{col}: {monthly[col]} -> {val}" for col, val in counts.items() if (monthly[col] or 0) != val]
+    if changes and not dry_run:
+        db.execute(
+            """UPDATE attendance_monthly SET al_days=?, mc_days=?, hl_days=?, ul_days=?, other_paid_leave=?
+               WHERE emp_id=? AND year=? AND month=?""",
+            (counts["al_days"], counts["mc_days"], counts["hl_days"], counts["ul_days"],
+             counts["other_paid_leave"], emp_id, year, month),
+        )
+        db.commit()
+    return (
+        f"{'DRY RUN - nothing changed. ' if dry_run else 'OK - '}{emp_id} {year}-{month:02d} "
+        f"leave days {'would change' if dry_run else 'changed'}: "
+        f"{'; '.join(changes) if changes else 'nothing (already matches the daily records)'}. "
+        "Days Worked, Working Days, Meal/CEWI, OT and payroll_runs untouched."
     ), 200
 
 

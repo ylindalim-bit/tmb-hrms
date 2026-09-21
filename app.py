@@ -491,6 +491,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/clear-k004-blank-placeholder-attendance",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/set-base-off-day",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/resync-leave-days-from-daily",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/add-tp3",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -9408,6 +9409,80 @@ def hr_resync_leave_days_from_daily():
         f"leave days {'would change' if dry_run else 'changed'}: "
         f"{'; '.join(changes) if changes else 'nothing (already matches the daily records)'}. "
         "Days Worked, Working Days, Meal/CEWI, OT and payroll_runs untouched."
+    ), 200
+
+
+@app.route("/hr/add-tp3", methods=["POST"])
+def hr_add_tp3():
+    """Reusable one-off tool: records an employee's signed TP3 (prior
+    employer income this year) - the three amounts PCB adds onto their year-
+    to-date figures (tp3_prior_gross / _epf_employee / _pcb, marked
+    submitted) and, optionally, the signed PDF filed under Documents as
+    "TP3 (Prior Employer Income)". POST fields: token, emp_id, prior_gross,
+    prior_epf, prior_pcb, tp3_date (optional), notes (optional), file
+    (optional PDF), dry_run (optional, "1" = report only). Only the TP3
+    columns of tax_profile are touched; the rest of the tax profile is kept.
+    Re-running with the same file name doesn't file the PDF twice."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    emp_id = request.form.get("emp_id", "")
+    dry_run = request.form.get("dry_run") == "1"
+    db = get_db()
+    if db.execute("SELECT 1 FROM employees WHERE emp_id=?", (emp_id,)).fetchone() is None:
+        return f"ERROR - no employee {emp_id}", 404
+    try:
+        gross = round(float(request.form.get("prior_gross", "")), 2)
+        epf = round(float(request.form.get("prior_epf", "")), 2)
+        pcb = round(float(request.form.get("prior_pcb", "")), 2)
+    except ValueError:
+        return "ERROR - prior_gross, prior_epf and prior_pcb must be numbers", 400
+    tp3_date = request.form.get("tp3_date") or None
+    notes = request.form.get("notes") or None
+    file = request.files.get("file")
+    original_name = secure_filename(file.filename) if file and file.filename else None
+    if original_name and original_name.rsplit(".", 1)[-1].lower() not in ALLOWED_DOC_EXTENSIONS:
+        return "ERROR - file type not allowed", 400
+
+    fields = ["tp3_submitted", "tp3_date", "tp3_prior_gross", "tp3_prior_epf_employee", "tp3_prior_pcb"]
+    row = db.execute("SELECT * FROM tax_profile WHERE emp_id=?", (emp_id,)).fetchone()
+    before = {f: (row[f] if row else None) for f in fields}
+    after = {"tp3_submitted": "Y", "tp3_date": tp3_date, "tp3_prior_gross": gross,
+             "tp3_prior_epf_employee": epf, "tp3_prior_pcb": pcb}
+    changes = [f"{f}: {before[f]} -> {after[f]}" for f in fields if before[f] != after[f]]
+
+    doc_note = "no file sent"
+    if original_name:
+        already = db.execute(
+            "SELECT 1 FROM employee_documents WHERE emp_id=? AND doc_type='TP3 (Prior Employer Income)' AND original_name=?",
+            (emp_id, original_name),
+        ).fetchone()
+        doc_note = f"{original_name} already filed - not added again" if already else f"{original_name} would be filed under Documents"
+
+    if not dry_run:
+        if row is None:
+            db.execute("INSERT INTO tax_profile (emp_id) VALUES (?)", (emp_id,))
+        db.execute(
+            """UPDATE tax_profile SET tp3_submitted='Y', tp3_date=?, tp3_prior_gross=?,
+                   tp3_prior_epf_employee=?, tp3_prior_pcb=? WHERE emp_id=?""",
+            (tp3_date, gross, epf, pcb, emp_id),
+        )
+        if original_name and not already:
+            emp_dir = os.path.join(UPLOAD_DIR, emp_id)
+            os.makedirs(emp_dir, exist_ok=True)
+            stored_name = f"{uuid.uuid4().hex}_{original_name}"
+            file.save(os.path.join(emp_dir, stored_name))
+            db.execute(
+                """INSERT INTO employee_documents (emp_id, doc_type, original_name, stored_name, notes, uploaded_at)
+                   VALUES (?,?,?,?,?,?)""",
+                (emp_id, "TP3 (Prior Employer Income)", original_name, stored_name, notes,
+                 datetime.datetime.now().isoformat(timespec="seconds")),
+            )
+            doc_note = f"{original_name} filed under Documents"
+        db.commit()
+    return (
+        f"{'DRY RUN - nothing changed. ' if dry_run else 'OK - '}{emp_id} TP3: "
+        f"{'; '.join(changes) if changes else 'tax profile already matches'}. Document: {doc_note}."
     ), 200
 
 

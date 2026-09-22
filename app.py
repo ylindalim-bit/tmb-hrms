@@ -5156,6 +5156,12 @@ def _validate_and_create_leave_request(db, emp_id, leave_type, start_date, end_d
             if ext not in ALLOWED_DOC_EXTENSIONS:
                 return None, "Supporting document(s) must be PDF, Word files, or images (JPG/PNG)."
 
+    if status == "Approved" and _approved_leave_overlaps(db, emp_id, leave_type, start_date, end_date):
+        return None, (
+            f"This employee already has an Approved {leave_type} request overlapping these dates - "
+            "check the existing one on Leave Requests before adding another for the same days."
+        )
+
     days = (datetime.date.fromisoformat(end_date) - datetime.date.fromisoformat(start_date)).days + 1
     now = datetime.datetime.now().isoformat(timespec="seconds")
     if status == "Approved":
@@ -5948,7 +5954,8 @@ def leave_requests_admin():
         documents_by_request.setdefault(doc["leave_request_id"], []).append(doc)
 
     return render_template("leave_requests_admin.html", pending=pending, reviewed=reviewed,
-                            year=year, month=month, documents_by_request=documents_by_request)
+                            year=year, month=month, documents_by_request=documents_by_request,
+                            error=request.args.get("error"))
 
 
 @app.route("/leave-requests/add", methods=["GET", "POST"])
@@ -6005,14 +6012,19 @@ def hr_add_leave_request():
 @app.route("/leave-requests/<int:request_id>/delete", methods=["POST"])
 def delete_leave_request(request_id):
     """HR-only: removes a leave request record entirely (e.g. test/bad
-    data), rather than just changing its status. Does not touch
-    attendance_monthly - HR keys leave days there separately (see the
-    leave_requests table's own comment), so there's nothing else to undo."""
+    data), rather than just changing its status. If it was Approved,
+    _unsync_deleted_leave_request undoes what approving it had already
+    added to attendance_daily/attendance_monthly - previously this route
+    left those days stranded on the monthly total forever (see that
+    function's docstring)."""
     if session.get("hr_role") != "admin":
         abort(403)
     db = get_db()
+    leave_request = db.execute("SELECT * FROM leave_requests WHERE id=?", (request_id,)).fetchone()
     db.execute("DELETE FROM leave_request_documents WHERE leave_request_id=?", (request_id,))
     db.execute("DELETE FROM leave_requests WHERE id=?", (request_id,))
+    if leave_request is not None and leave_request["status"] == "Approved":
+        _unsync_deleted_leave_request(db, leave_request)
     db.commit()
     return redirect(url_for("leave_requests_admin"))
 
@@ -6204,6 +6216,14 @@ def review_leave_request(request_id):
         return "Leave request not found", 404
     if session.get("hr_role") == "approver" and leave_request["leave_approver_username"] != session["hr_username"]:
         abort(403)
+    if decision == "Approved" and _approved_leave_overlaps(
+        db, leave_request["emp_id"], leave_request["leave_type"], leave_request["start_date"], leave_request["end_date"]
+    ):
+        return redirect(url_for(
+            "leave_requests_admin",
+            error=f"{leave_request['emp_id']} already has an Approved {leave_request['leave_type']} request "
+                  "overlapping these dates - check the existing one before approving this as well.",
+        ))
     # Reviewer is derived from who's actually logged in, not typed by hand -
     # ties every decision to a real account now that HR/approver logins exist.
     hr_user = db.execute("SELECT full_name FROM hr_users WHERE username=?", (session["hr_username"],)).fetchone()
@@ -9355,19 +9375,104 @@ def hr_set_base_off_day():
     ), 200
 
 
+LEAVE_DAY_TYPE_TO_MONTHLY_COLUMN = {"AL": "al_days", "MC": "mc_days", "HL": "hl_days", "UL": "ul_days",
+                                     "OTHER_PAID": "other_paid_leave"}
+
+
+def _resync_leave_days_from_daily(db, emp_id, year, month):
+    """Recomputes attendance_monthly's AL/MC/HL/UL/Other Paid columns for
+    one employee/month by counting attendance_daily rows - the fix for a
+    monthly leave total that has drifted from the daily records (e.g. an
+    approved MC marked on the daily rows but reading a different number on
+    the monthly row the Staff Portal shows). Deliberately touches ONLY
+    those five columns: Days Worked, Working Days, Meal/CEWI days and OT
+    are often typed by hand on the monthly Attendance page and a full
+    rebuild from daily would overwrite them. Never touches payroll_runs.
+    Returns the list of "column: before -> after" change strings (empty if
+    nothing needed changing), or None if there's no attendance_monthly row
+    for that month to correct. Doesn't commit."""
+    monthly = db.execute(
+        "SELECT * FROM attendance_monthly WHERE emp_id=? AND year=? AND month=?", (emp_id, year, month)
+    ).fetchone()
+    if monthly is None:
+        return None
+    counts = {col: 0.0 for col in LEAVE_DAY_TYPE_TO_MONTHLY_COLUMN.values()}
+    for r in db.execute(
+        "SELECT day_type, COUNT(*) AS n FROM attendance_daily WHERE emp_id=? AND date LIKE ? GROUP BY day_type",
+        (emp_id, f"{year:04d}-{month:02d}-%"),
+    ).fetchall():
+        if r["day_type"] in LEAVE_DAY_TYPE_TO_MONTHLY_COLUMN:
+            counts[LEAVE_DAY_TYPE_TO_MONTHLY_COLUMN[r["day_type"]]] = float(r["n"])
+    changes = [f"{col}: {monthly[col]} -> {val}" for col, val in counts.items() if (monthly[col] or 0) != val]
+    if changes:
+        db.execute(
+            """UPDATE attendance_monthly SET al_days=?, mc_days=?, hl_days=?, ul_days=?, other_paid_leave=?
+               WHERE emp_id=? AND year=? AND month=?""",
+            (counts["al_days"], counts["mc_days"], counts["hl_days"], counts["ul_days"],
+             counts["other_paid_leave"], emp_id, year, month),
+        )
+    return changes
+
+
+def _approved_leave_overlaps(db, emp_id, leave_type, start_date, end_date):
+    """True if this employee already has another Approved leave request of
+    the SAME leave type overlapping this date range - the guard against
+    the exact bug that inflated K002's September Medical Leave: the same
+    leave submitted (or keyed in) and approved twice, each approval adding
+    its days onto the monthly total again. Narrow on purpose - different
+    leave TYPES overlapping the same day is a rare, legitimate edge case
+    this doesn't block."""
+    return db.execute(
+        """SELECT 1 FROM leave_requests WHERE emp_id=? AND leave_type=? AND status='Approved'
+           AND start_date<=? AND end_date>=?""",
+        (emp_id, leave_type, end_date, start_date),
+    ).fetchone() is not None
+
+
+def _unsync_deleted_leave_request(db, leave_request):
+    """After an APPROVED leave request is deleted, undoes what approving it
+    had already added: for each date in its range, if no OTHER approved
+    request still covers that date, clears the attendance_daily row for
+    that date - but only if it's still exactly the day_type this request
+    set (so a day HR has since edited by hand, e.g. back to WORKED, is
+    left alone) - then re-syncs attendance_monthly's leave columns for
+    every month touched from what attendance_daily now says. This is the
+    fix for the pattern behind K002's stale July AL: deleting an approved
+    request used to leave its already-added days stranded on the monthly
+    total forever, since the delete route never touched attendance_monthly
+    at all. Doesn't commit."""
+    day_type = LEAVE_TYPE_TO_DAY_TYPE.get(leave_request["leave_type"])
+    if day_type is None:
+        return
+    start = datetime.date.fromisoformat(leave_request["start_date"])
+    end = datetime.date.fromisoformat(leave_request["end_date"])
+    months_touched = set()
+    day = start
+    while day <= end:
+        date_str = day.isoformat()
+        still_covered = db.execute(
+            """SELECT 1 FROM leave_requests WHERE emp_id=? AND status='Approved'
+               AND start_date<=? AND end_date>=?""",
+            (leave_request["emp_id"], date_str, date_str),
+        ).fetchone()
+        if not still_covered:
+            db.execute(
+                "DELETE FROM attendance_daily WHERE emp_id=? AND date=? AND day_type=?",
+                (leave_request["emp_id"], date_str, day_type),
+            )
+        months_touched.add((day.year, day.month))
+        day += datetime.timedelta(days=1)
+    for year, month in months_touched:
+        _resync_leave_days_from_daily(db, leave_request["emp_id"], year, month)
+
+
 @app.route("/hr/resync-leave-days-from-daily", methods=["POST"])
 def hr_resync_leave_days_from_daily():
     """Reusable one-off tool: sets one employee's leave-day columns on
-    attendance_monthly (AL, MC, HL, UL, Other Paid) for one month from
-    their attendance_daily rows - for a month where the monthly leave
-    figure the Staff Portal shows has drifted from the daily records (e.g.
-    an approved MC marked on the daily rows but reading 0 on the monthly
-    row). Deliberately touches ONLY those five columns: Days Worked,
-    Working Days, Meal/CEWI days and OT are often typed by hand on the
-    monthly Attendance page and a full rebuild from daily would overwrite
-    them. Never touches payroll_runs, so a finalized payroll stays as it
-    was. POST fields: token, emp_id, year, month, dry_run (optional, "1" =
-    report only)."""
+    attendance_monthly for one month from their attendance_daily rows (see
+    _resync_leave_days_from_daily). Never touches payroll_runs, so a
+    finalized payroll stays as it was. POST fields: token, emp_id, year,
+    month, dry_run (optional, "1" = report only)."""
     token = os.environ.get("RESTORE_TOKEN")
     if not token or request.form.get("token") != token:
         abort(404)
@@ -9381,28 +9486,12 @@ def hr_resync_leave_days_from_daily():
     db = get_db()
     if db.execute("SELECT 1 FROM employees WHERE emp_id=?", (emp_id,)).fetchone() is None:
         return f"ERROR - no employee {emp_id}", 404
-    monthly = db.execute(
-        "SELECT * FROM attendance_monthly WHERE emp_id=? AND year=? AND month=?", (emp_id, year, month)
-    ).fetchone()
-    if monthly is None:
+    changes = _resync_leave_days_from_daily(db, emp_id, year, month)
+    if changes is None:
         return f"ERROR - {emp_id} has no attendance_monthly row for {year}-{month:02d} to correct", 404
-    column_for_day_type = {"AL": "al_days", "MC": "mc_days", "HL": "hl_days", "UL": "ul_days",
-                           "OTHER_PAID": "other_paid_leave"}
-    counts = {col: 0.0 for col in column_for_day_type.values()}
-    for r in db.execute(
-        "SELECT day_type, COUNT(*) AS n FROM attendance_daily WHERE emp_id=? AND date LIKE ? GROUP BY day_type",
-        (emp_id, f"{year:04d}-{month:02d}-%"),
-    ).fetchall():
-        if r["day_type"] in column_for_day_type:
-            counts[column_for_day_type[r["day_type"]]] = float(r["n"])
-    changes = [f"{col}: {monthly[col]} -> {val}" for col, val in counts.items() if (monthly[col] or 0) != val]
-    if changes and not dry_run:
-        db.execute(
-            """UPDATE attendance_monthly SET al_days=?, mc_days=?, hl_days=?, ul_days=?, other_paid_leave=?
-               WHERE emp_id=? AND year=? AND month=?""",
-            (counts["al_days"], counts["mc_days"], counts["hl_days"], counts["ul_days"],
-             counts["other_paid_leave"], emp_id, year, month),
-        )
+    if dry_run or not changes:
+        db.rollback()
+    else:
         db.commit()
     return (
         f"{'DRY RUN - nothing changed. ' if dry_run else 'OK - '}{emp_id} {year}-{month:02d} "

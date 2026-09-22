@@ -10,6 +10,9 @@
   Requests, so everything needing or having had a decision is in one place. Manage Movement Notice
   documents/deletion on <a href="{{ url_for('business_trips_admin') }}">Business Trips</a>.
 </p>
+{% if error %}
+<div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger); font-weight:600;">{{ error }}</div>
+{% endif %}
 
 <div class="card">
   <h2 style="margin-top:0;">Pending ({{ pending|length }})</h2>

@@ -492,6 +492,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/set-base-off-day",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/resync-leave-days-from-daily",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/add-tp3",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/delete-leave-request",  # gated by RESTORE_TOKEN env var, not session - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -6027,6 +6028,45 @@ def delete_leave_request(request_id):
         _unsync_deleted_leave_request(db, leave_request)
     db.commit()
     return redirect(url_for("leave_requests_admin"))
+
+
+@app.route("/hr/delete-leave-request", methods=["POST"])
+def hr_delete_leave_request():
+    """Reusable one-off tool: deletes one leave_requests row by id, same
+    as the session-gated delete_leave_request route above (including the
+    Approved-request reversal), for use when there's no HR login session
+    to act through - e.g. deleting a confirmed duplicate submission found
+    while investigating data directly. POST fields: token, request_id,
+    dry_run (optional, "1" = report the row found and change nothing)."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    try:
+        request_id = int(request.form.get("request_id", ""))
+    except ValueError:
+        return "ERROR - request_id must be a number", 400
+    dry_run = request.form.get("dry_run") == "1"
+    db = get_db()
+    leave_request = db.execute(
+        """SELECT lr.*, e.full_name FROM leave_requests lr JOIN employees e ON e.emp_id = lr.emp_id
+           WHERE lr.id=?""",
+        (request_id,),
+    ).fetchone()
+    if leave_request is None:
+        return f"ERROR - no leave_requests row with id {request_id}", 404
+    summary = (
+        f"#{request_id}: {leave_request['emp_id']} ({leave_request['full_name']}) "
+        f"{leave_request['leave_type']} {leave_request['start_date']} to {leave_request['end_date']} "
+        f"({leave_request['days']} day(s)), status={leave_request['status']}"
+    )
+    if dry_run:
+        return f"DRY RUN - nothing changed. Would delete {summary}.", 200
+    db.execute("DELETE FROM leave_request_documents WHERE leave_request_id=?", (request_id,))
+    db.execute("DELETE FROM leave_requests WHERE id=?", (request_id,))
+    if leave_request["status"] == "Approved":
+        _unsync_deleted_leave_request(db, leave_request)
+    db.commit()
+    return f"OK - deleted {summary}.", 200
 
 
 @app.route("/leave-requests/document/<int:doc_id>")

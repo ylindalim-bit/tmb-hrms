@@ -1042,6 +1042,79 @@ def employees():
                             depts=depts, positions=positions)
 
 
+EMPLOYEE_EXPORT_COLUMNS = [
+    ("ID", "emp_id"), ("Name", "full_name"), ("Base", "base"), ("Dept", "department"),
+    ("Position", "position"), ("Join Date", "date_joined"), ("Confirm Date", "confirmation_date"),
+    ("Resign Date", "last_working_day"), ("EIS", "eis"), ("Basic (RM)", "basic_salary"),
+    ("Bank", "bank_name"), ("Account No.", "bank_account_no"), ("IC / Passport No.", "ic_passport_no"),
+    ("Date of Birth", "date_of_birth"), ("Race", "race"), ("Religion", "religion"),
+    ("Marital Status", "marital_status"), ("Phone Number", "phone_number"), ("HP No.", "hp_no"),
+    ("Email", "email"), ("Work Pattern", "work_pattern"), ("Probation End", "probation_end_date"),
+    ("SKBBK", "skbbk_flag"), ("Days/Week", "working_days_week"),
+    ("AL Entitlement", "annual_leave_entitlement"), ("MC Entitlement", "mc_entitlement"),
+    ("Hosp. Entitlement", "hospitalisation_leave_entitlement"),
+]
+
+
+@app.route("/employees/export")
+def employees_export():
+    """Same rows/columns as the Employee Master page (all of them, not just
+    whichever the Columns dropdown currently shows - a full data dump to
+    filter/sort in Excel), as a downloadable .xlsx. Active or Inactive
+    staff, matching whichever tab's ?view= the download link was clicked
+    from."""
+    db = get_db()
+    view = request.args.get("view", "active")
+    if view == "inactive":
+        rows = db.execute("SELECT * FROM employees WHERE status='Inactive' ORDER BY emp_id").fetchall()
+    else:
+        rows = db.execute("SELECT * FROM employees WHERE status != 'Inactive' ORDER BY emp_id").fetchall()
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Inactive Staff" if view == "inactive" else "Active Staff"
+
+    ws.cell(row=1, column=1, value="TIANMA PRECISION SDN BHD").font = Font(bold=True, size=16)
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(EMPLOYEE_EXPORT_COLUMNS))
+    ws.cell(row=2, column=1, value=f"Employee Master - {ws.title}").font = Font(bold=True, size=14)
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(EMPLOYEE_EXPORT_COLUMNS))
+
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="1D4ED8")
+    for col_idx, (label, _) in enumerate(EMPLOYEE_EXPORT_COLUMNS, start=1):
+        cell = ws.cell(row=3, column=col_idx, value=label)
+        cell.font = header_font
+        cell.fill = header_fill
+
+    row_idx = 4
+    for e in rows:
+        applies = _eis_applies(e["date_of_birth"], e["eis_flag"])
+        eis_value = "?" if applies is None else ("Yes" if applies else "No")
+        values = dict(e)
+        values["eis"] = eis_value
+        for col_idx, (label, key) in enumerate(EMPLOYEE_EXPORT_COLUMNS, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=values.get(key))
+            if label in ("Basic (RM)",) and values.get(key) is not None:
+                cell.number_format = "#,##0.00"
+        row_idx += 1
+
+    ws.freeze_panes = "C4"
+    ws.column_dimensions["A"].width = 10
+    ws.column_dimensions["B"].width = 26
+    for col_idx in range(3, len(EMPLOYEE_EXPORT_COLUMNS) + 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = 14
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = f"Employee_Master_{ws.title.replace(' ', '_')}.xlsx"
+    return Response(
+        buf.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 def _next_emp_id_suggestions(db):
     """For the Add New Employee page's ID-prefix helper - every existing
     emp_id is a single uppercase letter + 3-digit number (e.g. K002,

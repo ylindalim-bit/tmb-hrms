@@ -34,12 +34,14 @@
       Showing <span id="visible-count"></span> of {{ employees|length }}
     </span>
   </h1>
-  <span>
-    <a class="btn secondary" href="{{ url_for('work_schedules') }}">Working Schedules</a>
+  <span class="no-print">
+    <a class="btn secondary" href="{{ url_for('employees_export', view=view) }}">Export to Excel</a>
+    <button type="button" class="btn secondary" style="margin-left:6px;" onclick="window.print()">Print / Save as PDF</button>
+    <a class="btn secondary" href="{{ url_for('work_schedules') }}" style="margin-left:6px;">Working Schedules</a>
     <a class="btn" href="{{ url_for('add_employee') }}" style="margin-left:6px;">+ Add Employee</a>
   </span>
 </div>
-<div class="tabs" style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+<div class="tabs no-print" style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
   <div>
     <a class="btn {% if view != 'inactive' %}{% else %}secondary{% endif %}" href="{{ url_for('employees') }}">Active Staff</a>
     <a class="btn {% if view == 'inactive' %}{% else %}secondary{% endif %}" href="{{ url_for('employees', view='inactive') }}">Inactive Staff ({{ inactive_count }})</a>
@@ -64,7 +66,7 @@
   {% for col in optional_columns %}
   <th class="{{ 'text' if col.type != 'currency' else '' }}" data-key="{{ col.key }}">{{ col.label }}</th>
   {% endfor %}
-  <th class="sticky-col sticky-col-right"></th>
+  <th class="sticky-col sticky-col-right no-print"></th>
 </tr>
 <tr class="filter-row no-print">
   <th class="text sticky-col sticky-col-1"><input type="text" class="col-filter" data-key="emp_id" placeholder="Filter..."></th>
@@ -88,7 +90,7 @@
     {% endif %}
   </th>
   {% endfor %}
-  <th class="sticky-col sticky-col-right"><button type="button" id="clear-filters" class="btn secondary" style="padding:3px 8px; font-size:11px;">Clear</button></th>
+  <th class="sticky-col sticky-col-right no-print"><button type="button" id="clear-filters" class="btn secondary" style="padding:3px 8px; font-size:11px;">Clear</button></th>
 </tr>
 </thead>
 <tbody>
@@ -116,7 +118,7 @@
     <td class="text" data-key="{{ col.key }}">{{ e[col.key] or "-" }}</td>
     {% endif %}
   {% endfor %}
-  <td class="sticky-col sticky-col-right" style="white-space:nowrap;">
+  <td class="sticky-col sticky-col-right no-print" style="white-space:nowrap;">
     <a class="emp-link" href="{{ url_for('edit_employee', emp_id=e.emp_id) }}">Edit</a>
     &nbsp;<a class="emp-link" href="{{ url_for('portal_preview', emp_id=e.emp_id) }}" title="View as this employee">View</a>
   </td>

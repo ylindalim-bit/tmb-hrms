@@ -5240,9 +5240,23 @@ def portal_leave():
     mc_balance = (emp["mc_entitlement"] or 0) - mc_used
     hl_balance = (emp["hospitalisation_leave_entitlement"] or 0) - hl_used
 
+    # Latest change/cancellation request per leave request, so the template
+    # can show "Change requested" (Pending), the outcome (Rejected, with
+    # HR's note - Approved ones simply vanish along with the deleted leave
+    # request itself) instead of the button, keyed to whichever request is
+    # newest if an employee has tried more than once.
+    change_by_leave_id = {}
+    try:
+        for chg in db.execute(
+            """SELECT * FROM leave_change_requests WHERE emp_id=? ORDER BY submitted_at""", (emp["emp_id"],)
+        ).fetchall():
+            change_by_leave_id[chg["leave_request_id"]] = chg
+    except sqlite3.OperationalError:
+        pass
+
     return render_template("portal_leave.html", emp=emp, requests=my_requests, error=error,
                             al_balance=al_balance, mc_balance=mc_balance, hl_balance=hl_balance,
-                            al_used=al_used, mc_used=mc_used,
+                            al_used=al_used, mc_used=mc_used, change_by_leave_id=change_by_leave_id,
                             documents_by_request=documents_by_request, leave_types=LEAVE_TYPES)
 
 
@@ -5253,6 +5267,82 @@ def portal_leave_delete(request_id):
     emp = current_portal_employee(db)
     _portal_delete_own_pending(db, "leave_requests", request_id, emp["emp_id"])
     return redirect(url_for("portal_leave"))
+
+
+@app.route("/portal/leave/<int:request_id>/request-change", methods=["POST"])
+@portal_login_required
+def portal_leave_request_change(request_id):
+    """Lets an employee flag one of their own Approved leave requests for
+    HR to review - the self-service alternative to deleting it directly,
+    since an Approved request may already be reflected in attendance,
+    leave balance, or finalized payroll. Only one still-open (Pending)
+    change request per leave request at a time; a Rejected one can be
+    tried again with a new message."""
+    db = get_db()
+    emp = current_portal_employee(db)
+    message = (request.form.get("message") or "").strip()
+    leave_request = db.execute(
+        "SELECT id FROM leave_requests WHERE id=? AND emp_id=? AND status='Approved'",
+        (request_id, emp["emp_id"]),
+    ).fetchone()
+    already_pending = db.execute(
+        "SELECT 1 FROM leave_change_requests WHERE leave_request_id=? AND status='Pending'", (request_id,)
+    ).fetchone()
+    if leave_request is not None and message and not already_pending:
+        db.execute(
+            """INSERT INTO leave_change_requests (leave_request_id, emp_id, message, submitted_at)
+               VALUES (?,?,?,?)""",
+            (request_id, emp["emp_id"], message, datetime.datetime.now().isoformat(timespec="seconds")),
+        )
+        db.commit()
+    return redirect(url_for("portal_leave"))
+
+
+@app.route("/leave-requests/change/<int:change_id>/review", methods=["POST"])
+def review_leave_change_request(change_id):
+    """HR/approver decision on a staff change/cancellation flag (see
+    portal_leave_request_change). Approved = HR agrees the leave request
+    should go: deletes it exactly like the admin delete_leave_request
+    route does, including reversing it off attendance/attendance_monthly
+    if it was Approved (which it always will be here, by construction).
+    Rejected = the leave request is left exactly as it was; review_notes
+    is shown back to the employee as the reason."""
+    decision = request.form.get("decision")
+    if decision not in ("Approved", "Rejected"):
+        return "Invalid decision", 400
+    notes = request.form.get("review_notes") or None
+    db = get_db()
+    change = db.execute(
+        """SELECT cr.*, e.leave_approver_username FROM leave_change_requests cr
+           JOIN employees e ON e.emp_id = cr.emp_id WHERE cr.id=?""",
+        (change_id,),
+    ).fetchone()
+    if change is None:
+        return "Change request not found", 404
+    if session.get("hr_role") == "approver" and change["leave_approver_username"] != session["hr_username"]:
+        abort(403)
+    hr_user = db.execute("SELECT full_name FROM hr_users WHERE username=?", (session["hr_username"],)).fetchone()
+    reviewer = hr_user["full_name"] if hr_user else session["hr_username"]
+    db.execute(
+        """UPDATE leave_change_requests SET status=?, reviewed_by=?, reviewed_at=?, review_notes=?
+           WHERE id=?""",
+        (decision, reviewer, datetime.datetime.now().isoformat(timespec="seconds"), notes, change_id),
+    )
+    if decision == "Approved":
+        leave_request = db.execute(
+            "SELECT * FROM leave_requests WHERE id=?", (change["leave_request_id"],)
+        ).fetchone()
+        if leave_request is not None:
+            # leave_change_requests.leave_request_id itself references this
+            # row (including the one just updated above), so it has to be
+            # cleared first or the delete below fails a foreign-key check.
+            db.execute("DELETE FROM leave_change_requests WHERE leave_request_id=?", (leave_request["id"],))
+            db.execute("DELETE FROM leave_request_documents WHERE leave_request_id=?", (leave_request["id"],))
+            db.execute("DELETE FROM leave_requests WHERE id=?", (leave_request["id"],))
+            if leave_request["status"] == "Approved":
+                _unsync_deleted_leave_request(db, leave_request)
+    db.commit()
+    return redirect(url_for("leave_requests_admin"))
 
 
 @app.route("/portal/leave/<int:request_id>/document/add", methods=["POST"])
@@ -5900,8 +5990,21 @@ def leave_requests_admin():
     # a single document) so they're normalized to a common set of columns
     # here; "source" tells the template which document-lookup and
     # approve/reject route to use for that row.
-    pending = db.execute(
-        f"""SELECT 'leave' AS source, lr.id, lr.emp_id, e.full_name, lr.leave_type AS type_label,
+    # A staff "Request Change" flag on their own Approved leave (see
+    # portal_leave_request_change) is unioned in as a third source, so HR
+    # sees it in the same queue instead of needing a separate page for it.
+    change_union = f"""
+           UNION ALL
+           SELECT 'change' AS source, cr.id, cr.emp_id, e.full_name,
+                   'Cancel/Change: ' || lr.leave_type AS type_label,
+                   NULL AS destination, lr.start_date, lr.end_date, lr.days, cr.message AS reason,
+                   NULL AS supporting_doc_original, NULL AS supporting_doc_stored,
+                   cr.submitted_at
+           FROM leave_change_requests cr
+           JOIN leave_requests lr ON lr.id = cr.leave_request_id
+           JOIN employees e ON e.emp_id = cr.emp_id
+           WHERE cr.status='Pending' {scope_clause}"""
+    pending_sql = f"""SELECT 'leave' AS source, lr.id, lr.emp_id, e.full_name, lr.leave_type AS type_label,
                    NULL AS destination, lr.start_date, lr.end_date, lr.days, lr.reason,
                    NULL AS supporting_doc_original, NULL AS supporting_doc_stored,
                    lr.submitted_at
@@ -5915,10 +6018,14 @@ def leave_requests_admin():
                    bt.supporting_doc_original, bt.supporting_doc_stored,
                    bt.submitted_at
            FROM business_trips bt JOIN employees e ON e.emp_id = bt.emp_id
-           WHERE bt.status='Pending' {scope_clause}
-           ORDER BY submitted_at""",
-        params + params,
-    ).fetchall()
+           WHERE bt.status='Pending' {scope_clause}"""
+    try:
+        pending = db.execute(
+            pending_sql + change_union + " ORDER BY submitted_at", params + params + params
+        ).fetchall()
+    except sqlite3.OperationalError:
+        # leave_change_requests not migrated in yet on this deploy.
+        pending = db.execute(pending_sql + " ORDER BY submitted_at", params + params).fetchall()
 
     # Reviewed (historical) list is filtered to one month at a time - by the
     # leave's own start_date - defaulting to the current month, rather than
@@ -7070,6 +7177,24 @@ def hr_migrate_schema():
             effective_date TEXT NOT NULL, standard_start TEXT, standard_end TEXT, reason TEXT,
             created_at TEXT NOT NULL, created_by TEXT, UNIQUE(emp_id, effective_date))""")
         applied.append("table: work_schedule_history")
+
+    if "leave_change_requests" not in existing_tables:
+        # A staff member can't delete/edit their own Approved leave from
+        # the Staff Portal (it may already be reflected in attendance,
+        # leave balance, or finalized payroll), so this is their way to
+        # flag one for HR instead: a message describing what's wrong or
+        # that they want it cancelled. HR approves (deletes the leave
+        # request, reversing it the same safe way delete_leave_request
+        # does) or rejects (leave stays, review_notes explains why) from
+        # the same Leave Requests queue as everything else needing a
+        # decision.
+        db.execute("""CREATE TABLE leave_change_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            leave_request_id INTEGER NOT NULL REFERENCES leave_requests(id),
+            emp_id TEXT NOT NULL REFERENCES employees(emp_id),
+            message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Pending',
+            submitted_at TEXT NOT NULL, reviewed_by TEXT, reviewed_at TEXT, review_notes TEXT)""")
+        applied.append("table: leave_change_requests")
 
     if "clockin_events" not in existing_tables:
         db.execute("""CREATE TABLE clockin_events (

@@ -86,6 +86,20 @@
           <form method="post" action="{{ url_for('portal_leave_delete', request_id=lr.id) }}" onsubmit="return confirm('Delete this leave request?');">
             <button class="btn secondary" type="submit" style="padding:4px 10px;">Delete</button>
           </form>
+          {% elif lr.status == 'Approved' %}
+          {% set chg = change_by_leave_id.get(lr.id) %}
+          {% if chg and chg.status == 'Pending' %}
+          <span class="pill draft">Change requested</span>
+          {% else %}
+          {% if chg and chg.status == 'Rejected' %}
+          <div style="font-size:11px; color:var(--danger); margin-bottom:4px;">Previous request declined{% if chg.review_notes %}: {{ chg.review_notes }}{% endif %}</div>
+          {% endif %}
+          <form method="post" action="{{ url_for('portal_leave_request_change', request_id=lr.id) }}"
+                onsubmit="var m = prompt('Why does this leave need to be changed or cancelled?'); if (!m) return false; this.message.value = m; return true;">
+            <input type="hidden" name="message">
+            <button class="btn secondary" type="submit" style="padding:4px 10px;">Request Change</button>
+          </form>
+          {% endif %}
           {% endif %}
         </td>
       </tr>

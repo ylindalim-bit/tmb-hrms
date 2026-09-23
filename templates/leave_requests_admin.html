@@ -31,7 +31,9 @@
         <td>{{ lr.days }}</td>
         <td class="text">{{ lr.reason or "" }}</td>
         <td class="text">
-          {% if lr.source == "leave" %}
+          {% if lr.source == "change" %}
+          <span style="color:var(--muted); font-size:12px;">Cancellation request &mdash; no document</span>
+          {% elif lr.source == "leave" %}
           {% set docs = documents_by_request.get(lr.id, []) %}
           {% if docs %}
             {% for doc in docs %}
@@ -53,10 +55,18 @@
         </td>
         <td class="text">{{ lr.submitted_at }}</td>
         <td class="text" style="white-space:nowrap;">
+          {% if lr.source == "change" %}
+          <form method="post" action="{{ url_for('review_leave_change_request', change_id=lr.id) }}"
+                onsubmit="return confirm('Approve = delete the underlying {{ lr.type_label.split(': ')[1] }} request ({{ lr.start_date }} to {{ lr.end_date }}) and reverse it off attendance. Continue?');">
+            <button class="btn" type="submit" name="decision" value="Approved" style="padding:4px 10px;">Approve (delete leave)</button>
+            <button class="btn secondary" type="submit" name="decision" value="Rejected" style="padding:4px 10px;">Reject</button>
+          </form>
+          {% else %}
           <form method="post" action="{{ url_for('review_leave_request', request_id=lr.id) if lr.source == 'leave' else url_for('review_business_trip', trip_id=lr.id) }}">
             <button class="btn" type="submit" name="decision" value="Approved" style="padding:4px 10px;">Approve</button>
             <button class="btn secondary" type="submit" name="decision" value="Rejected" style="padding:4px 10px;">Reject</button>
           </form>
+          {% endif %}
         </td>
       </tr>
       {% else %}

@@ -493,6 +493,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/resync-leave-days-from-daily",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/add-tp3",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/delete-leave-request",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/scheduled-backup",  # gated by its own BACKUP_TOKEN env var - see route
 )
 
 # role='approver' users (e.g. Mr Kee) get a restricted account: leave
@@ -7633,6 +7634,25 @@ def hr_backup_database():
     RESTORE_TOKEN gate as the other one-time routes; read-only, makes no
     changes."""
     token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.args.get("token") != token:
+        abort(404)
+    return send_from_directory(
+        DATA_DIR, "payroll.db", as_attachment=True,
+        download_name=f"payroll_backup_{datetime.date.today().isoformat()}.db",
+    )
+
+
+@app.route("/hr/scheduled-backup")
+def hr_scheduled_backup():
+    """Downloads the live payroll.db as-is, for an unattended scheduled
+    backup (e.g. Windows Task Scheduler) rather than a person manually
+    fetching one. Deliberately gated by its own BACKUP_TOKEN env var, kept
+    separate from RESTORE_TOKEN - RESTORE_TOKEN also unlocks every one-off
+    data-fix route in this file and is added/removed by hand around each
+    use, whereas this is meant to sit on permanently so backups keep
+    running unattended. BACKUP_TOKEN only ever reaches this one read-only
+    download - it's checked nowhere else."""
+    token = os.environ.get("BACKUP_TOKEN")
     if not token or request.args.get("token") != token:
         abort(404)
     return send_from_directory(

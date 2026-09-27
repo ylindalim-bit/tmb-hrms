@@ -40,7 +40,7 @@
     <a href="{{ url_for('recruitment_list', status=s) }}" class="btn {{ 'secondary' if status_filter != s }}" style="padding:4px 10px;">{{ s }}</a>
     {% endfor %}
   </div>
-  <div class="table-wrap">
+  <div class="table-wrap frozen-header">
   <table>
     <thead>
       <tr><th class="text">Name</th><th class="text">Position Applied For</th><th class="text">Contact</th>

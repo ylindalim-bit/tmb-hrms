@@ -58,8 +58,8 @@
     </div>
   </div>
 </div>
-<div class="card table-wrap">
-<table>
+<div class="card table-wrap frozen-header">
+<table id="employees-table">
 <thead>
 <tr>
   <th class="text sticky-col sticky-col-1">ID</th><th class="text sticky-col sticky-col-2">Name</th>
@@ -259,6 +259,22 @@
   }
 
   applyColumnVisibility();
+
+  // The frozen-header table here has two sticky rows stacked (column
+  // labels, then the filter-input row's frozen ID/Name/Clear cells) -
+  // without this, both independently stick to top:0 and overlap instead
+  // of stacking, since position:sticky has no notion of "the row above me
+  // is also sticky." Measures the label row's real height (it can wrap
+  // to two lines at some column/width combinations) rather than
+  // hardcoding a guess.
+  function updateFilterRowStickyOffset() {
+    var labelRow = document.querySelector('#employees-table thead tr:first-child');
+    var h = labelRow ? Math.round(labelRow.getBoundingClientRect().height) : 0;
+    document.documentElement.style.setProperty('--employees-header-row-height', h + 'px');
+  }
+  window.addEventListener('resize', updateFilterRowStickyOffset);
+  window.addEventListener('load', updateFilterRowStickyOffset);
+  updateFilterRowStickyOffset();
 })();
 </script>
 {% endblock %}

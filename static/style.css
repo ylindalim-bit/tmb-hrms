@@ -124,7 +124,10 @@ tr.row-new:hover td.sticky-col { background: #bbf7d0; }
 .table-wrap { overflow-x: auto; }
 
 .filter-row th { position: static; background: var(--card); padding: 4px 6px; }
-.filter-row th.sticky-col { position: sticky; background: var(--card); }
+/* Stacks below the column-label row's own sticky th's (also top:0) rather
+   than overlapping them - see employees.html's script, which measures
+   that row's real height into --employees-header-row-height. */
+.filter-row th.sticky-col { position: sticky; top: var(--employees-header-row-height, 30px); background: var(--card); }
 .filter-row input, .filter-row select {
   width: 100%; box-sizing: border-box; font-size: 11px; font-weight: 400;
   padding: 4px 6px; margin: 0;
@@ -209,4 +212,9 @@ a.emp-link { color: var(--accent); text-decoration: none; font-weight: 600; }
   main { max-width: none; padding: 0; margin: 0; }
   .card { border: none; box-shadow: none; padding: 0; margin: 0; }
   @page { size: A4; margin: 15mm; }
+  /* A frozen-header table's own scroll pane only helps on screen - print/
+     Save as PDF can't scroll, so without this a long list would silently
+     print/export just whatever page of it happened to be visible. */
+  .frozen-header { max-height: none !important; overflow-y: visible !important; }
+  .frozen-header th { position: static !important; }
 }

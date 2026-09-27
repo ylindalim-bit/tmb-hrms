@@ -5,7 +5,7 @@
 <p style="color:var(--muted); font-size:13px; margin-top:-8px;">As of {{ today }}.</p>
 
 {% macro alert_table(rows, date_label, empty_msg, show_letter_link=false) %}
-<div class="card table-wrap">
+<div class="card table-wrap frozen-header">
 <table>
 <thead>
 <tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Department</th><th class="text">Position</th>
@@ -49,7 +49,7 @@
 <p style="color:var(--muted); font-size:13px; margin-top:-8px;">
   Staff self-service changes to contact/bank details, emergency contacts, or password &mdash; last 50.
 </p>
-<div class="card table-wrap">
+<div class="card table-wrap frozen-header">
 <table>
 <thead>
 <tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Updated</th><th class="text">Field Changed</th><th class="text">Before</th><th class="text">After</th><th></th></tr>
@@ -90,7 +90,7 @@
 <p style="color:var(--muted); font-size:13px; margin-top:-8px;">
   Has a Confirmation Date set on their record &mdash; already processed, so no longer shown as "due" above.
 </p>
-<div class="card table-wrap">
+<div class="card table-wrap frozen-header">
 <table>
 <thead>
 <tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Department</th><th class="text">Position</th>
@@ -125,7 +125,7 @@
 <p style="color:var(--muted); font-size:13px; margin-top:-8px;">
   Joined within the last ~6 months and no Probation End Date is set &mdash; add one via Edit so they show up in the report above.
 </p>
-<div class="card table-wrap">
+<div class="card table-wrap frozen-header">
 <table>
 <thead>
 <tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Department</th><th class="text">Position</th>

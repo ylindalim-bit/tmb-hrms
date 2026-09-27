@@ -36,7 +36,7 @@
   {% endfor %}
 </div>
 
-<div class="card table-wrap">
+<div class="card table-wrap frozen-header">
 {% for h in holidays %}
 <form id="holiday-delete-{{ h.id }}" method="post" action="{{ url_for('delete_holiday', holiday_id=h.id) }}" onsubmit="return confirm('Delete {{ h.name }} ({{ h.date }})?');"></form>
 {% endfor %}

@@ -16,7 +16,7 @@
 
 <div class="card">
   <h2 style="margin-top:0;">Pending ({{ pending|length }})</h2>
-  <div class="table-wrap">
+  <div class="table-wrap frozen-header">
   <table>
     <thead>
       <tr><th class="text">Employee</th><th class="text">Type</th><th class="text">Destination</th><th class="text">Dates</th><th>Days</th><th class="text">Reason</th><th class="text">Document</th><th class="text">Submitted</th><th>Action</th></tr>
@@ -86,7 +86,7 @@
       <a href="{{ url_for('leave_requests_admin', year=year if month<12 else year+1, month=month+1 if month<12 else 1) }}">Next &raquo;</a>
     </div>
   </div>
-  <div class="table-wrap">
+  <div class="table-wrap frozen-header">
   <table>
     <thead>
       <tr><th class="text">Employee</th><th class="text">Type</th><th class="text">Destination</th><th class="text">Dates</th><th>Days</th><th class="text">Reason</th><th class="text">Status</th><th class="text">Document</th><th class="text">Reviewed By</th><th class="text">Reviewed</th>{% if hr_role == "admin" %}<th></th>{% endif %}</tr>

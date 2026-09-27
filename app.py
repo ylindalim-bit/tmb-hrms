@@ -1835,15 +1835,23 @@ def _day_not_yet_applicable(date_iso, date_joined, today_iso):
     return date_iso > today_iso
 
 
-def _default_day_type_for_pattern(work_pattern, weekday):
+def _default_day_type_for_pattern(work_pattern, weekday, is_holiday=False):
     """What Daily Attendance should show as the Status default for a day
     with no saved record yet, so a fixed-schedule employee's Sat/Sun don't
-    read as WORKED before HR has entered anything. Sunday (weekday 6) is
-    always the statutory REST day, regardless of work_pattern - confirmed
-    against every employee's actual history this month (K002 included,
-    who's on 'Manual') - so it defaults to REST even for 'Manual'/
-    irregular patterns, whose Sat-Fri days still can't be predicted (see
-    _calc_working_days_from_pattern) and keep defaulting to WORKED."""
+    read as WORKED before HR has entered anything. A gazetted public
+    holiday (is_holiday=True) always wins first - otherwise an untouched
+    holiday defaults to WORKED, and clicking Save Month writes it as a
+    real WORKED-with-blank-time row (the same false "problem" pattern as
+    the pre-fix Save Month bug, just triggered by a holiday added to the
+    calendar after HR had already saved that month, rather than a blank
+    weekday). Sunday (weekday 6) is always the statutory REST day,
+    regardless of work_pattern - confirmed against every employee's
+    actual history this month (K002 included, who's on 'Manual') - so it
+    defaults to REST even for 'Manual'/irregular patterns, whose Sat-Fri
+    days still can't be predicted (see _calc_working_days_from_pattern)
+    and keep defaulting to WORKED."""
+    if is_holiday:
+        return "PH"
     if weekday == 6:
         return "REST"
     weekday_weights = WORK_PATTERN_WEEKDAY_WEIGHTS.get(work_pattern)
@@ -2194,7 +2202,9 @@ def attendance_daily(emp_id, year, month):
             "late_in": is_late, "early_out": is_early,
             "late_kind": late_kind, "excuse": late_reason,
             "trip_label": trip_label, "holiday_name": holiday_names.get(date_iso),
-            "default_day_type": _default_day_type_for_pattern(emp["work_pattern"], date_obj.weekday()),
+            "default_day_type": _default_day_type_for_pattern(
+                emp["work_pattern"], date_obj.weekday(), is_holiday=date_iso in holiday_names
+            ),
         })
     monthly = db.execute(
         "SELECT * FROM attendance_monthly WHERE emp_id=? AND year=? AND month=?",
@@ -9569,24 +9579,30 @@ def hr_clear_k004_blank_placeholder_attendance():
 
 @app.route("/hr/set-base-off-day", methods=["POST"])
 def hr_set_base_off_day():
-    """Reusable one-off tool for a base-wide OFF day (e.g. Chengdu's
-    alternate off Saturdays, which HR confirms date by date). POST fields:
-    token, base (e.g. CD), date (YYYY-MM-DD), dry_run (optional, "1" =
+    """Reusable one-off tool for a base-wide day status (e.g. Chengdu's
+    alternate off Saturdays, or a public holiday added to the calendar
+    after HR had already saved blank WORKED placeholders for that date).
+    POST fields: token, base (e.g. CD), date (YYYY-MM-DD), day_type
+    (optional, one of DAY_TYPES, default "OFF"), dry_run (optional, "1" =
     only report, change nothing). For each employee of that base employed
     on that date: no row, or a WORKED row with no Time In and no Time Out
-    (an untouched placeholder), becomes OFF. A WORKED row with a real
+    (an untouched placeholder), becomes day_type. A WORKED row with a real
     punch time is NOT touched and is listed in the reply - they physically
     worked, and (as with August's off Saturdays) that's for HR to decide,
-    not for a bulk change to erase. Leave/OFF/REST/PH rows are left alone.
-    Re-syncs each changed employee's month. Safe to re-run."""
+    not for a bulk change to erase. Any other existing status (leave,
+    OFF/REST/PH already set, etc.) is left alone. Re-syncs each changed
+    employee's month. Safe to re-run."""
     token = os.environ.get("RESTORE_TOKEN")
     if not token or request.form.get("token") != token:
         abort(404)
     base = request.form.get("base", "")
     date_str = request.form.get("date", "")
+    day_type = request.form.get("day_type") or "OFF"
     dry_run = request.form.get("dry_run") == "1"
     if base not in BASE_OPTIONS:
         return f"ERROR - base must be one of {BASE_OPTIONS}", 400
+    if day_type not in DAY_TYPES:
+        return f"ERROR - day_type must be one of {DAY_TYPES}", 400
     try:
         the_date = datetime.date.fromisoformat(date_str)
     except ValueError:
@@ -9612,10 +9628,10 @@ def hr_set_base_off_day():
                 db.execute(
                     """INSERT INTO attendance_daily (emp_id, date, day_type, time_in, time_out,
                            meal_allowance_flag, cewi_flag, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0)
-                       VALUES (?,?, 'OFF', NULL, NULL, 'N', 'N', 0, 0, 0)
-                       ON CONFLICT(emp_id, date) DO UPDATE SET day_type='OFF', time_in=NULL,
+                       VALUES (?,?,?, NULL, NULL, 'N', 'N', 0, 0, 0)
+                       ON CONFLICT(emp_id, date) DO UPDATE SET day_type=excluded.day_type, time_in=NULL,
                            time_out=NULL, meal_allowance_flag='N', cewi_flag='N'""",
-                    (emp_id, date_str),
+                    (emp_id, date_str, day_type),
                 )
         elif row["day_type"] == "WORKED":
             kept_punched.append(f"{emp_id} ({row['time_in'] or '-'}-{row['time_out'] or '-'})")
@@ -9627,7 +9643,7 @@ def hr_set_base_off_day():
         db.commit()
     return (
         f"{'DRY RUN - nothing changed. ' if dry_run else 'OK - '}{base} {date_str}: "
-        f"{'would set' if dry_run else 'set'} OFF for {len(changed)}: {', '.join(changed) or '-'}. "
+        f"{'would set' if dry_run else 'set'} {day_type} for {len(changed)}: {', '.join(changed) or '-'}. "
         f"Left alone (real punch times, still WORKED): {', '.join(kept_punched) or '-'}. "
         f"Left alone (already other status): {', '.join(untouched) or '-'}."
     ), 200

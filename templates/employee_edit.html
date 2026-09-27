@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{% if is_new %}Add Employee{% else %}Edit {{ emp.emp_id }}{% endif %} - TMB Payroll{% endblock %}
 {% block content %}
-<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px;">
+<div class="sticky-page-header" style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px;">
   <h1>
     {% if is_new %}Add New Employee{% else %}{{ emp.emp_id }} &mdash; {{ emp.full_name }}{% endif %}
     {% if not is_new and emp.status %}

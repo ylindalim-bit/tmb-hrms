@@ -6,30 +6,32 @@
   @media print {
     @page { size: A4 landscape; margin: 10mm; }
     .print-only { display: block; }
-    .table-wrap { overflow-x: visible; }
+    .table-wrap { overflow-x: visible; max-height: none; overflow-y: visible; }
+    th { position: static; }
     table { font-size: 10px; width: 100%; }
     th, td { padding: 3px 5px; }
   }
 </style>
 {% endblock %}
 {% block content %}
-<div class="no-print" style="display:flex; justify-content:space-between; align-items:center;">
-  <h1 style="margin-bottom:0;">Leave Taken Report &mdash; {{ year }}</h1>
-  <button class="btn" type="button" onclick="window.print()">Print / Save as PDF</button>
+<div class="sticky-page-header no-print">
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <h1 style="margin-bottom:0;">Leave Taken Report &mdash; {{ year }}</h1>
+    <button class="btn" type="button" onclick="window.print()">Print / Save as PDF</button>
+  </div>
+  <div class="month-nav">
+    <span>Year:</span>
+    {% for y in years %}
+    <a href="{{ url_for('leave_report', year=y.year) }}" style="{% if y.year == year %}font-weight:700;{% endif %}">{{ y.year }}</a>
+    {% endfor %}
+  </div>
 </div>
 <div class="print-only" style="margin-bottom:12px;">
   <strong>TIANMA PRECISION SDN BHD</strong><br>
   Leave Taken Report &mdash; {{ year }}
 </div>
 
-<div class="month-nav no-print">
-  <span>Year:</span>
-  {% for y in years %}
-  <a href="{{ url_for('leave_report', year=y.year) }}" style="{% if y.year == year %}font-weight:700;{% endif %}">{{ y.year }}</a>
-  {% endfor %}
-</div>
-
-<div class="card table-wrap">
+<div class="card table-wrap frozen-header">
 <table>
 <thead>
 <tr>

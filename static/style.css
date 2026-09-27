@@ -26,6 +26,38 @@ body {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+/* A page can opt a heading block (title, filters, Print button, etc.) into
+   staying pinned under the topbar too - see base.html's script, which
+   measures both elements' real rendered height (the topbar wraps to two
+   lines on a narrow window/many nav links, so a fixed pixel guess would
+   drift) and exposes the combined height as --sticky-header-height. */
+.sticky-page-header {
+  position: sticky;
+  top: var(--topbar-height, 0px);
+  z-index: 90;
+  background: var(--bg);
+  padding-top: 12px;
+  margin-top: -12px;
+}
+/* Opt-in "frozen header" for one table: gives .table-wrap its own
+   max-height and lets IT scroll (instead of the whole page), so its
+   thead can use a plain top:0 sticky-within-its-own-box, which works
+   reliably. A table's own <th> sticky positioned directly against page
+   scroll (top: <nonzero>) does NOT work in Chromium once any ancestor's
+   overflow-x is non-visible - table-wrap already needs overflow-x:auto
+   for wide tables, and that silently forces overflow-y to auto too
+   (CSS's overflow-x/y are coupled), which makes table-wrap itself the
+   sticky containing block instead of the viewport, and a <th> stuck to
+   a box that scrolls out of view along with the page just flies off
+   screen instead of freezing. Scrolling table-wrap internally sidesteps
+   the whole problem instead of fighting it. */
+.table-wrap.frozen-header {
+  max-height: calc(100vh - var(--sticky-header-height, 60px) - 16px);
+  overflow-y: auto;
 }
 .brand { font-weight: 700; font-size: 16px; display: flex; align-items: center; gap: 10px; }
 .brand span { font-weight: 400; color: var(--muted); margin-left: 6px; }

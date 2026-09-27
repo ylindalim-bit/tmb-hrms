@@ -83,5 +83,26 @@
 <main>
   {% block content %}{% endblock %}
 </main>
+<script>
+// Keeps the sticky nav bar, an optional page heading (.sticky-page-header,
+// e.g. Leave Report's title/Year picker/Print button), and every table's
+// header row correctly stacked while scrolling - measures the real
+// rendered heights rather than assuming a fixed pixel value, since the
+// nav wraps onto a second line on a narrow window or once enough menu
+// items are shown for this HR role.
+(function () {
+  function updateStickyOffsets() {
+    var topbar = document.querySelector('.topbar');
+    var topbarH = topbar ? Math.round(topbar.getBoundingClientRect().height) : 0;
+    document.documentElement.style.setProperty('--topbar-height', topbarH + 'px');
+    var pageHeader = document.querySelector('.sticky-page-header');
+    var pageHeaderH = pageHeader ? Math.round(pageHeader.getBoundingClientRect().height) : 0;
+    document.documentElement.style.setProperty('--sticky-header-height', (topbarH + pageHeaderH) + 'px');
+  }
+  window.addEventListener('resize', updateStickyOffsets);
+  window.addEventListener('load', updateStickyOffsets);
+  updateStickyOffsets();
+})();
+</script>
 </body>
 </html>

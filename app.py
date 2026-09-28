@@ -5541,6 +5541,7 @@ def portal_leave():
     al_used = sum(r["al_days"] or 0 for r in year_rows)
     mc_used = sum(r["mc_days"] or 0 for r in year_rows)
     hl_used = sum(r["hl_days"] or 0 for r in year_rows)
+    ul_used = sum(r["ul_days"] or 0 for r in year_rows)
     prorated_al, _al_note = _prorated_al_note(emp, cur_year)
     al_entitlement = prorated_al if prorated_al is not None else (emp["annual_leave_entitlement"] or 0)
     al_balance = round(al_entitlement + _al_bf_for_year(emp, cur_year) - al_used, 2)
@@ -5563,7 +5564,7 @@ def portal_leave():
 
     return render_template("portal_leave.html", emp=emp, requests=my_requests, error=error,
                             al_balance=al_balance, mc_balance=mc_balance, hl_balance=hl_balance,
-                            al_used=al_used, mc_used=mc_used, change_by_leave_id=change_by_leave_id,
+                            al_used=al_used, mc_used=mc_used, ul_used=ul_used, change_by_leave_id=change_by_leave_id,
                             documents_by_request=documents_by_request, leave_types=LEAVE_TYPES)
 
 

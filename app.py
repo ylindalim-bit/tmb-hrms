@@ -266,7 +266,14 @@ if not os.path.exists(DB_PATH):
     _bootstrap_conn.close()
 DOCUMENT_TYPES = ["Job Application Form", "IC / Passport Copy", "Letter of Employment", "Confirmation Letter",
                    "Resignation Letter", "CP22A", "e-Stamping Certificate", "TP3 (Prior Employer Income)", "Other"]
-BUSINESS_TRIP_TYPES = ["Business Trip", "Out-Duty", "Training", "Unrecorded Leave"]
+BUSINESS_TRIP_TYPES = ["Business Trip", "Out-Duty", "Training", "Unrecorded Leave", "Home Leave (Malaysia)"]
+# Approving either of these pays the days as Other Paid Leave rather than
+# deducting them - "Unrecorded Leave" explains an attendance gap after the
+# fact; "Home Leave (Malaysia)" is an overseas-assignment staff member's
+# planned trip home (e.g. for a visa renewal/visa-run), per the Long-
+# Service Appreciation policy's "5 days of relief" - a paid trip home, not
+# unpaid leave, and not an after-the-fact excuse needing supporting proof.
+PAID_TRIP_NOTICE_TYPES = ("Unrecorded Leave", "Home Leave (Malaysia)")
 BASE_OPTIONS = ["MY", "ZJ", "CD"]  # Malaysia, Zhejiang, Chengdu - which physical site this employee works at
 # Malaysia and China are both UTC+8 with no DST, so a fixed offset covers
 # every Base without needing an IANA tz database on the server (which runs
@@ -1255,6 +1262,23 @@ def edit_employee(emp_id):
         "SELECT * FROM al_adjustments WHERE emp_id=? ORDER BY adj_date DESC, created_at DESC",
         (emp_id,),
     ).fetchall()
+    overseas_assignments = []
+    performance_evaluations = []
+    try:
+        overseas_assignments = [
+            {**dict(r), "months_elapsed": _months_elapsed(
+                r["start_date"], r["end_date"] or datetime.date.today().isoformat()
+            )}
+            for r in db.execute(
+                "SELECT * FROM overseas_assignments WHERE emp_id=? ORDER BY start_date DESC", (emp_id,)
+            ).fetchall()
+        ]
+        performance_evaluations = db.execute(
+            "SELECT * FROM performance_evaluations WHERE emp_id=? ORDER BY eval_date DESC, uploaded_at DESC",
+            (emp_id,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        pass  # not migrated in on this deploy yet
 
     eis_applies = _eis_applies(emp["date_of_birth"], emp["eis_flag"])
 
@@ -1290,6 +1314,10 @@ def edit_employee(emp_id):
     ).fetchall()
     schedule_log = _schedule_log_rows(db, emp_id=emp_id)
 
+    current_assignment = next((a for a in overseas_assignments if not a["end_date"]), None)
+    long_service_milestone = (
+        _long_service_milestone(current_assignment["months_elapsed"]) if current_assignment else None
+    )
     return render_template("employee_edit.html", emp=emp, is_new=False, extensions=extensions,
                             schedule_log=schedule_log, salary_history=salary_history, eis_applies=eis_applies,
                             documents=documents, document_types=DOCUMENT_TYPES,
@@ -1301,6 +1329,8 @@ def edit_employee(emp_id):
                             appraisal_supervisors=appraisal_supervisors, leave_approvers=leave_approvers,
                             hr_accounts=hr_accounts, clockin_locations=clockin_locations,
                             schedule_error=SCHEDULE_ERRORS.get(request.args.get("schedule_err")),
+                            overseas_assignments=overseas_assignments, performance_evaluations=performance_evaluations,
+                            current_assignment=current_assignment, long_service_milestone=long_service_milestone,
                             tax_profile=tax_profile)
 
 
@@ -1573,6 +1603,138 @@ def delete_al_adjustment(emp_id, adj_id):
     )
     db.commit()
     return redirect(url_for("edit_employee", emp_id=emp_id))
+
+
+# ---------------- Overseas Assignment Log ----------------
+# The Long-Service Appreciation policy's 6/9/12-month milestones run from
+# an assignment's own start_date, not Date Joined - see overseas_assignments'
+# comment in hr_migrate_schema.
+
+def _months_elapsed(start_date, end_date):
+    """Whole calendar months between two ISO dates (e.g. 2026-01-15 to
+    2026-07-14 is 5 months, not 6, since the 15th hasn't come round again) -
+    matches how the policy's "6/9/12 months" reads, rather than a fixed
+    182/273/365-day count."""
+    start = datetime.date.fromisoformat(start_date)
+    end = datetime.date.fromisoformat(end_date)
+    months = (end.year - start.year) * 12 + (end.month - start.month)
+    if end.day < start.day:
+        months -= 1
+    return max(months, 0)
+
+
+LONG_SERVICE_MILESTONES = [(12, 2400), (9, 1700), (6, 1200)]
+
+
+def _long_service_milestone(months):
+    """Highest Long-Service Appreciation milestone reached, as (months,
+    RM amount), or None if under 6 months. Checked highest-first so
+    someone past 12 months doesn't also re-show the 6/9-month rows."""
+    for milestone_months, amount in LONG_SERVICE_MILESTONES:
+        if months >= milestone_months:
+            return milestone_months, amount
+    return None
+
+
+@app.route("/employees/<emp_id>/overseas-assignments/add", methods=["POST"])
+def add_overseas_assignment(emp_id):
+    db = get_db()
+    if db.execute("SELECT 1 FROM employees WHERE emp_id=?", (emp_id,)).fetchone() is None:
+        return "Employee not found", 404
+    base = request.form.get("base", "")
+    start_date = request.form.get("start_date", "")
+    end_date = request.form.get("end_date") or None
+    notes = (request.form.get("notes") or "").strip() or None
+    if base in BASE_OPTIONS and start_date:
+        db.execute(
+            """INSERT INTO overseas_assignments (emp_id, base, start_date, end_date, notes, created_at, created_by)
+               VALUES (?,?,?,?,?,?,?)""",
+            (emp_id, base, start_date, end_date, notes,
+             datetime.datetime.now().isoformat(timespec="seconds"), session.get("hr_username")),
+        )
+        db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id) + "#overseas-assignment-log")
+
+
+@app.route("/employees/<emp_id>/overseas-assignments/<int:assignment_id>/update", methods=["POST"])
+def update_overseas_assignment(emp_id, assignment_id):
+    db = get_db()
+    base = request.form.get("base", "")
+    start_date = request.form.get("start_date", "")
+    end_date = request.form.get("end_date") or None
+    notes = (request.form.get("notes") or "").strip() or None
+    if base in BASE_OPTIONS and start_date:
+        db.execute(
+            """UPDATE overseas_assignments SET base=?, start_date=?, end_date=?, notes=?
+               WHERE id=? AND emp_id=?""",
+            (base, start_date, end_date, notes, assignment_id, emp_id),
+        )
+        db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id) + "#overseas-assignment-log")
+
+
+@app.route("/employees/<emp_id>/overseas-assignments/<int:assignment_id>/delete", methods=["POST"])
+def delete_overseas_assignment(emp_id, assignment_id):
+    db = get_db()
+    db.execute("DELETE FROM overseas_assignments WHERE id=? AND emp_id=?", (assignment_id, emp_id))
+    db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id) + "#overseas-assignment-log")
+
+
+# ---------------- Performance Evaluation Log ----------------
+
+@app.route("/employees/<emp_id>/performance-evaluations/add", methods=["POST"])
+def add_performance_evaluation(emp_id):
+    db = get_db()
+    if db.execute("SELECT 1 FROM employees WHERE emp_id=?", (emp_id,)).fetchone() is None:
+        return "Employee not found", 404
+    eval_date = request.form.get("eval_date", "")
+    mark = (request.form.get("mark") or "").strip() or None
+    notes = (request.form.get("notes") or "").strip() or None
+    if not eval_date:
+        return redirect(url_for("edit_employee", emp_id=emp_id) + "#performance-evaluation-log")
+    original_name = stored_name = None
+    file = request.files.get("file")
+    if file is not None and file.filename != "":
+        candidate_name = secure_filename(file.filename)
+        ext = candidate_name.rsplit(".", 1)[-1].lower() if "." in candidate_name else ""
+        if ext not in ALLOWED_DOC_EXTENSIONS:
+            return "File type not allowed. Use PDF, Word, or an image (JPG/PNG).", 400
+        emp_dir = os.path.join(UPLOAD_DIR, emp_id)
+        os.makedirs(emp_dir, exist_ok=True)
+        stored_name = f"{uuid.uuid4().hex}_{candidate_name}"
+        file.save(os.path.join(emp_dir, stored_name))
+        original_name = candidate_name
+    db.execute(
+        """INSERT INTO performance_evaluations (emp_id, eval_date, mark, notes, original_name, stored_name,
+               uploaded_at, uploaded_by) VALUES (?,?,?,?,?,?,?,?)""",
+        (emp_id, eval_date, mark, notes, original_name, stored_name,
+         datetime.datetime.now().isoformat(timespec="seconds"), session.get("hr_username")),
+    )
+    db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id) + "#performance-evaluation-log")
+
+
+@app.route("/employees/<emp_id>/performance-evaluations/<int:eval_id>/download")
+def download_performance_evaluation(emp_id, eval_id):
+    db = get_db()
+    row = db.execute(
+        "SELECT * FROM performance_evaluations WHERE id=? AND emp_id=?", (eval_id, emp_id)
+    ).fetchone()
+    if row is None or not row["stored_name"]:
+        return "File not found", 404
+    return send_from_directory(
+        os.path.join(UPLOAD_DIR, emp_id), row["stored_name"],
+        as_attachment=True, download_name=row["original_name"],
+    )
+
+
+@app.route("/employees/<emp_id>/performance-evaluations/<int:eval_id>/delete", methods=["POST"])
+def delete_performance_evaluation(emp_id, eval_id):
+    db = get_db()
+    db.execute("DELETE FROM performance_evaluations WHERE id=? AND emp_id=?", (eval_id, emp_id))
+    db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id) + "#performance-evaluation-log")
 
 
 # ---------------- Working Schedule History ----------------
@@ -2766,6 +2928,67 @@ def confirmation_due():
     return render_template("confirmation_due.html", due=due, missing=missing, today=today,
                             passport_alerts=passport_alerts, work_permit_alerts=work_permit_alerts,
                             confirmed=confirmed, profile_updates=profile_updates)
+
+
+@app.route("/overseas-assignments")
+def overseas_assignments_report():
+    """One row per employee currently on (or ever put on) an overseas
+    assignment, for the Long-Service Appreciation policy: milestone
+    status, Work Permit expiry countdown (reused from the Alerts page),
+    Home Leave (Malaysia) trip count within the current assignment, and
+    the latest Performance Evaluation mark on file. Read-only - editing
+    happens on each employee's own Overseas Assignment Log."""
+    db = get_db()
+    today_iso = datetime.date.today().isoformat()
+    try:
+        assignments = db.execute(
+            """SELECT oa.*, e.full_name, e.department, e.position, e.work_permit_expiry
+               FROM overseas_assignments oa JOIN employees e ON e.emp_id = oa.emp_id
+               ORDER BY oa.emp_id, oa.start_date DESC"""
+        ).fetchall()
+    except sqlite3.OperationalError:
+        assignments = []
+    work_permit_days_left = {r["emp_id"]: r for r in _rows_with_days_left(db, "work_permit_expiry")}
+
+    rows = []
+    seen_emp_ids = set()
+    for a in assignments:
+        if a["emp_id"] in seen_emp_ids:
+            continue  # only the most recent assignment per employee (already ORDERed)
+        seen_emp_ids.add(a["emp_id"])
+        end_for_calc = a["end_date"] or today_iso
+        months = _months_elapsed(a["start_date"], end_for_calc)
+        milestone = _long_service_milestone(months) if not a["end_date"] else None
+        trip_count = 0
+        try:
+            trip_count = db.execute(
+                """SELECT COUNT(*) AS c FROM business_trips
+                   WHERE emp_id=? AND notice_type='Home Leave (Malaysia)' AND status='Approved'
+                     AND start_date >= ?""",
+                (a["emp_id"], a["start_date"]),
+            ).fetchone()["c"]
+        except sqlite3.OperationalError:
+            pass
+        latest_eval = None
+        try:
+            latest_eval = db.execute(
+                "SELECT eval_date, mark FROM performance_evaluations WHERE emp_id=? ORDER BY eval_date DESC LIMIT 1",
+                (a["emp_id"],),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            pass
+        wp = work_permit_days_left.get(a["emp_id"])
+        rows.append({
+            "emp_id": a["emp_id"], "full_name": a["full_name"], "department": a["department"],
+            "position": a["position"], "base": a["base"], "start_date": a["start_date"],
+            "end_date": a["end_date"], "ongoing": not a["end_date"], "months_elapsed": months,
+            "milestone": milestone, "home_leave_trip_count": trip_count,
+            "latest_eval_date": latest_eval["eval_date"] if latest_eval else None,
+            "latest_mark": latest_eval["mark"] if latest_eval else None,
+            "work_permit_expiry": a["work_permit_expiry"],
+            "work_permit_days_left": wp["days_left"] if wp else None,
+        })
+    return render_template("overseas_assignments_report.html", rows=rows)
 
 
 @app.route("/confirmation-letter/<emp_id>")
@@ -6539,10 +6762,12 @@ def review_business_trip(trip_id):
            WHERE id=?""",
         (decision, reviewer, datetime.datetime.now().isoformat(timespec="seconds"), notes, trip_id),
     )
-    if decision == "Approved" and trip["notice_type"] == "Unrecorded Leave":
-        # Special Leave granted to the employee to explain an attendance gap
-        # after the fact - recorded as Other Paid Leave (paid, not deducted
-        # from AL/UL), same bucket as Maternity/Paternity and Emergency Leave.
+    if decision == "Approved" and trip["notice_type"] in PAID_TRIP_NOTICE_TYPES:
+        # Unrecorded Leave explains an attendance gap after the fact; Home
+        # Leave (Malaysia) is a planned trip home for an overseas-assignment
+        # staff member. Both are recorded as Other Paid Leave (paid, not
+        # deducted from AL/UL), same bucket as Maternity/Paternity and
+        # Emergency Leave.
         _sync_days_to_attendance_monthly(db, trip["emp_id"], trip["start_date"], trip["end_date"], "other_paid_leave")
         _sync_days_to_attendance_daily(db, trip["emp_id"], trip["start_date"], trip["end_date"], "OTHER_PAID")
     db.commit()
@@ -7279,6 +7504,32 @@ def hr_migrate_schema():
             message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Pending',
             submitted_at TEXT NOT NULL, reviewed_by TEXT, reviewed_at TEXT, review_notes TEXT)""")
         applied.append("table: leave_change_requests")
+
+    if "overseas_assignments" not in existing_tables:
+        # One row per posting to an overseas location (e.g. China), for the
+        # Long-Service Appreciation policy's 6/9/12-month milestones. The
+        # milestone clock runs from start_date - Date Joined isn't right
+        # for someone posted overseas partway through their career. NULL
+        # end_date = still on assignment. A Home Leave (Malaysia) trip
+        # (business_trips) doesn't close this out or reset the clock -
+        # only ending the assignment (setting end_date) does.
+        db.execute("""CREATE TABLE overseas_assignments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),
+            base TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT, notes TEXT,
+            created_at TEXT NOT NULL, created_by TEXT)""")
+        applied.append("table: overseas_assignments")
+
+    if "performance_evaluations" not in existing_tables:
+        # The China-side performance evaluation form(s) behind a Long-
+        # Service Appreciation Payment's merit adjustment - an employee can
+        # have several over an assignment, each with its own mark and the
+        # scanned/uploaded form itself.
+        db.execute("""CREATE TABLE performance_evaluations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL REFERENCES employees(emp_id),
+            eval_date TEXT NOT NULL, mark TEXT, notes TEXT,
+            original_name TEXT, stored_name TEXT,
+            uploaded_at TEXT NOT NULL, uploaded_by TEXT)""")
+        applied.append("table: performance_evaluations")
 
     if "clockin_events" not in existing_tables:
         db.execute("""CREATE TABLE clockin_events (

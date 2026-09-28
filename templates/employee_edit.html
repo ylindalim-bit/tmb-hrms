@@ -637,6 +637,117 @@
   {% endif %}
 </div>
 
+<div class="card" id="overseas-assignment-log">
+  <h2 style="margin-top:0;">Overseas Assignment Log</h2>
+  <p style="color:var(--muted); font-size:12px; margin-top:-4px;">
+    For the Long-Service Appreciation policy's 6/9/12-month milestones, which run from when an assignment
+    actually started - not Date Joined. Leave End Date blank while the assignment is still ongoing; a Home
+    Leave (Malaysia) trip (Business Trips) doesn't end it or reset the clock.
+  </p>
+  {% if current_assignment %}
+  <div class="card" style="background:{{ '#dcfce7' if long_service_milestone else '#eef2ff' }}; border-color:{{ 'var(--good)' if long_service_milestone else 'var(--accent)' }}; padding:10px 14px; margin-top:10px;">
+    <strong>Currently on assignment in {{ current_assignment.base }}</strong> since {{ current_assignment.start_date }}
+    &mdash; {{ current_assignment.months_elapsed }} month{{ "s" if current_assignment.months_elapsed != 1 }} so far.
+    {% if long_service_milestone %}
+    <br>Milestone reached: <strong>{{ long_service_milestone[0] }} months &rarr; RM{{ "%.2f"|format(long_service_milestone[1]) }}</strong>
+    (before merit adjustment - log the final amount, with the Performance Evaluation below considered, in Company Payments Log).
+    {% else %}
+    <br>Next milestone: 6 months &rarr; RM1,200.00.
+    {% endif %}
+  </div>
+  {% endif %}
+  {% for a in overseas_assignments %}
+  <form id="oa-save-{{ a.id }}" method="post" action="{{ url_for('update_overseas_assignment', emp_id=emp.emp_id, assignment_id=a.id) }}"></form>
+  {% endfor %}
+  <form method="post" action="{{ url_for('add_overseas_assignment', emp_id=emp.emp_id) }}">
+    <div class="form-grid">
+      <div><label>Base</label>
+        <select name="base" required>
+          <option value="">-- Select --</option>
+          {% for b in base_options %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
+        </select>
+      </div>
+      <div><label>Start Date</label><input type="date" name="start_date" required></div>
+      <div><label>End Date (blank if ongoing)</label><input type="date" name="end_date"></div>
+      <div><label>Notes</label><input type="text" name="notes" placeholder="e.g. Posted to support new production line" style="width:100%;"></div>
+    </div>
+    <div class="form-actions"><button class="btn" type="submit">Add Assignment</button></div>
+  </form>
+  {% if overseas_assignments %}
+  <div class="table-wrap" style="margin-top:14px;">
+  <table>
+    <thead><tr><th class="text">Base</th><th class="text">Start Date</th><th class="text">End Date</th><th>Months</th><th class="text">Notes</th><th class="text">Added By</th><th></th></tr></thead>
+    <tbody>
+      {% for a in overseas_assignments %}
+      <tr>
+        <td class="text">
+          <select form="oa-save-{{ a.id }}" name="base">
+            {% for b in base_options %}<option value="{{ b }}" {% if a.base == b %}selected{% endif %}>{{ b }}</option>{% endfor %}
+          </select>
+        </td>
+        <td class="text"><input form="oa-save-{{ a.id }}" type="date" name="start_date" value="{{ a.start_date }}"></td>
+        <td class="text"><input form="oa-save-{{ a.id }}" type="date" name="end_date" value="{{ a.end_date or '' }}"></td>
+        <td>{{ a.months_elapsed }}{% if not a.end_date %} (ongoing){% endif %}</td>
+        <td class="text"><input form="oa-save-{{ a.id }}" type="text" name="notes" value="{{ a.notes or '' }}" style="width:100%;"></td>
+        <td class="text">{{ a.created_by or "-" }}</td>
+        <td class="text" style="white-space:nowrap;">
+          <button form="oa-save-{{ a.id }}" type="submit" class="btn" style="padding:3px 8px; font-size:11px;">Save</button>
+          <form method="post" action="{{ url_for('delete_overseas_assignment', emp_id=emp.emp_id, assignment_id=a.id) }}" onsubmit="return confirm('Delete this assignment record?');" style="display:inline;">
+            <button type="submit" class="btn secondary" style="padding:3px 8px; font-size:11px; color:var(--danger);">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card" id="performance-evaluation-log">
+  <h2 style="margin-top:0;">Performance Evaluation Log</h2>
+  <p style="color:var(--muted); font-size:12px; margin-top:-4px;">
+    Performance evaluation forms received (e.g. from the overseas site), each with its mark - the merit
+    input for a Long-Service Appreciation Payment. An employee can have more than one over an assignment.
+  </p>
+  <form method="post" action="{{ url_for('add_performance_evaluation', emp_id=emp.emp_id) }}" enctype="multipart/form-data">
+    <div class="form-grid">
+      <div><label>Evaluation Date</label><input type="date" name="eval_date" required></div>
+      <div><label>Mark</label><input type="text" name="mark" placeholder="e.g. 92 or A"></div>
+      <div><label>Notes</label><input type="text" name="notes" placeholder="e.g. Q2 2026 review" style="width:100%;"></div>
+      <div><label>Evaluation Form</label><input type="file" name="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"></div>
+    </div>
+    <div class="form-actions"><button class="btn" type="submit">Add Evaluation</button></div>
+  </form>
+  {% if performance_evaluations %}
+  <div class="table-wrap" style="margin-top:14px;">
+  <table>
+    <thead><tr><th class="text">Date</th><th class="text">Mark</th><th class="text">Notes</th><th class="text">Form</th><th class="text">Added By</th><th></th></tr></thead>
+    <tbody>
+      {% for pe in performance_evaluations %}
+      <tr>
+        <td class="text">{{ pe.eval_date }}</td>
+        <td class="text">{{ pe.mark or "-" }}</td>
+        <td class="text">{{ pe.notes or "" }}</td>
+        <td class="text">
+          {% if pe.stored_name %}
+          <a href="{{ url_for('download_performance_evaluation', emp_id=emp.emp_id, eval_id=pe.id) }}">{{ pe.original_name }}</a>
+          {% else %}<span style="color:var(--muted);">-</span>{% endif %}
+        </td>
+        <td class="text">{{ pe.uploaded_by or "-" }}</td>
+        <td class="text">
+          <form method="post" action="{{ url_for('delete_performance_evaluation', emp_id=emp.emp_id, eval_id=pe.id) }}" onsubmit="return confirm('Delete this evaluation record?');">
+            <button type="submit" class="btn secondary" style="padding:3px 8px; font-size:11px; color:var(--danger);">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</div>
+
 <div class="card">
   <h2 style="margin-top:0;">Company Payments Log</h2>
   <p style="color:var(--muted); font-size:12px; margin-top:-4px;">

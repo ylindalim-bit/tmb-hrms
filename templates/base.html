@@ -55,6 +55,7 @@
     <a href="{{ url_for('business_trips_admin') }}">Business Trips
       {% if pending_trip_count %}<span class="pill draft" style="margin-left:3px;">{{ pending_trip_count }}</span>{% endif %}
     </a>
+    <a href="{{ url_for('overseas_assignments_report') }}">Overseas Assignments</a>
     <a href="{{ url_for('medical_claims_admin') }}">Medical Claims
       {% if pending_medical_claim_count %}<span class="pill draft" style="margin-left:3px;">{{ pending_medical_claim_count }}</span>{% endif %}
     </a>

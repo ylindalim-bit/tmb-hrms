@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Overseas Assignments - TMB Payroll{% endblock %}
+{% block extra_style %}
+<style>
+  .print-only { display: none; }
+  @media print {
+    @page { size: A4 landscape; margin: 10mm; }
+    .print-only { display: block; }
+    table { font-size: 10px; width: 100%; }
+    th, td { padding: 3px 5px; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="sticky-page-header no-print" style="display:flex; justify-content:space-between; align-items:center;">
+  <h1 style="margin-bottom:0;">Overseas Assignments &mdash; Long-Service Appreciation</h1>
+  <button class="btn" type="button" onclick="window.print()">Print / Save as PDF</button>
+</div>
+<div class="print-only" style="margin-bottom:12px;">
+  <strong>TIANMA PRECISION SDN BHD</strong><br>
+  Overseas Assignments &mdash; Long-Service Appreciation
+</div>
+
+<p class="no-print" style="color:var(--muted); font-size:13px;">
+  One row per employee with an Overseas Assignment on file (added on their own Employee Edit page). Milestone
+  is only shown while an assignment is still ongoing (no End Date) - once it ends, log the final Long-Service
+  Appreciation amount, merit-adjusted per the Performance Evaluation mark(s), in that employee's Company
+  Payments Log. Home Leave trip count only counts approved "Home Leave (Malaysia)" Movement Notices from the
+  current assignment's Start Date onward - it does not affect the milestone clock.
+</p>
+
+{% if not rows %}
+<div class="card" style="color:var(--muted);">No employees have an Overseas Assignment logged yet - add one on the employee's own Edit page.</div>
+{% else %}
+<div class="card table-wrap frozen-header">
+<table>
+<thead>
+<tr>
+  <th class="text">Emp ID</th><th class="text">Name</th><th class="text">Department</th><th class="text">Base</th>
+  <th class="text">Start Date</th><th class="text">End Date</th><th>Months</th><th class="text">Milestone</th>
+  <th>Home Leave Trips</th><th class="text">Latest Eval</th><th class="text">Work Permit Expiry</th>
+</tr>
+</thead>
+<tbody>
+{% for r in rows %}
+<tr{% if r.ongoing and r.work_permit_days_left is not none and r.work_permit_days_left < 60 %} style="background:#fee2e2;"{% endif %}>
+  <td class="text"><a class="emp-link" href="{{ url_for('edit_employee', emp_id=r.emp_id) }}#overseas-assignment-log">{{ r.emp_id }}</a></td>
+  <td class="text">{{ r.full_name }}</td>
+  <td class="text">{{ r.department or "-" }}</td>
+  <td class="text">{{ r.base }}</td>
+  <td class="text">{{ r.start_date }}</td>
+  <td class="text">{{ r.end_date or "Ongoing" }}</td>
+  <td>{{ r.months_elapsed }}</td>
+  <td class="text">
+    {% if r.milestone %}<strong>{{ r.milestone[0] }} mo &rarr; RM{{ "%.2f"|format(r.milestone[1]) }}</strong>
+    {% elif r.ongoing %}<span style="color:var(--muted);">Next: 6 mo</span>
+    {% else %}<span style="color:var(--muted);">Assignment ended</span>{% endif %}
+  </td>
+  <td>{{ r.home_leave_trip_count }}</td>
+  <td class="text">
+    {% if r.latest_eval_date %}{{ r.latest_eval_date }} ({{ r.latest_mark or "no mark" }})
+    {% else %}<span style="color:var(--muted);">None on file</span>{% endif %}
+  </td>
+  <td class="text">
+    {{ r.work_permit_expiry or "-" }}
+    {% if r.work_permit_days_left is not none %}
+    <span style="{% if r.work_permit_days_left < 0 %}color:var(--danger); font-weight:600;{% elif r.work_permit_days_left < 60 %}color:#92400e; font-weight:600;{% endif %}">
+      ({{ r.work_permit_days_left }} day{{ "s" if r.work_permit_days_left != 1 }}{{ " overdue" if r.work_permit_days_left < 0 else " left" }})
+    </span>
+    {% endif %}
+  </td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

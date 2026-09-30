@@ -3722,6 +3722,180 @@ def _pad_num(cents, width):
     return str(int(round(cents)))[:width].rjust(width, "0")
 
 
+# OCBC Velocity "Giro Payment With Check ID (MY)" fixed-width file format
+# for bulk salary crediting (last modified 1 Oct 2013, OCBC business
+# banking spec). Three record types, each padded to exactly 480 chars:
+# Header (01, once), Detail (02, one per employee), Trailer (03, once).
+# Receiving FI ID is each payee bank's Rentas BIC code (PayNet's official
+# interbank participant list), left-justified into the 9-char field.
+BANK_FI_CODES = {
+    "MBB": "MBBEMYKL", "MAYBANK": "MBBEMYKL",
+    "CIMB": "CIBBMYKL", "CIMB BANK": "CIBBMYKL",
+    "PBB": "PBBEMYKL", "PUBLIC BANK": "PBBEMYKL",
+    "RHB": "RHBBMYKL", "RHB BANK": "RHBBMYKL",
+    "HLB": "HLBBMYKL", "HONG LEONG": "HLBBMYKL", "HONG LEONG BANK": "HLBBMYKL",
+    "AMBANK": "ARBKMYKL", "AM BANK": "ARBKMYKL",
+    "OCBC": "OCBCMYKL", "OCBC BANK": "OCBCMYKL",
+    "B.ISLAM": "BIMBMYKL", "BANK ISLAM": "BIMBMYKL",
+    "B.MUAMALAT": "BMMBMYKL", "BANK MUAMALAT": "BMMBMYKL",
+    "AFFIN": "PHBMMYKL", "AFFIN BANK": "PHBMMYKL",
+    "ALLIANCE": "MFBBMYKL", "ALLIANCE BANK": "MFBBMYKL",
+    "BANK RAKYAT": "BKRMMYKL",
+    "BSN": "BSNAMYK1",
+    "HSBC": "HBMBMYKL",
+    "STANDARD CHARTERED": "SCBLMYKX",
+    "UOB": "UOVBMYKL",
+}
+
+OCBC_BANK_FILE_FIELDS = [
+    ("ocbc_branch_code", "OCBC Branch No. (5 digits, e.g. 00701)"),
+    ("ocbc_company_cif", 'Company CIF# (leave blank to default to "A999999")'),
+    ("ocbc_company_account_no", "Company OCBC Account No. (salary is debited from this account)"),
+]
+
+
+def get_ocbc_bank_file_settings(db):
+    rows = {r["key"]: r["value"] for r in db.execute(
+        "SELECT key, value FROM payroll_settings WHERE key IN ({})".format(
+            ",".join("?" * len(OCBC_BANK_FILE_FIELDS))
+        ),
+        [k for k, _ in OCBC_BANK_FILE_FIELDS],
+    ).fetchall()}
+    return {k: rows.get(k) or "" for k, _ in OCBC_BANK_FILE_FIELDS}
+
+
+def _build_ocbc_giro_file(db, year, month, value_date, consume_tape_id=True):
+    """Builds the OCBC Velocity "Giro Payment With Check ID (MY)" bulk
+    payment file content for a month's payroll (net pay), plus the list of
+    employees skipped for missing/unrecognised bank details. Set
+    consume_tape_id=False for a preview (review page) so looking at the
+    file doesn't burn a Tape Id that a real download would then also need -
+    Tape Id only has to be unique per value date, and the review page may
+    be viewed more than once before an actual download happens."""
+    settings = get_ocbc_bank_file_settings(db)
+    rows = db.execute(
+        """SELECT pr.*, e.full_name, e.bank_name, e.bank_account_no, e.ic_passport_no
+           FROM payroll_runs pr JOIN employees e ON e.emp_id = pr.emp_id
+           WHERE pr.year=? AND pr.month=? AND pr.net_pay > 0 ORDER BY pr.emp_id""",
+        (year, month),
+    ).fetchall()
+
+    skipped = []
+    details = []
+    total_cents = 0
+    for r in rows:
+        bank_key = (r["bank_name"] or "").strip().upper()
+        fi_id = BANK_FI_CODES.get(bank_key)
+        if not r["bank_account_no"] or not fi_id:
+            skipped.append({"emp_id": r["emp_id"], "full_name": r["full_name"],
+                             "bank_name": r["bank_name"], "reason": "no bank account on file"
+                             if not r["bank_account_no"] else f"bank '{r['bank_name']}' not recognised"})
+            continue
+        ic = r["ic_passport_no"] or ""
+        new_ic = ic if ic.isdigit() and len(ic) <= 12 else ""
+        amount_cents = int(round((r["net_pay"] or 0) * 100))
+        total_cents += amount_cents
+        details.append(
+            "02"
+            + _pad_left(r["bank_account_no"], 20)
+            + _pad_num(amount_cents, 17)
+            + "C"
+            + _pad_left(new_ic, 12)
+            + _pad_left("", 8)          # Old IC No. - not tracked separately
+            + _pad_left("SALARY", 20)   # Txn description/Recipient's Reference
+            + _pad_left("", 20)         # Business Registration No.
+            + _pad_left("", 20)         # Reference Number/Other Payment Details
+            + _pad_left(fi_id, 9)       # Receiving FI ID
+            + _pad_left(r["full_name"], 22)
+            + _pad_left("", 20)         # Police/Army ID/Passport no.
+            + _pad_left("", 1)          # Send Advice Via
+            + _pad_left("", 50)         # E-mail
+            + _pad_left("", 24)         # Fax No.
+            + _pad_left("N", 1)         # Require ID Check
+            + _pad_left("", 233)        # Filler
+        )
+
+    if consume_tape_id:
+        seq_row = db.execute("SELECT value FROM payroll_settings WHERE key='ocbc_next_tape_id'").fetchone()
+        tape_id = (int(seq_row["value"]) if seq_row else 0) + 1
+        db.execute(
+            """INSERT INTO payroll_settings (key, value) VALUES ('ocbc_next_tape_id', ?)
+               ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
+            (str(tape_id),),
+        )
+        db.commit()
+    else:
+        seq_row = db.execute("SELECT value FROM payroll_settings WHERE key='ocbc_next_tape_id'").fetchone()
+        tape_id = (int(seq_row["value"]) if seq_row else 0) + 1
+
+    vd_year, vd_month, vd_day = value_date.split("-")
+    crediting_date = vd_day + vd_month + vd_year  # DDMMCCYY
+    header = (
+        "01"
+        + _pad_num(tape_id, 3)
+        + str(settings["ocbc_branch_code"]).strip().rjust(5, "0")[-5:]
+        + _pad_left(settings["ocbc_company_cif"] or "A999999", 20)
+        + _pad_left(get_employer_info(db)["company_name"], 30)
+        + str(settings["ocbc_company_account_no"]).strip().rjust(20, "0")[-20:]
+        + "D"
+        + "N"
+        + crediting_date
+        + _pad_left("", 40)
+        + _pad_left(f"SALARY {month:02d}{year:04d}", 16)
+        + _pad_left("", 334)
+    )
+    trailer = (
+        "03"
+        + _pad_num(len(details), 6)
+        + _pad_num(total_cents, 19)
+        + _pad_left("", 453)
+    )
+    content = "\r\n".join([header] + details + [trailer]) + "\r\n" if details else ""
+    return content, skipped, len(details), total_cents
+
+
+@app.route("/payroll/<int:year>/<int:month>/ocbc-payment-file")
+def ocbc_payment_file(year, month):
+    """Review page before downloading the OCBC bulk payment file - shows
+    how many employees will be paid, the total amount, and (crucially)
+    lists anyone skipped for missing/unrecognised bank details, so that
+    doesn't silently happen unnoticed. The actual download is a separate
+    route/click so viewing this page never consumes a Tape Id."""
+    db = get_db()
+    settings = get_ocbc_bank_file_settings(db)
+    if not settings["ocbc_branch_code"] or not settings["ocbc_company_account_no"]:
+        return ("OCBC bank file settings are incomplete - fill in the Branch No. and "
+                "Company Account No. under Settings first."), 400
+    value_date = request.args.get("value_date") or f"{year:04d}-{month:02d}-{PAYMENT_DAY:02d}"
+    _content, skipped, count, total_cents = _build_ocbc_giro_file(db, year, month, value_date, consume_tape_id=False)
+    if count == 0:
+        return "No employees with recognised bank details to pay for this month.", 400
+    return render_template("ocbc_payment_file_review.html", year=year, month=month,
+                            value_date=value_date, skipped=skipped, count=count,
+                            total_amount=total_cents / 100)
+
+
+@app.route("/payroll/<int:year>/<int:month>/ocbc-payment-file/download")
+def ocbc_payment_file_download(year, month):
+    """Actually generates and downloads the OCBC bulk payment file - upload
+    it under Transactions > File Upload > GIRO Payroll Check ID (MY) in
+    Velocity, then have your Authoriser approve it there."""
+    db = get_db()
+    settings = get_ocbc_bank_file_settings(db)
+    if not settings["ocbc_branch_code"] or not settings["ocbc_company_account_no"]:
+        return ("OCBC bank file settings are incomplete - fill in the Branch No. and "
+                "Company Account No. under Settings first."), 400
+    value_date = request.args.get("value_date") or f"{year:04d}-{month:02d}-{PAYMENT_DAY:02d}"
+    content, _skipped, count, _total_cents = _build_ocbc_giro_file(db, year, month, value_date, consume_tape_id=True)
+    if count == 0:
+        return "No employees with recognised bank details to pay for this month.", 400
+    filename = f"OCBC_GIRO_PAYROLL_{month:02d}{year:04d}.txt"
+    return Response(
+        content, mimetype="text/plain",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 @app.route("/socso-eis-textfile/<int:year>/<int:month>")
 def socso_eis_textfile(year, month):
     db = get_db()
@@ -3894,6 +4068,15 @@ def payroll_settings_page():
             db.commit()
             return redirect(url_for("payroll_settings_page"))
 
+        if request.form.get("form") == "ocbc_bank_file":
+            for key, _ in OCBC_BANK_FILE_FIELDS:
+                db.execute(
+                    "INSERT INTO payroll_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (key, request.form.get(key, "").strip()),
+                )
+            db.commit()
+            return redirect(url_for("payroll_settings_page"))
+
         raw = request.form.get("payslip_release_day", "").strip()
         try:
             day = int(raw)
@@ -3915,6 +4098,8 @@ def payroll_settings_page():
     return render_template("settings.html", release_day=release_day, error=error,
                             payment_day=PAYMENT_DAY, employer_info_fields=EMPLOYER_INFO_FIELDS,
                             employer_info=get_employer_info(db),
+                            ocbc_bank_file_fields=OCBC_BANK_FILE_FIELDS,
+                            ocbc_bank_file_settings=get_ocbc_bank_file_settings(db),
                             company_logo_filename=logo_row["value"] if logo_row else None)
 
 

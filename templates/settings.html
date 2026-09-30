@@ -39,6 +39,25 @@
 </div>
 
 <div class="card" style="max-width:480px;">
+  <h2 style="margin-top:0;">OCBC Bulk Payment File</h2>
+  <p style="color:var(--muted); font-size:13px; margin-top:0;">
+    Used to generate the OCBC Velocity "GIRO Payroll Check ID (MY)" bulk payment file from the Payroll page
+    (Transactions &gt; File Upload &gt; GIRO Payroll Check ID (MY) in Velocity, then have your Authoriser
+    approve it there).
+  </p>
+  <form method="post">
+    <input type="hidden" name="form" value="ocbc_bank_file">
+    {% for key, label in ocbc_bank_file_fields %}
+    <div style="margin-bottom:10px;">
+      <label style="display:block; font-size:12px; font-weight:600; color:var(--muted); margin-bottom:4px;">{{ label }}</label>
+      <input type="text" name="{{ key }}" value="{{ ocbc_bank_file_settings[key] }}" style="width:100%;">
+    </div>
+    {% endfor %}
+    <button class="btn" type="submit">Save</button>
+  </form>
+</div>
+
+<div class="card" style="max-width:480px;">
   <h2 style="margin-top:0;">Staff Portal &mdash; Payslip Release Date</h2>
   {% if error %}<div style="color:var(--danger); font-size:13px; margin-bottom:12px;">{{ error }}</div>{% endif %}
   <p style="color:var(--muted); font-size:13px; margin-top:0;">

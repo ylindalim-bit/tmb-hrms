@@ -3896,6 +3896,360 @@ def ocbc_payment_file_download(year, month):
     )
 
 
+# OCBC Velocity fixed-width formats for statutory body payments (KWSP,
+# SOCSO/EIS, LHDN) - same 480-char-line convention as the GIRO Payroll
+# format above, each verified position-by-position against OCBC's own
+# sample files (KWSP file upload format 3.0, SOCSO file upload format
+# 5.0, LHDN format). All three reuse the shared branch/account settings
+# from OCBC_BANK_FILE_FIELDS, plus each statutory body's employer
+# reference number already on file under Settings > Employer Information.
+
+
+def _ocbc_statutory_header_common(db, settings, tape_id, app_id, debiting_date):
+    """The first 100 chars every statutory header shares: Record ID,
+    Filler/description, Tape Id, Branch, Company name, Debit A/c No.,
+    Instruction, Reversal Indicator, Debiting Date, Application ID."""
+    return (
+        _pad_num(tape_id, 3)
+        + str(settings["ocbc_branch_code"]).strip().rjust(5, "0")[-5:]
+        + _pad_left(get_employer_info(db)["company_name"], 30)
+        + str(settings["ocbc_company_account_no"]).strip().rjust(20, "0")[-20:]
+        + "D"
+        + " "
+        + debiting_date
+        + _pad_left(app_id, 10)
+    )
+
+
+def _next_ocbc_tape_id(db, key, consume):
+    seq_row = db.execute("SELECT value FROM payroll_settings WHERE key=?", (key,)).fetchone()
+    tape_id = (int(seq_row["value"]) if seq_row else 0) + 1
+    if consume:
+        db.execute(
+            "INSERT INTO payroll_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, str(tape_id)),
+        )
+        db.commit()
+    return tape_id
+
+
+def _build_ocbc_kwsp_file(db, year, month, value_date, test_file, consume_tape_id=True):
+    """OCBC "KWSP file upload format 3.0" - pays each employee's combined
+    employer+employee EPF contribution in one file. Cents are not allowed
+    per spec, so each contribution is rounded to the nearest ringgit
+    before being encoded."""
+    settings = get_ocbc_bank_file_settings(db)
+    employer_info = get_employer_info(db)
+    rows = db.execute(
+        """SELECT pr.*, e.full_name, e.epf_no
+           FROM payroll_runs pr JOIN employees e ON e.emp_id = pr.emp_id
+           WHERE pr.year=? AND pr.month=? AND (pr.epf_employer + pr.epf_employee) > 0
+           ORDER BY pr.emp_id""",
+        (year, month),
+    ).fetchall()
+    skipped = [{"emp_id": r["emp_id"], "full_name": r["full_name"], "reason": "no EPF No. on file"}
+               for r in rows if not r["epf_no"]]
+    rows = [r for r in rows if r["epf_no"]]
+
+    tape_id = _next_ocbc_tape_id(db, "ocbc_next_tape_id_kwsp", consume_tape_id)
+    vd_year, vd_month, vd_day = value_date.split("-")
+    debiting_date = vd_day + vd_month + vd_year  # DDMMYYYY
+    header = (
+        "01"
+        + _pad_left("EPF MONTHLY FORM A", 20)
+        + _ocbc_statutory_header_common(db, settings, tape_id, "KWSP", debiting_date)
+        + str(employer_info["epf_employer_no"]).strip().rjust(19, "0")[-19:]
+        + f"{month:02d}{year:04d}"           # Contribution/Deduction Month MMYYYY
+        + "014"                              # State Code
+        + _pad_left(employer_info["director_name"], 40)   # Contact Person Name
+        + str(employer_info["director_hp_no"]).strip().rjust(20, "0")[-20:]
+        + "N"                                # Payment Indicator
+        + "00"                               # Sequence Number
+        + ("Y" if test_file else "N")
+        + _pad_left("", 16)                  # Customer's Batch Reference
+        + _pad_left("", 272)
+    )
+    details = []
+    total_er = total_ee = 0
+    for r in rows:
+        er_cents = int(round(r["epf_employer"] or 0)) * 100
+        ee_cents = int(round(r["epf_employee"] or 0)) * 100
+        salary_cents = int(round(r["gross_pay"] or 0)) * 100
+        total_er += er_cents
+        total_ee += ee_cents
+        details.append(
+            "02"
+            + str(r["epf_no"]).strip().rjust(19, "0")[-19:]
+            + _pad_left("", 15)               # Employee's Identification No. (with KWSP) - not tracked
+            + _pad_left(r["full_name"], 40)
+            + _pad_left("", 40)                # Name line 2
+            + _pad_left(r["emp_id"], 20)        # Employee's Staff ID No.
+            + _pad_num(er_cents, 17)
+            + _pad_num(ee_cents, 17)
+            + _pad_num(salary_cents, 17)
+            + _pad_left("", 293)
+        )
+    trailer = (
+        "99"
+        + _pad_num(len(details), 7)
+        + _pad_num(total_er, 17)
+        + _pad_num(total_ee, 17)
+        + _pad_left("", 20)                    # Hash Total
+        + _pad_left("", 417)
+    )
+    content = "\r\n".join([header] + details + [trailer]) + "\r\n" if details else ""
+    return content, skipped, len(details), total_er + total_ee
+
+
+def _build_ocbc_socso_file(db, year, month, value_date, test_file, socso_type, consume_tape_id=True):
+    """OCBC "SOCSO file upload format 5.0" - one file per submission type:
+    socso_type="8A" pays the combined SOCSO employer+employee contribution,
+    socso_type="01" pays the combined EIS employer+employee contribution.
+    Uses each employee's IC/passport number as the Identification No.,
+    matching the spec's own example (New IC number)."""
+    settings = get_ocbc_bank_file_settings(db)
+    employer_info = get_employer_info(db)
+    if socso_type == "8A":
+        amount_expr = "(pr.socso_employer + pr.socso_employee)"
+    else:
+        amount_expr = "(pr.eis_employer + pr.eis_employee)"
+    rows = db.execute(
+        f"""SELECT pr.*, e.full_name, e.ic_passport_no
+            FROM payroll_runs pr JOIN employees e ON e.emp_id = pr.emp_id
+            WHERE pr.year=? AND pr.month=? AND {amount_expr} > 0
+            ORDER BY pr.emp_id""",
+        (year, month),
+    ).fetchall()
+    skipped = [{"emp_id": r["emp_id"], "full_name": r["full_name"], "reason": "no IC/passport No. on file"}
+               for r in rows if not r["ic_passport_no"]]
+    rows = [r for r in rows if r["ic_passport_no"]]
+
+    tape_key = "ocbc_next_tape_id_socso" if socso_type == "8A" else "ocbc_next_tape_id_eis"
+    tape_id = _next_ocbc_tape_id(db, tape_key, consume_tape_id)
+    vd_year, vd_month, vd_day = value_date.split("-")
+    debiting_date = vd_day + vd_month + vd_year
+    header = (
+        "01"
+        + _pad_left("", 20)
+        + _ocbc_statutory_header_common(db, settings, tape_id, "SOCSO", debiting_date)
+        + _pad_left("", 9)
+        + f"{month:02d}{year:04d}"
+        + "014"
+        + ("Y" if test_file else "N")
+        + _pad_left("", 16)
+        + socso_type
+        + _pad_left(employer_info["ssm_registration_no"], 20)
+        + _pad_left(employer_info["socso_eis_employer_code"], 12)
+        + _pad_left("", 311)
+    )
+    details = []
+    total_amount = 0
+    for r in rows:
+        amount_cents = int(round((r["socso_employer"] + r["socso_employee"] if socso_type == "8A"
+                                   else r["eis_employer"] + r["eis_employee"]) * 100))
+        total_amount += amount_cents
+        details.append(
+            "02"
+            + _pad_left("", 9)
+            + _pad_left(r["ic_passport_no"], 12)
+            + _pad_left(r["full_name"], 45)
+            + _pad_left("", 4)
+            + _pad_left(employer_info["ssm_registration_no"], 20)
+            + _pad_left("", 8)                 # Employment date - not tracked
+            + " "                              # Employment status - blank = active
+            + _pad_num(amount_cents, 14)
+            + _pad_left("", 365)
+        )
+    trailer = (
+        "99"
+        + _pad_num(len(details), 5)
+        + _pad_num(total_amount, 14)
+        + _pad_left("", 20)
+        + _pad_left("", 439)
+    )
+    content = "\r\n".join([header] + details + [trailer]) + "\r\n" if details else ""
+    return content, skipped, len(details), total_amount
+
+
+def _build_ocbc_lhdn_file(db, year, month, value_date, consume_tape_id=True):
+    """OCBC LHDN format - pays each employee's monthly PCB deduction.
+    CP38 (overdue deduction) isn't tracked separately in this system, so
+    it's always 0; per spec an employee with no PCB and no CP38 can't be
+    included, so only employees with pcb > 0 are selected."""
+    settings = get_ocbc_bank_file_settings(db)
+    employer_info = get_employer_info(db)
+    rows = db.execute(
+        """SELECT pr.*, e.full_name, e.tax_no, e.ic_passport_no
+           FROM payroll_runs pr JOIN employees e ON e.emp_id = pr.emp_id
+           WHERE pr.year=? AND pr.month=? AND pr.pcb > 0 ORDER BY pr.emp_id""",
+        (year, month),
+    ).fetchall()
+
+    tape_id = _next_ocbc_tape_id(db, "ocbc_next_tape_id_lhdn", consume_tape_id)
+    vd_year, vd_month, vd_day = value_date.split("-")
+    debiting_date = vd_day + vd_month + vd_year
+    lhdn_ref = str(employer_info["income_tax_employer_no"]).strip().rjust(10, "0")[-10:]
+    header = (
+        "01"
+        + _pad_left("", 20)
+        + _ocbc_statutory_header_common(db, settings, tape_id, "LHDN", debiting_date)
+        + lhdn_ref
+        + lhdn_ref
+        + f"{month:02d}{year:04d}"
+        + "014"
+        + "N"                                  # No test file for LHDN
+        + _pad_left("", 16)
+        + _pad_left("", 334)
+    )
+    details = []
+    total_pcb = 0
+    for r in rows:
+        pcb_cents = int(round((r["pcb"] or 0) * 100))
+        total_pcb += pcb_cents
+        emp_ref = str(r["tax_no"]).strip().rjust(10, "0")[-10:] if r["tax_no"] else "0" * 10
+        new_ic = r["ic_passport_no"] if r["ic_passport_no"] and r["ic_passport_no"].isdigit() else ""
+        details.append(
+            "02"
+            + emp_ref
+            + "0"                               # Wife Code - not tracked, default 0
+            + _pad_left(new_ic, 12)
+            + _pad_left("", 12)                  # Old IC No.
+            + _pad_left("", 12)                  # Passport No.
+            + _pad_left(r["full_name"], 40)
+            + _pad_left("", 20)                  # Name line 2
+            + _pad_left(r["emp_id"], 10)
+            + _pad_num(pcb_cents, 8)
+            + _pad_num(0, 8)                     # CP38 amount - not tracked
+            + "MY"
+            + _pad_left("", 343)
+        )
+    trailer = (
+        "99"
+        + _pad_num(len(details), 5)
+        + _pad_num(total_pcb, 10)
+        + _pad_num(0, 5)                          # Total CP38 records
+        + _pad_num(0, 10)                         # Total CP38 amount
+        + _pad_left("", 20)                       # Hash Total
+        + _pad_left("", 428)
+    )
+    content = "\r\n".join([header] + details + [trailer]) + "\r\n" if details else ""
+    return content, [], len(details), total_pcb
+
+
+def _ocbc_settings_ready(db):
+    settings = get_ocbc_bank_file_settings(db)
+    return bool(settings["ocbc_branch_code"] and settings["ocbc_company_account_no"])
+
+
+@app.route("/payroll/<int:year>/<int:month>/ocbc-kwsp-file")
+def ocbc_kwsp_file(year, month):
+    db = get_db()
+    if not _ocbc_settings_ready(db):
+        return ("OCBC bank file settings are incomplete - fill in the Branch No. and "
+                "Company Account No. under Settings first."), 400
+    value_date = request.args.get("value_date") or f"{year:04d}-{month:02d}-{PAYMENT_DAY:02d}"
+    test_file = request.args.get("test_file") == "1"
+    _content, skipped, count, total_cents = _build_ocbc_kwsp_file(db, year, month, value_date, test_file, consume_tape_id=False)
+    if count == 0:
+        return "No employees with EPF contribution to pay for this month.", 400
+    return render_template("ocbc_statutory_file_review.html", year=year, month=month, kind="KWSP (EPF)",
+                            value_date=value_date, skipped=skipped, count=count,
+                            total_amount=total_cents / 100, test_file=test_file,
+                            download_url=url_for("ocbc_kwsp_file_download", year=year, month=month,
+                                                  value_date=value_date, test_file="1" if test_file else "0"),
+                            show_test_toggle=True, toggle_url=url_for("ocbc_kwsp_file", year=year, month=month))
+
+
+@app.route("/payroll/<int:year>/<int:month>/ocbc-kwsp-file/download")
+def ocbc_kwsp_file_download(year, month):
+    db = get_db()
+    if not _ocbc_settings_ready(db):
+        return ("OCBC bank file settings are incomplete - fill in the Branch No. and "
+                "Company Account No. under Settings first."), 400
+    value_date = request.args.get("value_date") or f"{year:04d}-{month:02d}-{PAYMENT_DAY:02d}"
+    test_file = request.args.get("test_file") == "1"
+    content, _skipped, count, _total = _build_ocbc_kwsp_file(db, year, month, value_date, test_file, consume_tape_id=True)
+    if count == 0:
+        return "No employees with EPF contribution to pay for this month.", 400
+    filename = f"OCBC_KWSP_{month:02d}{year:04d}.txt"
+    return Response(content, mimetype="text/plain",
+                     headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+
+@app.route("/payroll/<int:year>/<int:month>/ocbc-socso-file")
+def ocbc_socso_file(year, month):
+    db = get_db()
+    if not _ocbc_settings_ready(db):
+        return ("OCBC bank file settings are incomplete - fill in the Branch No. and "
+                "Company Account No. under Settings first."), 400
+    value_date = request.args.get("value_date") or f"{year:04d}-{month:02d}-{PAYMENT_DAY:02d}"
+    test_file = request.args.get("test_file") == "1"
+    _c1, skip_socso, n_socso, amt_socso = _build_ocbc_socso_file(db, year, month, value_date, test_file, "8A", consume_tape_id=False)
+    _c2, skip_eis, n_eis, amt_eis = _build_ocbc_socso_file(db, year, month, value_date, test_file, "01", consume_tape_id=False)
+    if n_socso == 0 and n_eis == 0:
+        return "No employees with SOCSO or EIS contribution to pay for this month.", 400
+    return render_template("ocbc_socso_eis_review.html", year=year, month=month, value_date=value_date,
+                            test_file=test_file, n_socso=n_socso, amt_socso=amt_socso / 100, skip_socso=skip_socso,
+                            n_eis=n_eis, amt_eis=amt_eis / 100, skip_eis=skip_eis,
+                            socso_download_url=url_for("ocbc_socso_file_download", year=year, month=month,
+                                                        value_date=value_date, test_file="1" if test_file else "0", socso_type="8A"),
+                            eis_download_url=url_for("ocbc_socso_file_download", year=year, month=month,
+                                                      value_date=value_date, test_file="1" if test_file else "0", socso_type="01"),
+                            toggle_url=url_for("ocbc_socso_file", year=year, month=month))
+
+
+@app.route("/payroll/<int:year>/<int:month>/ocbc-socso-file/download")
+def ocbc_socso_file_download(year, month):
+    db = get_db()
+    if not _ocbc_settings_ready(db):
+        return ("OCBC bank file settings are incomplete - fill in the Branch No. and "
+                "Company Account No. under Settings first."), 400
+    value_date = request.args.get("value_date") or f"{year:04d}-{month:02d}-{PAYMENT_DAY:02d}"
+    test_file = request.args.get("test_file") == "1"
+    socso_type = request.args.get("socso_type")
+    if socso_type not in ("8A", "01"):
+        return "Invalid socso_type", 400
+    content, _skipped, count, _total = _build_ocbc_socso_file(db, year, month, value_date, test_file, socso_type, consume_tape_id=True)
+    if count == 0:
+        return "No employees to pay for this file.", 400
+    label = "SOCSO" if socso_type == "8A" else "EIS"
+    filename = f"OCBC_{label}_{month:02d}{year:04d}.txt"
+    return Response(content, mimetype="text/plain",
+                     headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+
+@app.route("/payroll/<int:year>/<int:month>/ocbc-lhdn-file")
+def ocbc_lhdn_file(year, month):
+    db = get_db()
+    if not _ocbc_settings_ready(db):
+        return ("OCBC bank file settings are incomplete - fill in the Branch No. and "
+                "Company Account No. under Settings first."), 400
+    value_date = request.args.get("value_date") or f"{year:04d}-{month:02d}-{PAYMENT_DAY:02d}"
+    _content, skipped, count, total_cents = _build_ocbc_lhdn_file(db, year, month, value_date, consume_tape_id=False)
+    if count == 0:
+        return "No employees with PCB deduction to pay for this month.", 400
+    return render_template("ocbc_statutory_file_review.html", year=year, month=month, kind="LHDN (PCB)",
+                            value_date=value_date, skipped=skipped, count=count,
+                            total_amount=total_cents / 100, test_file=False,
+                            download_url=url_for("ocbc_lhdn_file_download", year=year, month=month, value_date=value_date),
+                            show_test_toggle=False, toggle_url=None)
+
+
+@app.route("/payroll/<int:year>/<int:month>/ocbc-lhdn-file/download")
+def ocbc_lhdn_file_download(year, month):
+    db = get_db()
+    if not _ocbc_settings_ready(db):
+        return ("OCBC bank file settings are incomplete - fill in the Branch No. and "
+                "Company Account No. under Settings first."), 400
+    value_date = request.args.get("value_date") or f"{year:04d}-{month:02d}-{PAYMENT_DAY:02d}"
+    content, _skipped, count, _total = _build_ocbc_lhdn_file(db, year, month, value_date, consume_tape_id=True)
+    if count == 0:
+        return "No employees with PCB deduction to pay for this month.", 400
+    filename = f"OCBC_LHDN_{month:02d}{year:04d}.txt"
+    return Response(content, mimetype="text/plain",
+                     headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+
 @app.route("/socso-eis-textfile/<int:year>/<int:month>")
 def socso_eis_textfile(year, month):
     db = get_db()

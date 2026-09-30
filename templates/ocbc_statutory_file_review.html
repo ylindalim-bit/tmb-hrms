@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}OCBC {{ kind }} File - {{ month_names[month] }} {{ year }} - TMB Payroll{% endblock %}
+{% block content %}
+<h1>OCBC {{ kind }} Payment File &mdash; {{ month_names[month] }} {{ year }}</h1>
+
+<div class="card" style="max-width:560px;">
+  <p><strong>{{ count }}</strong> employee{{ "s" if count != 1 }} will be paid, totalling <strong>RM{{ "%.2f"|format(total_amount) }}</strong>.</p>
+  <p style="color:var(--muted); font-size:13px;">Value/debiting date: {{ value_date }}</p>
+
+  {% if show_test_toggle %}
+  <form method="get" action="{{ toggle_url }}" style="margin:12px 0;">
+    <input type="hidden" name="value_date" value="{{ value_date }}">
+    <label style="font-size:13px;">
+      <input type="checkbox" name="test_file" value="1" onchange="this.form.submit()" {% if test_file %}checked{% endif %}>
+      This is a test file (first-time submission &mdash; uncheck once the bank/statutory body has confirmed the test file is accepted)
+    </label>
+  </form>
+  {% endif %}
+
+  {% if skipped %}
+  <div style="background:#fee2e2; border:1px solid var(--danger); border-radius:6px; padding:12px; margin:12px 0;">
+    <strong style="color:var(--danger);">{{ skipped|length }} employee{{ "s" if skipped|length != 1 }} will NOT be included</strong> &mdash; fix these on the Employee Edit page and come back, or proceed and pay them separately:
+    <ul style="margin:8px 0 0; padding-left:20px;">
+      {% for s in skipped %}
+      <li><a class="emp-link" href="{{ url_for('edit_employee', emp_id=s.emp_id) }}">{{ s.emp_id }} &mdash; {{ s.full_name }}</a>: {{ s.reason }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <a class="btn" href="{{ download_url }}">Download Payment File</a>
+  <a class="btn secondary" href="{{ url_for('payroll_settings_page') }}">Edit Bank File Settings</a>
+</div>
+{% endblock %}

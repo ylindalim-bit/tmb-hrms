@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}OCBC SOCSO & EIS File - {{ month_names[month] }} {{ year }} - TMB Payroll{% endblock %}
+{% block content %}
+<h1>OCBC SOCSO &amp; EIS Payment Files &mdash; {{ month_names[month] }} {{ year }}</h1>
+
+<p style="color:var(--muted); font-size:13px; max-width:560px;">
+  SOCSO and EIS are separate files in Velocity (different submission type), so download and upload each one on its own.
+</p>
+
+<div class="card" style="max-width:560px;">
+  <form method="get" action="{{ toggle_url }}" style="margin-bottom:12px;">
+    <input type="hidden" name="value_date" value="{{ value_date }}">
+    <label style="font-size:13px;">
+      <input type="checkbox" name="test_file" value="1" onchange="this.form.submit()" {% if test_file %}checked{% endif %}>
+      This is a test file (first-time submission &mdash; uncheck once PERKESO has confirmed the test file is accepted)
+    </label>
+  </form>
+
+  <h2 style="margin-bottom:4px;">SOCSO (Borang 8A)</h2>
+  <p><strong>{{ n_socso }}</strong> employee{{ "s" if n_socso != 1 }}, totalling <strong>RM{{ "%.2f"|format(amt_socso) }}</strong>.</p>
+  {% if skip_socso %}
+  <div style="background:#fee2e2; border:1px solid var(--danger); border-radius:6px; padding:10px; margin-bottom:10px; font-size:13px;">
+    <strong style="color:var(--danger);">{{ skip_socso|length }} skipped:</strong>
+    <ul style="margin:6px 0 0; padding-left:18px;">
+      {% for s in skip_socso %}
+      <li><a class="emp-link" href="{{ url_for('edit_employee', emp_id=s.emp_id) }}">{{ s.emp_id }} &mdash; {{ s.full_name }}</a>: {{ s.reason }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  <a class="btn" href="{{ socso_download_url }}">Download SOCSO File</a>
+
+  <hr style="margin:20px 0; border:none; border-top:1px solid var(--border);">
+
+  <h2 style="margin-bottom:4px;">EIS</h2>
+  <p><strong>{{ n_eis }}</strong> employee{{ "s" if n_eis != 1 }}, totalling <strong>RM{{ "%.2f"|format(amt_eis) }}</strong>.</p>
+  {% if skip_eis %}
+  <div style="background:#fee2e2; border:1px solid var(--danger); border-radius:6px; padding:10px; margin-bottom:10px; font-size:13px;">
+    <strong style="color:var(--danger);">{{ skip_eis|length }} skipped:</strong>
+    <ul style="margin:6px 0 0; padding-left:18px;">
+      {% for s in skip_eis %}
+      <li><a class="emp-link" href="{{ url_for('edit_employee', emp_id=s.emp_id) }}">{{ s.emp_id }} &mdash; {{ s.full_name }}</a>: {{ s.reason }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  <a class="btn" href="{{ eis_download_url }}">Download EIS File</a>
+
+  <p style="margin-top:20px;">
+    <a class="btn secondary" href="{{ url_for('payroll_settings_page') }}">Edit Bank File Settings</a>
+  </p>
+</div>
+{% endblock %}

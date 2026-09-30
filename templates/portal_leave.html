@@ -54,12 +54,21 @@
 
 <div class="card">
   <h2 style="margin-top:0;">My Leave Requests</h2>
+  <div style="margin-bottom:10px;">
+    <label style="font-size:12px; color:var(--muted); margin-right:6px;">Filter by type</label>
+    <select id="leave_filter" onchange="filterLeaveRequests()">
+      <option value="">All Types</option>
+      {% for t in leave_types %}
+      <option value="{{ t }}">{{ t.replace("/", " / ") }}</option>
+      {% endfor %}
+    </select>
+  </div>
   <div class="table-wrap">
   <table>
     <thead><tr><th class="text">Type</th><th class="text">Dates</th><th>Days</th><th class="text">Status</th><th class="text">Notes</th><th class="text">Document</th><th></th></tr></thead>
-    <tbody>
+    <tbody id="leave_requests_body">
       {% for lr in requests %}
-      <tr>
+      <tr data-leave-type="{{ lr.leave_type }}">
         <td class="text">{{ lr.leave_type }}</td>
         <td class="text">{{ lr.start_date }} &ndash; {{ lr.end_date }}</td>
         <td>{{ lr.days }}</td>
@@ -199,5 +208,13 @@ function addAnotherDocInput() {
 }
 
 updateDocRequirement();
+
+function filterLeaveRequests() {
+  var selected = document.getElementById('leave_filter').value;
+  var rows = document.querySelectorAll('#leave_requests_body tr[data-leave-type]');
+  rows.forEach(function (row) {
+    row.style.display = (!selected || row.dataset.leaveType === selected) ? '' : 'none';
+  });
+}
 </script>
 {% endblock %}

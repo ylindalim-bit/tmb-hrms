@@ -452,6 +452,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/seed-attendance-daily",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/adjust-attendance",      # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/seed-ot-claims",         # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/seed-approved-ot-claims",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/ot-claims-cleanup",      # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/set-work-pattern",       # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/delete-attendance-daily", # gated by RESTORE_TOKEN env var, not session - see route
@@ -7716,6 +7717,71 @@ def hr_seed_ot_claims():
         written += 1
     db.commit()
     return f"OK - flagged {emp_id} ot_approval_required=Y, wrote {written} pending OT claim(s)", 200
+
+
+@app.route("/hr/seed-approved-ot-claims", methods=["POST"])
+def hr_seed_approved_ot_claims():
+    """One-time helper: inserts one or more already-Approved OT claims on
+    an employee's behalf and immediately applies them to
+    attendance/payroll - for a signed paper OT claim form HR is keying in
+    after the fact, where there's no separate approval step left to do.
+    Unlike /hr/seed-ot-claims (which always inserts Pending), this both
+    writes the claim as Approved AND calls _apply_ot_claim_to_attendance
+    for each one, exactly like a real reviewer clicking Approve would.
+    Optionally corrects day_type on specific dates (e.g. a freshly-created
+    attendance_daily row defaults to WORKED, which is wrong for a public
+    holiday or rest day that had no row yet this month) via
+    day_type_fixes. Same RESTORE_TOKEN gate as the other one-time routes;
+    safe to re-run only if the prior attempt's claims were deleted first -
+    otherwise re-running double-counts the hours.
+
+    Expected JSON body: {"emp_id": "K002", "claims": [
+        {"claim_date": "2026-09-04", "ot_before_start": "06:30", "ot_before_end": "08:30",
+         "ot_start": "17:30", "ot_end": "18:00",
+         "ot_hours_1_5": 2.5, "ot_hours_2_0": 0, "ot_hours_3_0": 0,
+         "reason": "Send worker"}, ...],
+      "day_type_fixes": {"2026-09-16": "PH", "2026-09-27": "REST"}}
+    """
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    payload = json.loads(request.files["data"].read())
+    db = get_db()
+    emp_id = payload["emp_id"]
+    if db.execute("SELECT 1 FROM employees WHERE emp_id=?", (emp_id,)).fetchone() is None:
+        return f"Refused: unknown emp_id {emp_id}", 400
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    written = 0
+    for claim in payload.get("claims", []):
+        ot_1_5 = claim.get("ot_hours_1_5", 0) or 0
+        ot_2_0 = claim.get("ot_hours_2_0", 0) or 0
+        ot_3_0 = claim.get("ot_hours_3_0", 0) or 0
+        db.execute(
+            """INSERT INTO ot_claims (emp_id, claim_date, time_in, time_out,
+                   ot_before_start, ot_before_end, ot_start, ot_end,
+                   ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, reason, status,
+                   submitted_by, submitted_at, reviewed_by, reviewed_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'Approved',?,?,?,?)""",
+            (emp_id, claim["claim_date"], claim.get("time_in"), claim.get("time_out"),
+             claim.get("ot_before_start"), claim.get("ot_before_end"),
+             claim.get("ot_start"), claim.get("ot_end"),
+             ot_1_5, ot_2_0, ot_3_0,
+             claim.get("reason"), "HR (paper OT form)", now, "HR", now),
+        )
+        _apply_ot_claim_to_attendance(db, emp_id, claim["claim_date"], None, None, ot_1_5, ot_2_0, ot_3_0)
+        written += 1
+    touched_months = set()
+    for date_str, day_type in payload.get("day_type_fixes", {}).items():
+        db.execute(
+            "UPDATE attendance_daily SET day_type=? WHERE emp_id=? AND date=?",
+            (day_type, emp_id, date_str),
+        )
+        year, month, _day = (int(p) for p in date_str.split("-"))
+        touched_months.add((year, month))
+    for year, month in touched_months:
+        _sync_daily_to_monthly(db, emp_id, year, month)
+    db.commit()
+    return f"OK - wrote {written} Approved OT claim(s) for {emp_id}, applied to attendance/payroll", 200
 
 
 @app.route("/hr/ot-claims-cleanup", methods=["POST"])

@@ -3726,25 +3726,28 @@ def _pad_num(cents, width):
 # for bulk salary crediting (last modified 1 Oct 2013, OCBC business
 # banking spec). Three record types, each padded to exactly 480 chars:
 # Header (01, once), Detail (02, one per employee), Trailer (03, once).
-# Receiving FI ID is each payee bank's Rentas BIC code (PayNet's official
-# interbank participant list), left-justified into the 9-char field.
+# Receiving FI ID is each payee bank's 9-digit IBG routing number, from
+# OCBC's own "IBG Product Offering and Account Structure" reference
+# (effective 27 Oct 2023) - NOT a SWIFT/BIC code (an earlier version of
+# this mapping used Rentas BIC codes like "OCBCMYKL" here instead, which
+# OCBC rejected as an incorrect bank code for payroll submission).
 BANK_FI_CODES = {
-    "MBB": "MBBEMYKL", "MAYBANK": "MBBEMYKL",
-    "CIMB": "CIBBMYKL", "CIMB BANK": "CIBBMYKL",
-    "PBB": "PBBEMYKL", "PUBLIC BANK": "PBBEMYKL",
-    "RHB": "RHBBMYKL", "RHB BANK": "RHBBMYKL",
-    "HLB": "HLBBMYKL", "HONG LEONG": "HLBBMYKL", "HONG LEONG BANK": "HLBBMYKL",
-    "AMBANK": "ARBKMYKL", "AM BANK": "ARBKMYKL",
-    "OCBC": "OCBCMYKL", "OCBC BANK": "OCBCMYKL",
-    "B.ISLAM": "BIMBMYKL", "BANK ISLAM": "BIMBMYKL",
-    "B.MUAMALAT": "BMMBMYKL", "BANK MUAMALAT": "BMMBMYKL",
-    "AFFIN": "PHBMMYKL", "AFFIN BANK": "PHBMMYKL",
-    "ALLIANCE": "MFBBMYKL", "ALLIANCE BANK": "MFBBMYKL",
-    "BANK RAKYAT": "BKRMMYKL",
-    "BSN": "BSNAMYK1",
-    "HSBC": "HBMBMYKL",
-    "STANDARD CHARTERED": "SCBLMYKX",
-    "UOB": "UOVBMYKL",
+    "MBB": "100002270", "MAYBANK": "100002270",
+    "CIMB": "100002050", "CIMB BANK": "100002050",
+    "PBB": "100002335", "PUBLIC BANK": "100002335",
+    "RHB": "100002186", "RHB BANK": "100002186",
+    "HLB": "100002241", "HONG LEONG": "100002241", "HONG LEONG BANK": "100002241",
+    "AMBANK": "100002089", "AM BANK": "100002089",
+    "OCBC": "100002296", "OCBC BANK": "100002296",
+    "B.ISLAM": "100002458", "BANK ISLAM": "100002458",
+    "B.MUAMALAT": "100003415", "BANK MUAMALAT": "100003415",
+    "AFFIN": "100002322", "AFFIN BANK": "100002322",
+    "ALLIANCE": "100002128", "ALLIANCE BANK": "100002128",
+    "BANK RAKYAT": "100016020",
+    "BSN": "100016017",
+    "HSBC": "100002225",
+    "STANDARD CHARTERED": "100002144",
+    "UOB": "100002267",
 }
 
 OCBC_BANK_FILE_FIELDS = [

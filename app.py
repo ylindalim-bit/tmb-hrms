@@ -453,6 +453,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/adjust-attendance",      # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/seed-ot-claims",         # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/seed-approved-ot-claims",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/correct-approved-ot-claim",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/ot-claims-cleanup",      # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/set-work-pattern",       # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/delete-attendance-daily", # gated by RESTORE_TOKEN env var, not session - see route
@@ -8324,6 +8325,59 @@ def hr_seed_approved_ot_claims():
         _sync_daily_to_monthly(db, emp_id, year, month)
     db.commit()
     return f"OK - wrote {written} Approved OT claim(s) for {emp_id}, applied to attendance/payroll", 200
+
+
+@app.route("/hr/correct-approved-ot-claim", methods=["POST"])
+def hr_correct_approved_ot_claim():
+    """One-time fix: corrects an already-Approved OT claim's hours (e.g.
+    rounding an odd duration like 20 minutes to the nearest 15-minute
+    increment per company convention) and reflects the same delta in that
+    date's attendance_daily row, then re-syncs the month - since the
+    claim's hours were already applied once, this adjusts by the
+    difference rather than re-applying the new totals outright. Also
+    accepts new time_in/time_out for attendance_daily if given, to keep
+    the displayed clock times consistent with the corrected duration.
+    Same RESTORE_TOKEN gate as the other one-time routes.
+
+    Expected JSON body: {"claim_id": 29,
+      "ot_hours_1_5": 2.25, "ot_hours_2_0": 0, "ot_hours_3_0": 0,
+      "time_in": "06:30", "time_out": "17:45"}
+    """
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    payload = json.loads(request.files["data"].read())
+    db = get_db()
+    claim = db.execute("SELECT * FROM ot_claims WHERE id=?", (payload["claim_id"],)).fetchone()
+    if claim is None:
+        return "Refused: claim not found", 400
+    if claim["status"] != "Approved":
+        return "Refused: only an already-Approved claim needs this correction", 400
+    new_1_5 = payload.get("ot_hours_1_5", claim["ot_hours_1_5"])
+    new_2_0 = payload.get("ot_hours_2_0", claim["ot_hours_2_0"])
+    new_3_0 = payload.get("ot_hours_3_0", claim["ot_hours_3_0"])
+    delta_1_5 = new_1_5 - (claim["ot_hours_1_5"] or 0)
+    delta_2_0 = new_2_0 - (claim["ot_hours_2_0"] or 0)
+    delta_3_0 = new_3_0 - (claim["ot_hours_3_0"] or 0)
+    db.execute(
+        "UPDATE ot_claims SET ot_hours_1_5=?, ot_hours_2_0=?, ot_hours_3_0=? WHERE id=?",
+        (new_1_5, new_2_0, new_3_0, claim["id"]),
+    )
+    db.execute(
+        """UPDATE attendance_daily SET
+             ot_hours_1_5 = COALESCE(ot_hours_1_5,0) + ?,
+             ot_hours_2_0 = COALESCE(ot_hours_2_0,0) + ?,
+             ot_hours_3_0 = COALESCE(ot_hours_3_0,0) + ?,
+             time_in = COALESCE(?, time_in), time_out = COALESCE(?, time_out)
+           WHERE emp_id=? AND date=?""",
+        (delta_1_5, delta_2_0, delta_3_0, payload.get("time_in"), payload.get("time_out"),
+         claim["emp_id"], claim["claim_date"]),
+    )
+    year, month, _day = (int(p) for p in claim["claim_date"].split("-"))
+    _sync_daily_to_monthly(db, claim["emp_id"], year, month)
+    db.commit()
+    return (f"OK - claim {claim['id']} corrected to {new_1_5}/{new_2_0}/{new_3_0}h, "
+            f"attendance_daily adjusted by {delta_1_5:+g}/{delta_2_0:+g}/{delta_3_0:+g}h"), 200
 
 
 @app.route("/hr/ot-claims-cleanup", methods=["POST"])

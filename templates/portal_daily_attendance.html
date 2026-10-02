@@ -63,6 +63,25 @@
 </tr>
 {% endfor %}
 </tbody>
+{% set t = namespace(meal=0, cewi=0, ot15=0, ot20=0, ot30=0) %}
+{% for d in days %}{% if d.row %}
+  {% if d.row.meal_allowance_flag == "Y" %}{% set t.meal = t.meal + 1 %}{% endif %}
+  {% if d.row.cewi_flag == "Y" %}{% set t.cewi = t.cewi + 1 %}{% endif %}
+  {% set t.ot15 = t.ot15 + (d.row.ot_hours_1_5 or 0) %}
+  {% set t.ot20 = t.ot20 + (d.row.ot_hours_2_0 or 0) %}
+  {% set t.ot30 = t.ot30 + (d.row.ot_hours_3_0 or 0) %}
+{% endif %}{% endfor %}
+<tfoot>
+<tr class="totals-row">
+  <td class="text" colspan="5" style="text-align:right;">Total</td>
+  <td class="text">{{ t.meal }}</td>
+  <td class="text">{{ t.cewi }}</td>
+  <td>{{ t.ot15|round(2) }}</td>
+  <td>{{ t.ot20|round(2) }}</td>
+  <td>{{ t.ot30|round(2) }}</td>
+  <td></td>
+</tr>
+</tfoot>
 </table>
 </div>
 {% endblock %}

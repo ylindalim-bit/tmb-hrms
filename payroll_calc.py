@@ -46,6 +46,33 @@ def allowance_prorate_factor(effective_date, year, month):
     return days_active / days_in_month
 
 
+def per_day_allowance_factor(effective_date, year, month):
+    """For allowances paid per eligible day (Meal, CEWI): the eligible days
+    HR ticks in Daily Attendance already only cover days actually worked,
+    so prorating the total again by the effective date would pay a mid-month
+    starter only a fraction of what they earned. Only an effective date
+    after the month's end switches it off for the month."""
+    d = _parse_date(effective_date)
+    if d is None:
+        return 1.0
+    days_in_month = calendar.monthrange(year, month)[1]
+    return 0.0 if d > datetime.date(year, month, days_in_month) else 1.0
+
+
+def flat_allowance_factor(effective_date, date_joined, last_working_day, year, month):
+    """For a flat monthly allowance (Transport): fraction of the month that
+    is both on/after the allowance's effective date AND within the
+    employee's employment (join/leave) - one overlap, not the join factor
+    and the effective-date factor multiplied together, which counted the
+    same days twice for anyone whose allowance starts the day they join."""
+    days_in_month = calendar.monthrange(year, month)[1]
+    month_start = datetime.date(year, month, 1)
+    month_end = datetime.date(year, month, days_in_month)
+    start = max(month_start, _parse_date(date_joined) or month_start, _parse_date(effective_date) or month_start)
+    end = min(month_end, _parse_date(last_working_day) or month_end)
+    return max(0, (end - start).days + 1) / days_in_month
+
+
 def prorate_factor(date_joined, last_working_day, year, month):
     """Payroll!L and Payroll!M: calendar-day prorate factor for the month."""
     days_in_month = calendar.monthrange(year, month)[1]
@@ -336,17 +363,20 @@ def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: i
         ot_hours_1_5, ot_hours_2_0, ot_hours_3_0)
     ot_pay = round(ot_pay_1_5 + ot_pay_2_0 + ot_pay_3_0, 2)
 
-    transport_allowance = (
-        (emp["transport_allowance"] or 0) * factor
-        * allowance_month_factor(emp["transport_allowance_flag"], emp["transport_allowance_effective_date"])
+    transport_allowance = (emp["transport_allowance"] or 0) * (
+        flat_allowance_factor(emp["transport_allowance_effective_date"], emp["date_joined"],
+                              emp["last_working_day"], year, month)
+        if emp["transport_allowance_flag"] == "Y" else 0.0
     )
     meal_allowance = round(
         meal_eligible_days * (emp["meal_allowance_rate"] or 0)
-        * allowance_month_factor(emp["meal_allowance_flag"], emp["meal_allowance_effective_date"]), 2
+        * (per_day_allowance_factor(emp["meal_allowance_effective_date"], year, month)
+           if emp["meal_allowance_flag"] == "Y" else 0.0), 2
     )
     cewi_allowance = round(
         cewi_eligible_days * (emp["cewi_rate"] or 0)
-        * allowance_month_factor(emp["cewi_flag"], emp["cewi_effective_date"]), 2
+        * (per_day_allowance_factor(emp["cewi_effective_date"], year, month)
+           if emp["cewi_flag"] == "Y" else 0.0), 2
     )
 
     prorated_basic = basic_salary * factor

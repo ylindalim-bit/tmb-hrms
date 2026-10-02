@@ -2324,7 +2324,7 @@ def _daily_attendance_view_data(db, emp, year, month):
     ).fetchone()
     cewi_incentive = None
     if monthly is not None:
-        factor = payroll_calc.allowance_prorate_factor(emp["cewi_effective_date"], year, month) if emp["cewi_flag"] == "Y" else 0.0
+        factor = payroll_calc.per_day_allowance_factor(emp["cewi_effective_date"], year, month) if emp["cewi_flag"] == "Y" else 0.0
         cewi_incentive = round((monthly["cewi_eligible_days"] or 0) * (emp["cewi_rate"] or 0) * factor, 2)
     return days, monthly, cewi_incentive
 

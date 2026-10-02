@@ -20,7 +20,7 @@
 {% endblock %}
 {% block content %}
 <div class="no-print" style="display:flex; justify-content:space-between; align-items:center;">
-  <h1 style="margin-bottom:0;">Calculation Detail &mdash; {{ emp.emp_id }} &mdash; {{ month_names[month] }} {{ year }}</h1>
+  <h1 style="margin-bottom:0;">Calculation Detail &mdash; {{ emp.emp_id }} &mdash; {{ emp.full_name }} &mdash; {{ month_names[month] }} {{ year }}</h1>
   <button class="btn" type="button" onclick="window.print()">Print / Save as PDF</button>
 </div>
 

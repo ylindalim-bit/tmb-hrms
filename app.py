@@ -4429,6 +4429,7 @@ EMPLOYER_INFO_FIELDS = [
     ("director_name", "Director Name"),
     ("director_hp_no", "Director H/P Number"),
     ("ssm_registration_no", "Company Registration No. (SSM)"),
+    ("ssm_old_registration_no", "Company Registration No. (SSM) - Old Number (e.g. 1530564-X)"),
     ("epf_employer_no", "EPF Employer Reference No. (KWSP)"),
     ("socso_eis_employer_code", "SOCSO / EIS Employer Code (PERKESO)"),
     ("income_tax_employer_no", "Income Tax Employer No. (LHDN \"E\" Number)"),

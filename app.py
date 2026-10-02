@@ -8706,7 +8706,8 @@ def hr_seed_attendance_daily():
     Expected JSON body: {"EMP_ID": {"YYYY-MM-DD": {"day_type": "WORKED",
     "time_in": "08:30", "time_out": "17:30", "meal": "Y",
     "ot_hours_1_5": 0, "ot_hours_2_0": 0, "ot_hours_3_0": 0,
-    "ot_reason": null}, ...}, ...}
+    "ot_reason": null, "cewi": "Y"}, ...}, ...}
+    "cewi" is optional - left out, the day's existing CEWI flag is kept.
     """
     token = os.environ.get("RESTORE_TOKEN")
     if not token or request.form.get("token") != token:
@@ -8724,17 +8725,19 @@ def hr_seed_attendance_daily():
             db.execute(
                 """INSERT INTO attendance_daily (
                        emp_id, date, day_type, time_in, time_out, meal_allowance_flag,
-                       ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, ot_reason
-                   ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                       ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, ot_reason, cewi_flag
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?,COALESCE(?, 'N'))
                    ON CONFLICT(emp_id, date) DO UPDATE SET
                      day_type=excluded.day_type, time_in=excluded.time_in, time_out=excluded.time_out,
                      meal_allowance_flag=excluded.meal_allowance_flag,
                      ot_hours_1_5=excluded.ot_hours_1_5, ot_hours_2_0=excluded.ot_hours_2_0,
-                     ot_hours_3_0=excluded.ot_hours_3_0, ot_reason=excluded.ot_reason""",
+                     ot_hours_3_0=excluded.ot_hours_3_0, ot_reason=excluded.ot_reason,
+                     cewi_flag=COALESCE(?, cewi_flag)""",
                 (emp_id, date_str, d.get("day_type", "WORKED"), d.get("time_in") or None,
                  d.get("time_out") or None, d.get("meal", "N"),
                  d.get("ot_hours_1_5", 0) or 0, d.get("ot_hours_2_0", 0) or 0,
-                 d.get("ot_hours_3_0", 0) or 0, d.get("ot_reason") or None),
+                 d.get("ot_hours_3_0", 0) or 0, d.get("ot_reason") or None,
+                 d.get("cewi"), d.get("cewi")),
             )
             written += 1
             months_touched.add((emp_id, year, month))

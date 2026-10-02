@@ -7417,6 +7417,12 @@ def _ot_claim_hours_from_form(db, f, claim_date, base="MY"):
     rest_hours = math.ceil(gross_hours / 5) * 0.5
     net_hours = max(gross_hours - rest_hours, 0)
     if _is_rest_day(db, claim_date, base):
+        # Company policy (5.5.7/5.5.8): a rest day (Sunday) is 2.0x for ALL
+        # hours worked, within or beyond normal hours; a public holiday is
+        # 2.0x within normal hours and 3.0x beyond them.
+        if db.execute("SELECT 1 FROM public_holidays WHERE date=? AND state=?",
+                      (claim_date, base or "MY")).fetchone() is None:
+            return 0, round(net_hours, 2), 0
         ot_2_0 = round(min(net_hours, 8), 2)
         ot_3_0 = round(max(net_hours - 8, 0), 2)
         return 0, ot_2_0, ot_3_0

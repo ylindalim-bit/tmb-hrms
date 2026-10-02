@@ -230,8 +230,10 @@ function updateOtAutoCalc() {
   note.style.display = 'block';
 
   if (isRestDay(dateStr)) {
-    var ot2 = Math.round(Math.min(netHours, 8) * 100) / 100;
-    var ot3 = Math.round(Math.max(netHours - 8, 0) * 100) / 100;
+    // Sunday = 2.0x for all hours; public holiday = 2.0x up to 8 net hrs, 3.0x beyond.
+    var onHoliday = HOLIDAY_DATES.indexOf(dateStr) !== -1;
+    var ot2 = Math.round((onHoliday ? Math.min(netHours, 8) : netHours) * 100) / 100;
+    var ot3 = onHoliday ? Math.round(Math.max(netHours - 8, 0) * 100) / 100 : 0;
     ot1_5.value = 0; ot2_0.value = ot2; ot3_0.value = ot3;
     note.textContent = 'Sunday/public holiday auto-calc: ' + grossHours.toFixed(2) + ' hrs worked − ' + restHours.toFixed(2) +
       ' hr rest = ' + netHours.toFixed(2) + ' net hrs → 2.0x: ' + ot2 + ', 3.0x: ' + ot3;

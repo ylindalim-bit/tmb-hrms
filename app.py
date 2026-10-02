@@ -1985,6 +1985,14 @@ WORK_PATTERN_WEEKDAY_WEIGHTS = {
     "6-day (Mon-Sat)": {0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1},
 }
 
+# Company-wide half-day Saturday knock-off time, for anyone on the
+# "5.5-day" pattern - the same for every such employee regardless of
+# their own weekday Normal End Time, so this isn't a per-employee field.
+HALF_DAY_SATURDAY_END = "13:00"
+WORK_PATTERN_SATURDAY_END_OVERRIDE = {
+    "5.5-day (Mon-Fri + half-day Sat)": HALF_DAY_SATURDAY_END,
+}
+
 
 def _day_not_yet_applicable(date_iso, date_joined, today_iso):
     """True for a day HR could never have real attendance for - before the
@@ -2165,7 +2173,9 @@ def _personal_late_early_suggestions(db, year, month):
         return {}
     history = _load_schedule_history(db)
     employees = {
-        r["emp_id"]: r for r in db.execute("SELECT emp_id, standard_start, standard_end FROM employees").fetchall()
+        r["emp_id"]: r for r in db.execute(
+            "SELECT emp_id, standard_start, standard_end, work_pattern FROM employees"
+        ).fetchall()
     }
     out = {}
     for r in rows:
@@ -2456,13 +2466,20 @@ def _load_schedule_history(db, emp_id=None):
 def _hours_on(history, emp, date_iso):
     """(start, end) Normal Start/End Time in force for this employee on
     that date - the latest logged change effective on or before it, else
-    the employee's own current fields."""
+    the employee's own current fields. On a Saturday, an employee on the
+    half-day Saturday work pattern gets the company-wide half-day end
+    time instead of their normal weekday end - otherwise a genuine
+    half-day knock-off reads as "early out" against their full-day hours."""
     hours = None
     for effective_date, start, end in history.get(emp["emp_id"], []):
         if effective_date > date_iso:
             break
         hours = (start, end)
-    return hours or (emp["standard_start"], emp["standard_end"])
+    hours = hours or (emp["standard_start"], emp["standard_end"])
+    saturday_end = WORK_PATTERN_SATURDAY_END_OVERRIDE.get(emp["work_pattern"])
+    if saturday_end and datetime.date.fromisoformat(date_iso).weekday() == 5:
+        hours = (hours[0], saturday_end)
+    return hours
 
 
 def _sync_current_schedule(db, emp_id=None):
@@ -2651,7 +2668,7 @@ def attendance_daily_all(year, month):
 
     employees = employed_this_month(
         db, year, month,
-        "emp_id, full_name, base, standard_start, standard_end, cewi_flag, date_joined",
+        "emp_id, full_name, base, standard_start, standard_end, work_pattern, cewi_flag, date_joined",
     )
 
     trip_labels = _trip_labels_for_month(db, year, month)

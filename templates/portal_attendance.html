@@ -39,6 +39,10 @@
 
 <div class="card">
   <h2 style="margin-top:0;">Monthly Attendance ({{ year }})</h2>
+  <p style="color:var(--muted); font-size:13px; margin-top:0;">
+    Want to check your Time In/Out, Meal, CEWI, and OT hours day by day before payroll is run?
+    See <a href="{{ url_for('portal_daily_attendance') }}">Daily Attendance</a>.
+  </p>
   <div class="table-wrap">
   <table>
     <thead>

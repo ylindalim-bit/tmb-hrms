@@ -2262,6 +2262,81 @@ def _trip_labels_for_month(db, year, month, emp_id=None):
     return labels
 
 
+def _daily_attendance_view_data(db, emp, year, month):
+    """Builds the per-day list (status, times, late/early flags, trip/
+    holiday labels, OT) plus the month's totals and CEWI incentive for one
+    employee/month - shared by the HR Daily Attendance page and the Staff
+    Portal's read-only view of the same data, so they can never drift."""
+    emp_id = emp["emp_id"]
+    days_in_month = calendar.monthrange(year, month)[1]
+    saved = {
+        r["date"]: r for r in db.execute(
+            "SELECT * FROM attendance_daily WHERE emp_id=? AND date LIKE ? ORDER BY date",
+            (emp_id, f"{year:04d}-{month:02d}-%"),
+        ).fetchall()
+    }
+    trip_labels = _trip_labels_for_month(db, year, month, emp_id)
+    holiday_names = {
+        r["date"]: r["name"] for r in db.execute(
+            "SELECT date, name FROM public_holidays WHERE date LIKE ? AND state=?",
+            (f"{year:04d}-{month:02d}-%", emp["base"] or "MY"),
+        ).fetchall()
+    }
+    today_iso = datetime.datetime.now(MYT).date().isoformat()
+    schedule_history = _load_schedule_history(db, emp_id)
+    days = []
+    for day in range(1, days_in_month + 1):
+        date_obj = datetime.date(year, month, day)
+        date_iso = date_obj.isoformat()
+        row = saved.get(date_iso)
+        trip_label = trip_labels.get((emp_id, date_iso))
+        is_late, is_early = _late_early_flags(row, emp, _hours_on(schedule_history, emp, date_iso))
+        late_kind, late_reason = _late_early_decision(row, trip_label) if (is_late or is_early) else (None, None)
+        not_yet_applicable = _day_not_yet_applicable(date_iso, emp["date_joined"], today_iso)
+        is_problem = (
+            bool(row) and row["day_type"] == "WORKED"
+            and (not row["time_in"] or not row["time_out"]) and not trip_label
+        )
+        days.append({
+            "day": day, "date": date_iso, "weekday": date_obj.strftime("%a"),
+            "row": row, "unrecorded": row is None and not trip_label and not not_yet_applicable,
+            "problem": is_problem,
+            "late_in": is_late, "early_out": is_early,
+            "late_kind": late_kind, "excuse": late_reason,
+            "trip_label": trip_label, "holiday_name": holiday_names.get(date_iso),
+            "default_day_type": _default_day_type_for_pattern(
+                emp["work_pattern"], date_obj.weekday(), is_holiday=date_iso in holiday_names
+            ),
+        })
+    monthly = db.execute(
+        "SELECT * FROM attendance_monthly WHERE emp_id=? AND year=? AND month=?",
+        (emp_id, year, month),
+    ).fetchone()
+    cewi_incentive = None
+    if monthly is not None:
+        factor = payroll_calc.allowance_prorate_factor(emp["cewi_effective_date"], year, month) if emp["cewi_flag"] == "Y" else 0.0
+        cewi_incentive = round((monthly["cewi_eligible_days"] or 0) * (emp["cewi_rate"] or 0) * factor, 2)
+    return days, monthly, cewi_incentive
+
+
+@app.route("/portal/daily-attendance")
+@portal_login_required
+def portal_daily_attendance():
+    """Read-only day-by-day view of the logged-in employee's own
+    attendance (status, Time In/Out, Meal/CEWI, OT hours) - lets staff
+    check everything looks right before HR finalizes/runs payroll for the
+    month, using the exact same data the HR Daily Attendance page and
+    payroll itself read."""
+    db = get_db()
+    emp = current_portal_employee(db)
+    today = datetime.date.today()
+    year = request.args.get("year", type=int) or today.year
+    month = request.args.get("month", type=int) or today.month
+    days, monthly, cewi_incentive = _daily_attendance_view_data(db, emp, year, month)
+    return render_template("portal_daily_attendance.html", emp=emp, year=year, month=month,
+                            days=days, monthly=monthly, cewi_incentive=cewi_incentive)
+
+
 @app.route("/attendance-daily/<emp_id>/<int:year>/<int:month>", methods=["GET", "POST"])
 def attendance_daily(emp_id, year, month):
     """Day-by-day attendance entry for one employee - HR fills in each
@@ -2327,59 +2402,7 @@ def attendance_daily(emp_id, year, month):
         db.commit()
         return redirect(url_for("attendance_daily", emp_id=emp_id, year=year, month=month))
 
-    saved = {
-        r["date"]: r for r in db.execute(
-            "SELECT * FROM attendance_daily WHERE emp_id=? AND date LIKE ? ORDER BY date",
-            (emp_id, f"{year:04d}-{month:02d}-%"),
-        ).fetchall()
-    }
-    trip_labels = _trip_labels_for_month(db, year, month, emp_id)
-    holiday_names = {
-        r["date"]: r["name"] for r in db.execute(
-            "SELECT date, name FROM public_holidays WHERE date LIKE ? AND state=?",
-            (f"{year:04d}-{month:02d}-%", emp["base"] or "MY"),
-        ).fetchall()
-    }
-    today_iso = datetime.datetime.now(MYT).date().isoformat()
-    schedule_history = _load_schedule_history(db, emp_id)
-    days = []
-    for day in range(1, days_in_month + 1):
-        date_obj = datetime.date(year, month, day)
-        date_iso = date_obj.isoformat()
-        row = saved.get(date_iso)
-        trip_label = trip_labels.get((emp_id, date_iso))
-        is_late, is_early = _late_early_flags(row, emp, _hours_on(schedule_history, emp, date_iso))
-        late_kind, late_reason = _late_early_decision(row, trip_label) if (is_late or is_early) else (None, None)
-        not_yet_applicable = _day_not_yet_applicable(date_iso, emp["date_joined"], today_iso)
-        # Same "problem" definition as attendance_daily_all() - a saved
-        # WORKED day with no Time In or Time Out - so a day-entry issue
-        # shows up the same way (pink) whichever of the two pages HR is
-        # looking at, instead of only being visible on the all-staff view.
-        is_problem = (
-            bool(row) and row["day_type"] == "WORKED"
-            and (not row["time_in"] or not row["time_out"]) and not trip_label
-        )
-        days.append({
-            "day": day, "date": date_iso, "weekday": date_obj.strftime("%a"),
-            "row": row, "unrecorded": row is None and not trip_label and not not_yet_applicable,
-            "problem": is_problem,
-            "late_in": is_late, "early_out": is_early,
-            "late_kind": late_kind, "excuse": late_reason,
-            "trip_label": trip_label, "holiday_name": holiday_names.get(date_iso),
-            "default_day_type": _default_day_type_for_pattern(
-                emp["work_pattern"], date_obj.weekday(), is_holiday=date_iso in holiday_names
-            ),
-        })
-    monthly = db.execute(
-        "SELECT * FROM attendance_monthly WHERE emp_id=? AND year=? AND month=?",
-        (emp_id, year, month),
-    ).fetchone()
-
-    cewi_incentive = None
-    if monthly is not None:
-        # Same formula as payroll_calc.py's cewi_allowance.
-        factor = payroll_calc.allowance_prorate_factor(emp["cewi_effective_date"], year, month) if emp["cewi_flag"] == "Y" else 0.0
-        cewi_incentive = round((monthly["cewi_eligible_days"] or 0) * (emp["cewi_rate"] or 0) * factor, 2)
+    days, monthly, cewi_incentive = _daily_attendance_view_data(db, emp, year, month)
 
     return render_template("attendance_daily.html", emp=emp, year=year, month=month,
                             days=days, day_types=DAY_TYPES, monthly=monthly,

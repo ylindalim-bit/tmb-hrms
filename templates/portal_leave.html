@@ -26,7 +26,15 @@
         {% endfor %}
       </select>
     </div>
-    <div><label>Start Date</label><input type="date" id="leave_start_date" name="start_date" onchange="updateDaysRequested()" required></div>
+    <div>
+      <label>Duration</label>
+      <select id="half_day" name="half_day" onchange="updateHalfDay()">
+        <option value="">Full day(s)</option>
+        <option value="AM">Half day &mdash; morning off (work afternoon)</option>
+        <option value="PM">Half day &mdash; afternoon off (work morning)</option>
+      </select>
+    </div>
+    <div><label>Start Date</label><input type="date" id="leave_start_date" name="start_date" onchange="updateHalfDay()" required></div>
     <div><label>End Date</label><input type="date" id="leave_end_date" name="end_date" onchange="updateDaysRequested()" required></div>
   </div>
   <p id="days_requested" style="font-weight:600; margin-top:8px;"></p>
@@ -70,7 +78,7 @@
       {% for lr in requests %}
       <tr data-leave-type="{{ lr.leave_type }}">
         <td class="text">{{ lr.leave_type }}</td>
-        <td class="text">{{ lr.start_date }} &ndash; {{ lr.end_date }}</td>
+        <td class="text">{{ lr.start_date }}{% if lr.half_day %}<div style="font-size:11px; color:var(--muted);">Half day &mdash; {{ 'morning off' if lr.half_day == 'AM' else 'afternoon off' }}</div>{% else %} &ndash; {{ lr.end_date }}{% endif %}</td>
         <td>{{ lr.days }}</td>
         <td class="text">
           <span class="pill {% if lr.status == 'Approved' %}finalized{% elif lr.status == 'Pending' %}draft{% else %}rejected{% endif %}">{{ lr.status }}</span>
@@ -164,7 +172,12 @@ function updateDaysRequested() {
     display.style.color = 'var(--danger)';
     return;
   }
-  display.textContent = days + (days === 1 ? ' day requested' : ' days requested');
+  if (document.getElementById('half_day').value) {
+    days = 0.5;
+    display.textContent = '0.5 day requested';
+  } else {
+    display.textContent = days + (days === 1 ? ' day requested' : ' days requested');
+  }
   display.style.color = '';
 
   var balance = LEAVE_BALANCES[leaveType];
@@ -172,6 +185,20 @@ function updateDaysRequested() {
     warning.textContent = 'Heads up: this is more than your remaining balance (' + balance + (balance === 1 ? ' day' : ' days') + '). You can still submit it — HR will review.';
     warning.style.display = 'block';
   }
+}
+
+// Half-day leave is always one date: End Date follows Start Date and is locked.
+function updateHalfDay() {
+  var half = document.getElementById('half_day').value;
+  var start = document.getElementById('leave_start_date');
+  var end = document.getElementById('leave_end_date');
+  if (half) {
+    end.value = start.value;
+    end.readOnly = true;
+  } else {
+    end.readOnly = false;
+  }
+  updateDaysRequested();
 }
 
 var DOC_REQUIRED_TYPES = ['Medical Leave', 'Hospitalisation Leave'];

@@ -2202,6 +2202,19 @@ def _personal_late_early_suggestions(db, year, month):
 DAY_TYPES = ["WORKED", "OFF", "REST", "PH", "AL", "MC", "HL", "UL", "OTHER_PAID"]
 
 
+def _half_leave_type(row):
+    """The leave day_type (AL/MC/HL/UL/OTHER_PAID) covering half of this
+    attendance_daily row, or None. Only counts while the day is still
+    WORKED, so HR switching the day to a full-day status can't leave a
+    stale half-day marker behind. Tolerates rows from a database that
+    hasn't had the half-day columns migrated in yet."""
+    if row is None or "half_leave_type" not in row.keys():
+        return None
+    if row["day_type"] != "WORKED" or not row["half_leave_type"]:
+        return None
+    return row["half_leave_type"]
+
+
 def _sync_daily_to_monthly(db, emp_id, year, month):
     """Recomputes attendance_monthly's aggregate columns from this
     employee/month's attendance_daily rows and upserts them - the same
@@ -2212,13 +2225,25 @@ def _sync_daily_to_monthly(db, emp_id, year, month):
         (emp_id, f"{year:04d}-{month:02d}-%"),
     ).fetchall()
     counts = {t: 0 for t in DAY_TYPES}
+    meal_days = 0.0
+    cewi_days = 0.0
     for r in rows:
         counts[r["day_type"]] = counts.get(r["day_type"], 0) + 1
+        # A half-day leave day is half worked, half leave - and earns half
+        # the Meal/CEWI allowance (they're per full day worked).
+        weight = 1.0
+        half_type = _half_leave_type(r)
+        if half_type:
+            counts["WORKED"] -= 0.5
+            counts[half_type] = counts.get(half_type, 0) + 0.5
+            weight = 0.5
+        if r["meal_allowance_flag"] == "Y":
+            meal_days += weight
+        if r["cewi_flag"] == "Y":
+            cewi_days += weight
     ot_1_5 = sum(r["ot_hours_1_5"] or 0 for r in rows)
     ot_2_0 = sum(r["ot_hours_2_0"] or 0 for r in rows)
     ot_3_0 = sum(r["ot_hours_3_0"] or 0 for r in rows)
-    meal_days = sum(1 for r in rows if r["meal_allowance_flag"] == "Y")
-    cewi_days = sum(1 for r in rows if r["cewi_flag"] == "Y")
     working_days_in_month = counts["WORKED"] + counts["AL"] + counts["MC"] + counts["HL"] + counts["OTHER_PAID"] + counts["PH"]
 
     db.execute(
@@ -2311,7 +2336,7 @@ def _daily_attendance_view_data(db, emp, year, month):
         days.append({
             "day": day, "date": date_iso, "weekday": date_obj.strftime("%a"),
             "row": row, "unrecorded": row is None and not trip_label and not not_yet_applicable,
-            "problem": is_problem,
+            "problem": is_problem, "half_leave": _half_leave_type(row),
             "late_in": is_late, "early_out": is_early,
             "late_kind": late_kind, "excuse": late_reason,
             "trip_label": trip_label, "holiday_name": holiday_names.get(date_iso),
@@ -2649,6 +2674,14 @@ def _late_early_flags(row, emp, hours=None):
     std_end = _hhmm_to_minutes(raw_end)
     is_late = std_start is not None and time_in is not None and time_in > std_start + LATE_EARLY_GRACE_MINUTES
     is_early = std_end is not None and time_out is not None and time_out < std_end - LATE_EARLY_GRACE_MINUTES
+    # Approved half-day leave: arriving at midday (AM off) or leaving at
+    # midday (PM off) is expected, not late/early.
+    if _half_leave_type(row):
+        session_half = row["half_leave_session"]
+        if session_half == "AM":
+            is_late = False
+        elif session_half == "PM":
+            is_early = False
     return is_late, is_early
 
 
@@ -6025,8 +6058,11 @@ def portal_clock():
     return render_template("portal_clock.html", emp=emp, locations=locations, today_row=today_row, error=error)
 
 
+LEAVE_HALF_DAY_SESSIONS = ("AM", "PM")
+
+
 def _validate_and_create_leave_request(db, emp_id, leave_type, start_date, end_date, reason, files, status,
-                                        reviewed_by=None):
+                                        reviewed_by=None, half_day=None):
     """Shared validation + insert for a new leave_requests row - used by
     both the employee's own portal submission (status='Pending') and
     HR keying one in on an employee's behalf (status='Approved' or
@@ -6039,6 +6075,21 @@ def _validate_and_create_leave_request(db, emp_id, leave_type, start_date, end_d
         return None, "Leave type, start date, and end date are required."
     if end_date < start_date:
         return None, "End date cannot be before start date."
+    half_day = half_day if half_day in LEAVE_HALF_DAY_SESSIONS else None
+    if half_day:
+        if end_date != start_date:
+            return None, "A half-day leave must be a single date (start and end date the same)."
+        if leave_type not in LEAVE_TYPE_TO_DAY_TYPE:
+            return None, f"Half-day is not available for {leave_type}."
+        half_emp = db.execute("SELECT work_pattern, base FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+        if half_emp is not None:
+            on_holiday = db.execute(
+                "SELECT 1 FROM public_holidays WHERE date=? AND state=?", (start_date, half_emp["base"] or "MY")
+            ).fetchone() is not None
+            if _default_day_type_for_pattern(
+                half_emp["work_pattern"], datetime.date.fromisoformat(start_date).weekday(), is_holiday=on_holiday
+            ) != "WORKED":
+                return None, "That date is not a normal working day for this employee, so half-day leave doesn't apply."
     if leave_type in LEAVE_DOC_REQUIRED_TYPES and not has_file:
         return None, f"{leave_type} requires a supporting document (e.g. medical certificate) to be uploaded."
     if leave_type in LEAVE_DOC_REQUIRED_TYPES and not reason:
@@ -6050,28 +6101,35 @@ def _validate_and_create_leave_request(db, emp_id, leave_type, start_date, end_d
             if ext not in ALLOWED_DOC_EXTENSIONS:
                 return None, "Supporting document(s) must be PDF, Word files, or images (JPG/PNG)."
 
-    if status == "Approved" and _approved_leave_overlaps(db, emp_id, leave_type, start_date, end_date):
+    if status == "Approved" and _approved_leave_overlaps(db, emp_id, leave_type, start_date, end_date, half_day):
         return None, (
             f"This employee already has an Approved {leave_type} request overlapping these dates - "
             "check the existing one on Leave Requests before adding another for the same days."
         )
 
-    days = (datetime.date.fromisoformat(end_date) - datetime.date.fromisoformat(start_date)).days + 1
+    if status == "Approved" and half_day and _half_day_other_type_conflict(db, None, emp_id, leave_type, start_date):
+        return None, (
+            "Another type of leave is already approved on this date - a half-day can't be combined with it "
+            "automatically. Adjust the existing leave first."
+        )
+
+    days = 0.5 if half_day else (
+        datetime.date.fromisoformat(end_date) - datetime.date.fromisoformat(start_date)
+    ).days + 1
     now = datetime.datetime.now().isoformat(timespec="seconds")
+    cols = ["emp_id", "leave_type", "start_date", "end_date", "days", "reason", "status", "submitted_at"]
+    vals = [emp_id, leave_type, start_date, end_date, days, reason, status, now]
     if status == "Approved":
-        cur = db.execute(
-            """INSERT INTO leave_requests (emp_id, leave_type, start_date, end_date, days, reason, status,
-                   submitted_at, reviewed_by, reviewed_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (emp_id, leave_type, start_date, end_date, days, reason, status, now, reviewed_by, now),
-        )
-    else:
-        cur = db.execute(
-            """INSERT INTO leave_requests (emp_id, leave_type, start_date, end_date, days, reason, status,
-                   submitted_at)
-               VALUES (?,?,?,?,?,?,?,?)""",
-            (emp_id, leave_type, start_date, end_date, days, reason, status, now),
-        )
+        cols += ["reviewed_by", "reviewed_at"]
+        vals += [reviewed_by, now]
+    if half_day:
+        # Only named when used, so whole-day requests keep working on a
+        # database that hasn't had the half_day column migrated in yet.
+        cols.append("half_day")
+        vals.append(half_day)
+    cur = db.execute(
+        f"INSERT INTO leave_requests ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", vals
+    )
     leave_request_id = cur.lastrowid
     if has_file:
         emp_dir = os.path.join(UPLOAD_DIR, emp_id)
@@ -6100,8 +6158,11 @@ def portal_leave():
         end_date = request.form.get("end_date", "")
         reason = request.form.get("reason", "").strip() or None
         files = [f for f in request.files.getlist("supporting_doc") if f.filename]
+        half_day = request.form.get("half_day", "").strip() or None
+        if half_day in LEAVE_HALF_DAY_SESSIONS and start_date:
+            end_date = start_date  # half-day is always a single date
         leave_request_id, error = _validate_and_create_leave_request(
-            db, emp["emp_id"], leave_type, start_date, end_date, reason, files, "Pending"
+            db, emp["emp_id"], leave_type, start_date, end_date, reason, files, "Pending", half_day=half_day
         )
         if error is None:
             db.commit()
@@ -6887,13 +6948,17 @@ def leave_requests_admin():
     # A staff "Request Change" flag on their own Approved leave (see
     # portal_leave_request_change) is unioned in as a third source, so HR
     # sees it in the same queue instead of needing a separate page for it.
+    # half_day is selected as a plain NULL until the column is migrated in.
+    half_col = "lr.half_day" if "half_day" in [
+        r[1] for r in db.execute("PRAGMA table_info(leave_requests)").fetchall()
+    ] else "NULL"
     change_union = f"""
            UNION ALL
            SELECT 'change' AS source, cr.id, cr.emp_id, e.full_name,
                    'Cancel/Change: ' || lr.leave_type AS type_label,
                    NULL AS destination, lr.start_date, lr.end_date, lr.days, cr.message AS reason,
                    NULL AS supporting_doc_original, NULL AS supporting_doc_stored,
-                   cr.submitted_at
+                   cr.submitted_at, {half_col} AS half_day
            FROM leave_change_requests cr
            JOIN leave_requests lr ON lr.id = cr.leave_request_id
            JOIN employees e ON e.emp_id = cr.emp_id
@@ -6901,7 +6966,7 @@ def leave_requests_admin():
     pending_sql = f"""SELECT 'leave' AS source, lr.id, lr.emp_id, e.full_name, lr.leave_type AS type_label,
                    NULL AS destination, lr.start_date, lr.end_date, lr.days, lr.reason,
                    NULL AS supporting_doc_original, NULL AS supporting_doc_stored,
-                   lr.submitted_at
+                   lr.submitted_at, {half_col} AS half_day
            FROM leave_requests lr JOIN employees e ON e.emp_id = lr.emp_id
            WHERE lr.status='Pending' {scope_clause}
            UNION ALL
@@ -6910,7 +6975,7 @@ def leave_requests_admin():
                    CAST(julianday(bt.end_date) - julianday(bt.start_date) + 1 AS INTEGER) AS days,
                    bt.purpose AS reason,
                    bt.supporting_doc_original, bt.supporting_doc_stored,
-                   bt.submitted_at
+                   bt.submitted_at, NULL AS half_day
            FROM business_trips bt JOIN employees e ON e.emp_id = bt.emp_id
            WHERE bt.status='Pending' {scope_clause}"""
     try:
@@ -6932,7 +6997,7 @@ def leave_requests_admin():
         f"""SELECT 'leave' AS source, lr.id, lr.emp_id, e.full_name, lr.leave_type AS type_label,
                    NULL AS destination, lr.start_date, lr.end_date, lr.days, lr.reason,
                    NULL AS supporting_doc_original, NULL AS supporting_doc_stored,
-                   lr.status, lr.reviewed_by, lr.reviewed_at
+                   lr.status, lr.reviewed_by, lr.reviewed_at, {half_col} AS half_day
            FROM leave_requests lr JOIN employees e ON e.emp_id = lr.emp_id
            WHERE lr.status!='Pending' AND lr.start_date LIKE ? {scope_clause}
            UNION ALL
@@ -6941,7 +7006,7 @@ def leave_requests_admin():
                    CAST(julianday(bt.end_date) - julianday(bt.start_date) + 1 AS INTEGER) AS days,
                    bt.purpose AS reason,
                    bt.supporting_doc_original, bt.supporting_doc_stored,
-                   bt.status, bt.reviewed_by, bt.reviewed_at
+                   bt.status, bt.reviewed_by, bt.reviewed_at, NULL AS half_day
            FROM business_trips bt JOIN employees e ON e.emp_id = bt.emp_id
            WHERE bt.status!='Pending' AND bt.start_date LIKE ? {scope_clause}
            ORDER BY 7, 3""",
@@ -6996,8 +7061,12 @@ def hr_add_leave_request():
         else:
             hr_user = db.execute("SELECT full_name FROM hr_users WHERE username=?", (session["hr_username"],)).fetchone()
             reviewer = hr_user["full_name"] if hr_user else session["hr_username"]
+            half_day = request.form.get("half_day", "").strip() or None
+            if half_day in LEAVE_HALF_DAY_SESSIONS and start_date:
+                end_date = start_date
             leave_request_id, error = _validate_and_create_leave_request(
-                db, emp_id, leave_type, start_date, end_date, reason, files, "Approved", reviewed_by=reviewer
+                db, emp_id, leave_type, start_date, end_date, reason, files, "Approved", reviewed_by=reviewer,
+                half_day=half_day,
             )
             if error is None:
                 leave_request = db.execute("SELECT * FROM leave_requests WHERE id=?", (leave_request_id,)).fetchone()
@@ -7150,6 +7219,58 @@ LEAVE_TYPE_TO_DAY_TYPE = {
 }
 
 
+def _leave_half_day(leave_request):
+    """'AM'/'PM' if this leave_requests row is a half-day request, else None
+    (also None on a database without the half_day column yet)."""
+    if "half_day" not in leave_request.keys():
+        return None
+    return leave_request["half_day"] if leave_request["half_day"] in LEAVE_HALF_DAY_SESSIONS else None
+
+
+def _half_day_other_type_conflict(db, leave_request_id, emp_id, leave_type, date_str):
+    """True if a DIFFERENT approved leave request (another leave type)
+    already covers this date - a half-day marker on attendance_daily can
+    only name one leave type, so e.g. AL in the morning + MC in the
+    afternoon of the same day has to be sorted out by HR, not synced."""
+    try:
+        return db.execute(
+            """SELECT 1 FROM leave_requests WHERE emp_id=? AND status='Approved' AND leave_type!=?
+               AND start_date<=? AND end_date>=? AND id!=?""",
+            (emp_id, leave_type, date_str, date_str, leave_request_id or 0),
+        ).fetchone() is not None
+    except sqlite3.OperationalError:
+        return False
+
+
+def _sync_half_day_to_attendance_daily(db, emp_id, date_str, day_type, session_half):
+    """Marks one date as half leave (day_type = AL/MC/HL/UL/OTHER_PAID,
+    session_half = AM/PM) while keeping it a WORKED day, so Time In/Out,
+    meal/CEWI and OT already on it survive. A date with no row yet gets a
+    bare WORKED row (times left for HR/clock-in to fill). If the other
+    half of the same date is already approved leave of the same type, the
+    two halves become one full leave day. A date that's already something
+    other than WORKED (holiday, rest day, full leave) is left alone."""
+    row = db.execute("SELECT * FROM attendance_daily WHERE emp_id=? AND date=?", (emp_id, date_str)).fetchone()
+    if row is None:
+        db.execute(
+            """INSERT INTO attendance_daily (emp_id, date, day_type, meal_allowance_flag, cewi_flag,
+                   ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, half_leave_type, half_leave_session)
+               VALUES (?,?,'WORKED','N','N',0,0,0,?,?)""",
+            (emp_id, date_str, day_type, session_half),
+        )
+        return
+    if row["day_type"] != "WORKED":
+        return
+    existing_half = _half_leave_type(row)
+    if existing_half == day_type and row["half_leave_session"] != session_half:
+        _sync_days_to_attendance_daily(db, emp_id, date_str, date_str, day_type)  # both halves = full day
+        return
+    db.execute(
+        "UPDATE attendance_daily SET half_leave_type=?, half_leave_session=? WHERE emp_id=? AND date=?",
+        (day_type, session_half, emp_id, date_str),
+    )
+
+
 def _sync_days_to_attendance_daily(db, emp_id, start_date, end_date, day_type):
     """Writes day_type onto Attendance Daily (day-by-day view) for every day
     in [start_date, end_date] so an approved absence doesn't look
@@ -7170,10 +7291,17 @@ def _sync_days_to_attendance_daily(db, emp_id, start_date, end_date, day_type):
                    meal_allowance_flag='N', cewi_flag='N', ot_hours_1_5=0, ot_hours_2_0=0, ot_hours_3_0=0""",
             (emp_id, day.isoformat(), day_type),
         )
+        try:  # a whole-day status replaces any half-day marker on that date
+            db.execute(
+                "UPDATE attendance_daily SET half_leave_type=NULL, half_leave_session=NULL WHERE emp_id=? AND date=?",
+                (emp_id, day.isoformat()),
+            )
+        except sqlite3.OperationalError:
+            pass  # half-day columns not migrated in yet
         day += datetime.timedelta(days=1)
 
 
-def _sync_days_to_attendance_monthly(db, emp_id, start_date, end_date, column):
+def _sync_days_to_attendance_monthly(db, emp_id, start_date, end_date, column, weight=1.0):
     """Adds days in [start_date, end_date] onto attendance_monthly's
     `column`, split across whichever month(s) the range actually falls
     in, so HR doesn't have to re-enter the same days by hand on the
@@ -7196,7 +7324,7 @@ def _sync_days_to_attendance_monthly(db, emp_id, start_date, end_date, column):
                 VALUES (?,?,?,?)
                 ON CONFLICT(emp_id, year, month) DO UPDATE SET
                     {column} = {column} + excluded.{column}""",
-            (emp_id, year, month, count),
+            (emp_id, year, month, count * weight),
         )
         # Days Worked, Meal Eligible Days, and CEWI Eligible Days all need
         # to drop when leave is added, or the employee ends up credited for
@@ -7227,6 +7355,10 @@ def _sync_leave_to_attendance_daily(db, leave_request):
     day_type = LEAVE_TYPE_TO_DAY_TYPE.get(leave_request["leave_type"])
     if day_type is None:
         return
+    half = _leave_half_day(leave_request)
+    if half:
+        _sync_half_day_to_attendance_daily(db, leave_request["emp_id"], leave_request["start_date"], day_type, half)
+        return
     _sync_days_to_attendance_daily(
         db, leave_request["emp_id"], leave_request["start_date"], leave_request["end_date"], day_type
     )
@@ -7237,7 +7369,8 @@ def _sync_leave_to_attendance(db, leave_request):
     if column is None:
         return  # unrecognized leave type - nothing to sync
     _sync_days_to_attendance_monthly(
-        db, leave_request["emp_id"], leave_request["start_date"], leave_request["end_date"], column
+        db, leave_request["emp_id"], leave_request["start_date"], leave_request["end_date"], column,
+        weight=0.5 if _leave_half_day(leave_request) else 1.0,
     )
 
 
@@ -7258,12 +7391,21 @@ def review_leave_request(request_id):
     if session.get("hr_role") == "approver" and leave_request["leave_approver_username"] != session["hr_username"]:
         abort(403)
     if decision == "Approved" and _approved_leave_overlaps(
-        db, leave_request["emp_id"], leave_request["leave_type"], leave_request["start_date"], leave_request["end_date"]
+        db, leave_request["emp_id"], leave_request["leave_type"], leave_request["start_date"], leave_request["end_date"],
+        _leave_half_day(leave_request),
     ):
         return redirect(url_for(
             "leave_requests_admin",
             error=f"{leave_request['emp_id']} already has an Approved {leave_request['leave_type']} request "
                   "overlapping these dates - check the existing one before approving this as well.",
+        ))
+    if decision == "Approved" and _leave_half_day(leave_request) and _half_day_other_type_conflict(
+        db, request_id, leave_request["emp_id"], leave_request["leave_type"], leave_request["start_date"]
+    ):
+        return redirect(url_for(
+            "leave_requests_admin",
+            error=f"{leave_request['emp_id']} already has another type of leave approved on "
+                  f"{leave_request['start_date']} - a half-day can't be combined with it automatically.",
         ))
     # Reviewer is derived from who's actually logged in, not typed by hand -
     # ties every decision to a real account now that HR/approver logins exist.
@@ -7961,6 +8103,21 @@ def hr_migrate_schema():
             ot_hours_1_5 REAL DEFAULT 0, ot_hours_2_0 REAL DEFAULT 0, ot_hours_3_0 REAL DEFAULT 0,
             ot_reason TEXT, UNIQUE (emp_id, date))""")
         applied.append("table: attendance_daily")
+    lr_cols = [r[1] for r in db.execute("PRAGMA table_info(leave_requests)").fetchall()]
+    if "half_day" not in lr_cols:
+        # 'AM' = off in the morning (works the afternoon), 'PM' = off in the
+        # afternoon; NULL = whole day(s). Only ever set with days = 0.5.
+        db.execute("ALTER TABLE leave_requests ADD COLUMN half_day TEXT")
+        applied.append("leave_requests.half_day")
+    hd_cols = [r[1] for r in db.execute("PRAGMA table_info(attendance_daily)").fetchall()]
+    for col in ("half_leave_type", "half_leave_session"):
+        if col not in hd_cols:
+            # Half-day leave: the day stays WORKED, these record which leave
+            # day_type (AL/MC/HL/UL/OTHER_PAID) covers half of it and which
+            # session (AM/PM) - counted as 0.5 leave + 0.5 worked.
+            db.execute(f"ALTER TABLE attendance_daily ADD COLUMN {col} TEXT")
+            applied.append(f"attendance_daily.{col}")
+
     ad_cols = [r[1] for r in db.execute("PRAGMA table_info(attendance_daily)").fetchall()]
     if "cewi_flag" not in ad_cols:
         db.execute("ALTER TABLE attendance_daily ADD COLUMN cewi_flag TEXT NOT NULL DEFAULT 'N'")
@@ -10676,12 +10833,16 @@ def _resync_leave_days_from_daily(db, emp_id, year, month):
     if monthly is None:
         return None
     counts = {col: 0.0 for col in LEAVE_DAY_TYPE_TO_MONTHLY_COLUMN.values()}
-    for r in db.execute(
-        "SELECT day_type, COUNT(*) AS n FROM attendance_daily WHERE emp_id=? AND date LIKE ? GROUP BY day_type",
+    daily_rows = db.execute(
+        "SELECT * FROM attendance_daily WHERE emp_id=? AND date LIKE ?",
         (emp_id, f"{year:04d}-{month:02d}-%"),
-    ).fetchall():
+    ).fetchall()
+    for r in daily_rows:
         if r["day_type"] in LEAVE_DAY_TYPE_TO_MONTHLY_COLUMN:
-            counts[LEAVE_DAY_TYPE_TO_MONTHLY_COLUMN[r["day_type"]]] = float(r["n"])
+            counts[LEAVE_DAY_TYPE_TO_MONTHLY_COLUMN[r["day_type"]]] += 1.0
+        half_type = _half_leave_type(r)
+        if half_type in LEAVE_DAY_TYPE_TO_MONTHLY_COLUMN:
+            counts[LEAVE_DAY_TYPE_TO_MONTHLY_COLUMN[half_type]] += 0.5
     changes = [f"{col}: {monthly[col]} -> {val}" for col, val in counts.items() if (monthly[col] or 0) != val]
     if changes:
         db.execute(
@@ -10693,19 +10854,28 @@ def _resync_leave_days_from_daily(db, emp_id, year, month):
     return changes
 
 
-def _approved_leave_overlaps(db, emp_id, leave_type, start_date, end_date):
+def _approved_leave_overlaps(db, emp_id, leave_type, start_date, end_date, half_day=None):
     """True if this employee already has another Approved leave request of
     the SAME leave type overlapping this date range - the guard against
     the exact bug that inflated K002's September Medical Leave: the same
     leave submitted (or keyed in) and approved twice, each approval adding
     its days onto the monthly total again. Narrow on purpose - different
     leave TYPES overlapping the same day is a rare, legitimate edge case
-    this doesn't block."""
-    return db.execute(
-        """SELECT 1 FROM leave_requests WHERE emp_id=? AND leave_type=? AND status='Approved'
-           AND start_date<=? AND end_date>=?""",
-        (emp_id, leave_type, end_date, start_date),
-    ).fetchone() is not None
+    this doesn't block. A morning half-day and an afternoon half-day of the
+    same type on the same date don't overlap (together they're one day)."""
+    try:
+        return db.execute(
+            """SELECT 1 FROM leave_requests WHERE emp_id=? AND leave_type=? AND status='Approved'
+               AND start_date<=? AND end_date>=?
+               AND NOT (half_day IS NOT NULL AND ? IS NOT NULL AND half_day != ?)""",
+            (emp_id, leave_type, end_date, start_date, half_day, half_day),
+        ).fetchone() is not None
+    except sqlite3.OperationalError:  # half_day column not migrated in yet
+        return db.execute(
+            """SELECT 1 FROM leave_requests WHERE emp_id=? AND leave_type=? AND status='Approved'
+               AND start_date<=? AND end_date>=?""",
+            (emp_id, leave_type, end_date, start_date),
+        ).fetchone() is not None
 
 
 def _unsync_deleted_leave_request(db, leave_request):
@@ -10722,6 +10892,44 @@ def _unsync_deleted_leave_request(db, leave_request):
     at all. Doesn't commit."""
     day_type = LEAVE_TYPE_TO_DAY_TYPE.get(leave_request["leave_type"])
     if day_type is None:
+        return
+    half = _leave_half_day(leave_request)
+    if half:
+        date_str = leave_request["start_date"]
+        row = db.execute(
+            "SELECT * FROM attendance_daily WHERE emp_id=? AND date=?", (leave_request["emp_id"], date_str)
+        ).fetchone()
+        if row is not None:
+            other = "PM" if half == "AM" else "AM"
+            if _half_leave_type(row) == day_type and row["half_leave_session"] == half:
+                db.execute(
+                    "UPDATE attendance_daily SET half_leave_type=NULL, half_leave_session=NULL WHERE id=?",
+                    (row["id"],),
+                )
+                if (not row["time_in"] and not row["time_out"] and row["meal_allowance_flag"] != "Y"
+                        and row["cewi_flag"] != "Y"
+                        and not (row["ot_hours_1_5"] or row["ot_hours_2_0"] or row["ot_hours_3_0"])):
+                    db.execute("DELETE FROM attendance_daily WHERE id=?", (row["id"],))  # bare row we created
+            elif row["day_type"] == day_type:
+                # The two halves had merged into one full leave day; only
+                # this half goes, so the other half stays as half leave.
+                db.execute(
+                    """UPDATE attendance_daily SET day_type='WORKED', half_leave_type=?, half_leave_session=?
+                       WHERE id=?""",
+                    (day_type, other, row["id"]),
+                )
+        d = datetime.date.fromisoformat(date_str)
+        _resync_leave_days_from_daily(db, leave_request["emp_id"], d.year, d.month)
+        # Approving took half a day off Days Worked / Meal / CEWI eligible
+        # days; give that half back (never above the month's working days).
+        db.execute(
+            """UPDATE attendance_monthly SET
+                   days_worked = MIN(COALESCE(days_worked, 0) + 0.5, COALESCE(working_days_in_month, 0)),
+                   meal_eligible_days = MIN(COALESCE(meal_eligible_days, 0) + 0.5, COALESCE(working_days_in_month, 0)),
+                   cewi_eligible_days = MIN(COALESCE(cewi_eligible_days, 0) + 0.5, COALESCE(working_days_in_month, 0))
+               WHERE emp_id=? AND year=? AND month=?""",
+            (leave_request["emp_id"], d.year, d.month),
+        )
         return
     start = datetime.date.fromisoformat(leave_request["start_date"])
     end = datetime.date.fromisoformat(leave_request["end_date"])

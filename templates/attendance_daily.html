@@ -53,6 +53,9 @@
       <option value="{{ t }}" {% if (r.day_type if r else d.default_day_type) == t %}selected{% endif %}>{{ t }}</option>
       {% endfor %}
     </select>
+    {% if d.half_leave %}
+    <div style="font-size:11px; color:#1e3a8a; font-weight:600; margin-top:2px;">Half-day leave ({{ d.half_leave }}) &mdash; {{ 'morning off' if r.half_leave_session == 'AM' else 'afternoon off' }}</div>
+    {% endif %}
     {% if d.trip_label %}
     <div style="font-size:11px; color:var(--muted); margin-top:2px;">{{ d.trip_label }}</div>
     {% endif %}

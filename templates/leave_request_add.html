@@ -29,7 +29,15 @@
         {% endfor %}
       </select>
     </div>
-    <div><label>Start Date</label><input type="date" id="leave_start_date" name="start_date" onchange="updateDaysRequested()" required></div>
+    <div>
+      <label>Duration</label>
+      <select id="half_day" name="half_day" onchange="updateHalfDay()">
+        <option value="">Full day(s)</option>
+        <option value="AM">Half day &mdash; morning off</option>
+        <option value="PM">Half day &mdash; afternoon off</option>
+      </select>
+    </div>
+    <div><label>Start Date</label><input type="date" id="leave_start_date" name="start_date" onchange="updateHalfDay()" required></div>
     <div><label>End Date</label><input type="date" id="leave_end_date" name="end_date" onchange="updateDaysRequested()" required></div>
   </div>
   <p id="days_requested" style="font-weight:600; margin-top:8px;"></p>
@@ -68,8 +76,21 @@ function updateDaysRequested() {
     display.style.color = 'var(--danger)';
     return;
   }
-  display.textContent = days + (days === 1 ? ' day' : ' days');
+  display.textContent = document.getElementById('half_day').value ? '0.5 day' : days + (days === 1 ? ' day' : ' days');
   display.style.color = '';
+}
+
+// Half-day leave is always one date: End Date follows Start Date and is locked.
+function updateHalfDay() {
+  var half = document.getElementById('half_day').value;
+  var end = document.getElementById('leave_end_date');
+  if (half) {
+    end.value = document.getElementById('leave_start_date').value;
+    end.readOnly = true;
+  } else {
+    end.readOnly = false;
+  }
+  updateDaysRequested();
 }
 
 var DOC_REQUIRED_TYPES = ['Medical Leave', 'Hospitalisation Leave'];

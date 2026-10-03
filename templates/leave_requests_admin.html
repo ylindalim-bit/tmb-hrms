@@ -27,7 +27,7 @@
         <td class="text">{{ lr.emp_id }} &mdash; {{ lr.full_name }}</td>
         <td class="text">{% if lr.type_label == 'Unrecorded Leave' %}<strong>{{ lr.type_label }}</strong>{% else %}{{ lr.type_label }}{% endif %}</td>
         <td class="text">{{ lr.destination or "-" }}</td>
-        <td class="text">{{ lr.start_date }} &ndash; {{ lr.end_date }}</td>
+        <td class="text">{{ lr.start_date }}{% if lr.half_day %}<div style="font-size:11px; color:var(--muted);">Half day &mdash; {{ 'morning off' if lr.half_day == 'AM' else 'afternoon off' }}</div>{% else %} &ndash; {{ lr.end_date }}{% endif %}</td>
         <td>{{ lr.days }}</td>
         <td class="text">{{ lr.reason or "" }}</td>
         <td class="text">
@@ -97,7 +97,7 @@
         <td class="text">{{ lr.emp_id }} &mdash; {{ lr.full_name }}</td>
         <td class="text">{% if lr.type_label == 'Unrecorded Leave' %}<strong>{{ lr.type_label }}</strong>{% else %}{{ lr.type_label }}{% endif %}</td>
         <td class="text">{{ lr.destination or "-" }}</td>
-        <td class="text">{{ lr.start_date }} &ndash; {{ lr.end_date }}</td>
+        <td class="text">{{ lr.start_date }}{% if lr.half_day %}<div style="font-size:11px; color:var(--muted);">Half day &mdash; {{ 'morning off' if lr.half_day == 'AM' else 'afternoon off' }}</div>{% else %} &ndash; {{ lr.end_date }}{% endif %}</td>
         <td>{{ lr.days }}</td>
         <td class="text">{{ lr.reason or "" }}</td>
         <td class="text">

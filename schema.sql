@@ -185,6 +185,8 @@ CREATE TABLE attendance_daily (
     ot_hours_2_0    REAL DEFAULT 0,
     ot_hours_3_0    REAL DEFAULT 0,
     ot_reason       TEXT,
+    half_leave_type    TEXT,   -- AL/MC/HL/UL/OTHER_PAID when half of a WORKED day is leave
+    half_leave_session TEXT,   -- 'AM' (off in the morning) / 'PM' (off in the afternoon)
     UNIQUE (emp_id, date)
 );
 
@@ -377,7 +379,8 @@ CREATE TABLE leave_requests (
     reviewed_at    TEXT,
     review_notes   TEXT,
     supporting_doc_original TEXT,  -- legacy single-file column, kept for old rows -
-    supporting_doc_stored   TEXT   -- new uploads go into leave_request_documents below instead
+    supporting_doc_stored   TEXT,  -- new uploads go into leave_request_documents below instead
+    half_day                TEXT   -- 'AM' / 'PM' = half-day leave (days = 0.5); NULL = whole day(s)
 );
 
 -- One or more supporting documents per leave request (e.g. multiple

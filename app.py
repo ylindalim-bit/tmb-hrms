@@ -264,7 +264,21 @@ if not os.path.exists(DB_PATH):
             _bootstrap_conn.executescript(_f.read())
     _bootstrap_conn.commit()
     _bootstrap_conn.close()
-DOCUMENT_TYPES = ["Job Application Form", "IC / Passport Copy", "Letter of Employment", "Confirmation Letter",
+
+# Half-day leave columns, added automatically at startup (idempotent) so this
+# feature doesn't depend on someone calling /hr/migrate-schema after deploy.
+try:
+    _ensure_conn = sqlite3.connect(DB_PATH)
+    for _tbl, _col in (("leave_requests", "half_day"), ("attendance_daily", "half_leave_type"),
+                       ("attendance_daily", "half_leave_session")):
+        _existing = [_r[1] for _r in _ensure_conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
+        if _existing and _col not in _existing:
+            _ensure_conn.execute(f"ALTER TABLE {_tbl} ADD COLUMN {_col} TEXT")
+    _ensure_conn.commit()
+    _ensure_conn.close()
+except sqlite3.Error:
+    pass  # /hr/migrate-schema applies the same columns if this ever fails
+DOCUMENT_TYPES =["Job Application Form", "IC / Passport Copy", "Letter of Employment", "Confirmation Letter",
                    "Resignation Letter", "CP22A", "e-Stamping Certificate", "TP3 (Prior Employer Income)", "Other"]
 BUSINESS_TRIP_TYPES = ["Business Trip", "Out-Duty", "Training", "Unrecorded Leave", "Home Leave (Malaysia)"]
 # Approving either of these pays the days as Other Paid Leave rather than

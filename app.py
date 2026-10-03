@@ -454,6 +454,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/seed-ot-claims",         # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/seed-approved-ot-claims",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/correct-approved-ot-claim",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/set-pcb-override",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/ot-claims-cleanup",      # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/set-work-pattern",       # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/delete-attendance-daily", # gated by RESTORE_TOKEN env var, not session - see route
@@ -9315,6 +9316,46 @@ def hr_set_i001_pcb_override_august():
     )
     db.commit()
     return f"OK - set I001 August PCB override to RM72.85 (pcb={result['pcb']}, net_pay={result['net_pay']})", 200
+
+
+@app.route("/hr/set-pcb-override", methods=["POST"])
+def hr_set_pcb_override():
+    """One-time helper: the same Manual PCB Correction as set_pcb_override
+    (pins one finalized employee/month's PCB, e.g. to match their official
+    LHDN e-PCB slip, and recomputes net pay + the PCB history record), but
+    without a live HR session. Same RESTORE_TOKEN gate as the other
+    one-time routes; safe to re-run.
+
+    Form fields: emp_id, year, month, pcb_override, reason."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    emp_id = request.form.get("emp_id")
+    year = request.form.get("year", type=int)
+    month = request.form.get("month", type=int)
+    value = request.form.get("pcb_override", type=float)
+    reason = request.form.get("reason") or None
+    db = get_db()
+    if db.execute("SELECT 1 FROM payroll_runs WHERE emp_id=? AND year=? AND month=?",
+                  (emp_id, year, month)).fetchone() is None:
+        return "Refused: that month isn't finalized for this employee yet.", 400
+    db.execute(
+        "UPDATE payroll_runs SET pcb_override=?, pcb_override_reason=? WHERE emp_id=? AND year=? AND month=?",
+        (value, reason, emp_id, year, month),
+    )
+    result = payroll_calc.calculate_payroll(db, emp_id, year, month)
+    db.execute(
+        "UPDATE payroll_runs SET pcb=?, total_deductions=?, net_pay=? WHERE emp_id=? AND year=? AND month=?",
+        (result["pcb"], result["total_deductions"], result["net_pay"], emp_id, year, month),
+    )
+    db.execute(
+        """INSERT INTO pcb_monthly_record (emp_id, year, month, gross_remun, epf_employee, pcb_deducted)
+           VALUES (?,?,?,?,?,?)
+           ON CONFLICT(emp_id, year, month) DO UPDATE SET pcb_deducted=excluded.pcb_deducted""",
+        (emp_id, year, month, result["gross_pay"], result["epf_employee"], result["pcb"]),
+    )
+    db.commit()
+    return f"OK - {emp_id} {year}-{month:02d} PCB set to {result['pcb']:.2f}, net pay now {result['net_pay']:.2f}", 200
 
 
 @app.route("/hr/lock-pcb-l001-n001-s001-august", methods=["POST"])

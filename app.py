@@ -469,6 +469,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/seed-approved-ot-claims",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/correct-approved-ot-claim",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/set-pcb-override",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/delete-employee-month",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/ot-claims-cleanup",      # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/set-work-pattern",       # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/delete-attendance-daily", # gated by RESTORE_TOKEN env var, not session - see route
@@ -9527,6 +9528,49 @@ def hr_set_pcb_override():
     )
     db.commit()
     return f"OK - {emp_id} {year}-{month:02d} PCB set to {result['pcb']:.2f}, net pay now {result['net_pay']:.2f}", 200
+
+
+@app.route("/hr/delete-employee-month", methods=["POST"])
+def hr_delete_employee_month():
+    """One-time helper: removes a stray payroll month for an employee who had
+    already left before that month began (payroll row, PCB history row,
+    monthly attendance/adjustment rows and any daily attendance rows) - e.g.
+    a leftover auto-filled row that would otherwise be paid out in the bank
+    files. Refuses unless the employee's resignation date / last working day
+    is before the first of that month. Same RESTORE_TOKEN gate as the other
+    one-time routes; dry_run=1 only reports. Form fields: emp_id, year,
+    month, dry_run (optional)."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    emp_id = request.form.get("emp_id", "")
+    year = request.form.get("year", type=int)
+    month = request.form.get("month", type=int)
+    db = get_db()
+    emp = db.execute("SELECT * FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+    if emp is None or not year or not month:
+        return "Refused: unknown employee or bad year/month.", 400
+    first = f"{year:04d}-{month:02d}-01"
+    left = emp["last_working_day"] or emp["resignation_date"]
+    if not left or left >= first:
+        return f"Refused: {emp_id} has no leaving date before {first} (left: {left}).", 400
+    prefix = f"{year:04d}-{month:02d}-%"
+    targets = [
+        ("payroll_runs", "emp_id=? AND year=? AND month=?", (emp_id, year, month)),
+        ("pcb_monthly_record", "emp_id=? AND year=? AND month=?", (emp_id, year, month)),
+        ("attendance_monthly", "emp_id=? AND year=? AND month=?", (emp_id, year, month)),
+        ("monthly_adjustments", "emp_id=? AND year=? AND month=?", (emp_id, year, month)),
+        ("attendance_daily", "emp_id=? AND date LIKE ?", (emp_id, prefix)),
+    ]
+    report = []
+    for table, where, params in targets:
+        n = db.execute(f"SELECT COUNT(*) FROM {table} WHERE {where}", params).fetchone()[0]
+        if n and request.form.get("dry_run") != "1":
+            db.execute(f"DELETE FROM {table} WHERE {where}", params)
+        report.append(f"{table}: {n}")
+    if request.form.get("dry_run") != "1":
+        db.commit()
+    return ("DRY RUN - would delete " if request.form.get("dry_run") == "1" else "OK - deleted ") + ", ".join(report), 200
 
 
 @app.route("/hr/lock-pcb-l001-n001-s001-august", methods=["POST"])

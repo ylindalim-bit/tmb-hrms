@@ -7518,6 +7518,152 @@ def review_business_trip(trip_id):
     return redirect(url_for("business_trips_admin"))
 
 
+def _paid_notice_overlaps(db, emp_id, start_date, end_date, exclude_id=None):
+    """True if another Approved paid Movement Notice (Unrecorded Leave / Home
+    Leave) for this employee overlaps the dates - the same double-counting
+    guard _approved_leave_overlaps gives leave, since each approval adds its
+    days onto the monthly Other Paid Leave total."""
+    marks = ",".join("?" * len(PAID_TRIP_NOTICE_TYPES))
+    return db.execute(
+        f"""SELECT 1 FROM business_trips WHERE emp_id=? AND status='Approved'
+            AND notice_type IN ({marks}) AND start_date<=? AND end_date>=? AND id!=?""",
+        (emp_id, *PAID_TRIP_NOTICE_TYPES, end_date, start_date, exclude_id or 0),
+    ).fetchone() is not None
+
+
+@app.route("/business-trips/add", methods=["GET", "POST"])
+def hr_add_business_trip():
+    """Lets HR key in a Movement Notice (Business Trip, Out-Duty, Training,
+    Unrecorded Leave, Home Leave) on an employee's behalf. Saved straight to
+    'Approved' (HR entering it is treated as already agreed); the paid types
+    (Unrecorded Leave, Home Leave) are recorded onto Attendance immediately,
+    exactly as approving a submitted one does. Unrecorded Leave still needs a
+    supporting document, same as the portal."""
+    db = get_db()
+    error = None
+    is_approver = session.get("hr_role") == "approver"
+    if is_approver:
+        employees = db.execute(
+            "SELECT emp_id, full_name FROM employees WHERE status != 'Inactive' AND leave_approver_username=? ORDER BY emp_id",
+            (session["hr_username"],),
+        ).fetchall()
+    else:
+        employees = db.execute(
+            "SELECT emp_id, full_name FROM employees WHERE status != 'Inactive' ORDER BY emp_id"
+        ).fetchall()
+
+    if request.method == "POST":
+        emp_id = request.form.get("emp_id", "").strip()
+        notice_type = request.form.get("notice_type") or "Business Trip"
+        if notice_type not in BUSINESS_TRIP_TYPES:
+            notice_type = "Business Trip"
+        destination = request.form.get("destination", "").strip()
+        start_date = request.form.get("start_date", "")
+        end_date = request.form.get("end_date", "")
+        purpose = request.form.get("purpose", "").strip() or None
+        file = request.files.get("supporting_doc")
+        has_file = file is not None and file.filename != ""
+        original_name = stored_name = None
+        emp = db.execute("SELECT * FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+        if emp is None:
+            error = "Select a valid employee."
+        elif is_approver and emp["leave_approver_username"] != session["hr_username"]:
+            error = "You can only enter notices for staff assigned to you."
+        elif not destination or not start_date or not end_date:
+            error = "Destination, start date, and end date are required."
+        elif end_date < start_date:
+            error = "End date cannot be before start date."
+        elif notice_type == "Unrecorded Leave" and not has_file:
+            error = "Please attach a supporting document for Unrecorded Leave."
+        elif notice_type in PAID_TRIP_NOTICE_TYPES and _paid_notice_overlaps(db, emp_id, start_date, end_date):
+            error = (f"{emp_id} already has an Approved Unrecorded Leave / Home Leave notice overlapping these dates - "
+                     "check the existing one before adding another for the same days.")
+        elif has_file:
+            original_name = secure_filename(file.filename)
+            ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+            if ext not in ALLOWED_DOC_EXTENSIONS:
+                error = "Supporting document must be a PDF, Word file, or an image (JPG/PNG)."
+        if error is None:
+            if has_file:
+                emp_dir = os.path.join(UPLOAD_DIR, emp_id)
+                os.makedirs(emp_dir, exist_ok=True)
+                stored_name = f"{uuid.uuid4().hex}_{original_name}"
+                file.save(os.path.join(emp_dir, stored_name))
+            hr_user = db.execute("SELECT full_name FROM hr_users WHERE username=?", (session["hr_username"],)).fetchone()
+            reviewer = hr_user["full_name"] if hr_user else session["hr_username"]
+            now = datetime.datetime.now().isoformat(timespec="seconds")
+            db.execute(
+                """INSERT INTO business_trips (
+                       emp_id, notice_type, destination, start_date, end_date, purpose,
+                       supporting_doc_original, supporting_doc_stored, status, submitted_at,
+                       reviewed_by, reviewed_at
+                   ) VALUES (?,?,?,?,?,?,?,?,'Approved',?,?,?)""",
+                (emp_id, notice_type, destination, start_date, end_date, purpose,
+                 original_name, stored_name, now, reviewer, now),
+            )
+            if notice_type in PAID_TRIP_NOTICE_TYPES:
+                _sync_days_to_attendance_monthly(db, emp_id, start_date, end_date, "other_paid_leave")
+                _sync_days_to_attendance_daily(db, emp_id, start_date, end_date, "OTHER_PAID")
+            db.commit()
+            return redirect(url_for("business_trips_admin"))
+
+    return render_template("business_trip_add.html", employees=employees, error=error,
+                            notice_types=BUSINESS_TRIP_TYPES)
+
+
+@app.route("/business-trips/<int:trip_id>/delete", methods=["POST"])
+def delete_business_trip(trip_id):
+    """HR-only: removes a Movement Notice record entirely (e.g. one keyed in
+    by mistake). If it was an Approved paid type (Unrecorded Leave / Home
+    Leave), also takes its days back off Attendance: each date's OTHER_PAID
+    daily row is cleared unless another approved notice or Other Paid
+    leave request still covers it, then the monthly leave columns are
+    re-synced from the daily rows."""
+    if session.get("hr_role") != "admin":
+        abort(403)
+    db = get_db()
+    trip = db.execute("SELECT * FROM business_trips WHERE id=?", (trip_id,)).fetchone()
+    if trip is None:
+        return "Notice not found", 404
+    db.execute("DELETE FROM business_trips WHERE id=?", (trip_id,))
+    if trip["status"] == "Approved" and trip["notice_type"] in PAID_TRIP_NOTICE_TYPES:
+        months = set()
+        day = datetime.date.fromisoformat(trip["start_date"])
+        end = datetime.date.fromisoformat(trip["end_date"])
+        while day <= end:
+            ds = day.isoformat()
+            still_covered = _paid_notice_overlaps(db, trip["emp_id"], ds, ds) or db.execute(
+                """SELECT 1 FROM leave_requests WHERE emp_id=? AND status='Approved' AND start_date<=? AND end_date>=?
+                   AND leave_type IN ('Maternity/Paternity Leave','Emergency Leave','School Personal Leave')""",
+                (trip["emp_id"], ds, ds),
+            ).fetchone()
+            if not still_covered:
+                db.execute("DELETE FROM attendance_daily WHERE emp_id=? AND date=? AND day_type='OTHER_PAID'",
+                           (trip["emp_id"], ds))
+            months.add((day.year, day.month))
+            day += datetime.timedelta(days=1)
+        for y, m in months:
+            _resync_leave_days_from_daily(db, trip["emp_id"], y, m)
+            # Approving took these days off Days Worked / Meal / CEWI eligible
+            # days (see _sync_days_to_attendance_monthly) - recompute them the
+            # same way now that the leave columns are back down.
+            row = db.execute(
+                """SELECT working_days_in_month, al_days, mc_days, hl_days, ul_days, other_paid_leave, absent_days
+                   FROM attendance_monthly WHERE emp_id=? AND year=? AND month=?""",
+                (trip["emp_id"], y, m),
+            ).fetchone()
+            if row is not None:
+                away = sum(row[k] or 0 for k in ("al_days", "mc_days", "hl_days", "ul_days", "other_paid_leave", "absent_days"))
+                days = max((row["working_days_in_month"] or 0) - away, 0)
+                db.execute(
+                    """UPDATE attendance_monthly SET days_worked=?, meal_eligible_days=?, cewi_eligible_days=?
+                       WHERE emp_id=? AND year=? AND month=?""",
+                    (days, days, days, trip["emp_id"], y, m),
+                )
+    db.commit()
+    return redirect(url_for("business_trips_admin"))
+
+
 # ---------------- HR: OT Claims Admin ----------------
 # For employees.ot_approval_required='Y' (e.g. executives who normally
 # aren't OT-eligible but can claim OT with Director approval) - unlike

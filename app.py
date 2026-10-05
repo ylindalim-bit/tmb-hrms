@@ -472,6 +472,7 @@ HR_LOGIN_EXEMPT_PREFIXES = (
     "/hr/correct-approved-ot-claim",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/set-pcb-override",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/delete-employee-month",  # gated by RESTORE_TOKEN env var, not session - see route
+    "/hr/backfill-ot-reasons",  # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/ot-claims-cleanup",      # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/set-work-pattern",       # gated by RESTORE_TOKEN env var, not session - see route
     "/hr/delete-attendance-daily", # gated by RESTORE_TOKEN env var, not session - see route
@@ -7735,23 +7736,26 @@ def _ot_claim_hours_from_form(db, f, claim_date, base="MY"):
     return round(net_hours, 2), 0, 0
 
 
-def _apply_ot_claim_to_attendance(db, emp_id, claim_date, time_in, time_out, ot_1_5, ot_2_0, ot_3_0):
+def _apply_ot_claim_to_attendance(db, emp_id, claim_date, time_in, time_out, ot_1_5, ot_2_0, ot_3_0, reason=None):
     """Adds an approved OT claim's hours into that date's attendance_daily
     row (creating one as WORKED if it doesn't exist yet, and filling in
     Time In/Out if the claim had them and the row doesn't already), then
     recomputes that month's attendance_monthly aggregate - the same path
     Daily Attendance itself feeds payroll through, so an approved claim
-    counts exactly like HR having typed those hours in directly."""
+    counts exactly like HR having typed those hours in directly. The claim's
+    reason fills the day's OT Reason (an existing reason is never overwritten),
+    so Daily Attendance shows why the OT was worked."""
     db.execute(
-        """INSERT INTO attendance_daily (emp_id, date, time_in, time_out, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0)
-           VALUES (?,?,?,?,?,?,?)
+        """INSERT INTO attendance_daily (emp_id, date, time_in, time_out, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, ot_reason)
+           VALUES (?,?,?,?,?,?,?,?)
            ON CONFLICT(emp_id, date) DO UPDATE SET
              time_in = COALESCE(time_in, excluded.time_in),
              time_out = COALESCE(time_out, excluded.time_out),
              ot_hours_1_5 = COALESCE(ot_hours_1_5,0) + excluded.ot_hours_1_5,
              ot_hours_2_0 = COALESCE(ot_hours_2_0,0) + excluded.ot_hours_2_0,
-             ot_hours_3_0 = COALESCE(ot_hours_3_0,0) + excluded.ot_hours_3_0""",
-        (emp_id, claim_date, time_in, time_out, ot_1_5, ot_2_0, ot_3_0),
+             ot_hours_3_0 = COALESCE(ot_hours_3_0,0) + excluded.ot_hours_3_0,
+             ot_reason = COALESCE(NULLIF(ot_reason, ''), excluded.ot_reason)""",
+        (emp_id, claim_date, time_in, time_out, ot_1_5, ot_2_0, ot_3_0, reason or None),
     )
     year, month, _day = (int(p) for p in claim_date.split("-"))
     _sync_daily_to_monthly(db, emp_id, year, month)
@@ -7844,7 +7848,7 @@ def review_ot_claim(claim_id):
     if decision == "Approved":
         _apply_ot_claim_to_attendance(
             db, claim["emp_id"], claim["claim_date"], claim["time_in"], claim["time_out"],
-            claim["ot_hours_1_5"], claim["ot_hours_2_0"], claim["ot_hours_3_0"],
+            claim["ot_hours_1_5"], claim["ot_hours_2_0"], claim["ot_hours_3_0"], claim["reason"],
         )
     db.commit()
     return redirect(url_for("ot_claims_admin"))
@@ -8679,7 +8683,7 @@ def hr_seed_approved_ot_claims():
              ot_1_5, ot_2_0, ot_3_0,
              claim.get("reason"), "HR (paper OT form)", now, "HR", now),
         )
-        _apply_ot_claim_to_attendance(db, emp_id, claim["claim_date"], None, None, ot_1_5, ot_2_0, ot_3_0)
+        _apply_ot_claim_to_attendance(db, emp_id, claim["claim_date"], None, None, ot_1_5, ot_2_0, ot_3_0, claim.get("reason"))
         written += 1
     touched_months = set()
     for date_str, day_type in payload.get("day_type_fixes", {}).items():
@@ -9066,6 +9070,38 @@ def hr_seed_attendance_daily():
         _sync_daily_to_monthly(db, emp_id, year, month)
     db.commit()
     return f"OK - wrote {written} daily rows across {len(months_touched)} employee-month(s)", 200
+
+
+@app.route("/hr/backfill-ot-reasons", methods=["POST"])
+def hr_backfill_ot_reasons():
+    """One-time helper: fills each day's blank OT Reason on attendance_daily
+    from its Approved OT claim's reason (claims approved before the reason
+    was copied across). Never overwrites a reason already typed in. Same
+    RESTORE_TOKEN gate as the other one-time routes; safe to re-run.
+    Optional form fields: emp_id, year, month to narrow it; dry_run=1 only
+    reports."""
+    token = os.environ.get("RESTORE_TOKEN")
+    if not token or request.form.get("token") != token:
+        abort(404)
+    db = get_db()
+    where, params = ["oc.status='Approved'", "oc.reason IS NOT NULL", "oc.reason != ''"], []
+    if request.form.get("emp_id"):
+        where.append("oc.emp_id=?"); params.append(request.form["emp_id"])
+    year, month = request.form.get("year", type=int), request.form.get("month", type=int)
+    if year and month:
+        where.append("oc.claim_date LIKE ?"); params.append(f"{year:04d}-{month:02d}-%")
+    claims = db.execute(
+        f"""SELECT oc.emp_id, oc.claim_date, oc.reason FROM ot_claims oc
+            JOIN attendance_daily ad ON ad.emp_id = oc.emp_id AND ad.date = oc.claim_date
+            WHERE {' AND '.join(where)} AND (ad.ot_reason IS NULL OR ad.ot_reason = '')""",
+        params,
+    ).fetchall()
+    if request.form.get("dry_run") != "1":
+        for c in claims:
+            db.execute("UPDATE attendance_daily SET ot_reason=? WHERE emp_id=? AND date=?",
+                       (c["reason"], c["emp_id"], c["claim_date"]))
+        db.commit()
+    return ("DRY RUN - would fill " if request.form.get("dry_run") == "1" else "OK - filled ") + f"{len(claims)} day(s)", 200
 
 
 @app.route("/hr/bulk-set-medical-claim-limit", methods=["POST"])

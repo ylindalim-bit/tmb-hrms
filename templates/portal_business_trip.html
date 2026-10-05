@@ -104,7 +104,7 @@ function updateTripDocRequirement() {
   var row = document.getElementById('trip_doc_upload_row');
   var input = document.getElementById('trip_supporting_doc');
   var requiredMark = document.getElementById('trip_doc_required_mark');
-  var required = noticeType === 'Unrecorded Leave';
+  var required = ['Unrecorded Leave', 'Home Leave (Malaysia)'].indexOf(noticeType) !== -1;
   row.style.display = required ? 'block' : 'none';
   input.required = required;
   requiredMark.style.display = required ? 'inline' : 'none';

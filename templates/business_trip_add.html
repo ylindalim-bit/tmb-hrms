@@ -71,7 +71,7 @@ function updateTripDays() {
 }
 
 function updateTripDocRequirement() {
-  var required = document.getElementById('notice_type').value === 'Unrecorded Leave';
+  var required = ['Unrecorded Leave', 'Home Leave (Malaysia)'].indexOf(document.getElementById('notice_type').value) !== -1;
   document.getElementById('trip_supporting_doc').required = required;
   document.getElementById('trip_doc_required_mark').style.display = required ? 'inline' : 'none';
   document.getElementById('trip_doc_optional_mark').style.display = required ? 'none' : 'inline';

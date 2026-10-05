@@ -25,7 +25,7 @@
         <td class="text">
           {% if t.supporting_doc_stored %}
           <a href="{{ url_for('business_trip_document', trip_id=t.id) }}" target="_blank" rel="noopener">View</a>
-          {% elif t.notice_type == 'Unrecorded Leave' %}<span style="color:var(--danger);">Missing</span>
+          {% elif t.notice_type in ('Unrecorded Leave', 'Home Leave (Malaysia)') %}<span style="color:var(--danger);">Missing</span>
           {% else %}<span style="color:var(--muted);">-</span>{% endif %}
         </td>
         <td class="text">{{ t.submitted_at }}</td>

@@ -288,6 +288,8 @@ BUSINESS_TRIP_TYPES = ["Business Trip", "Out-Duty", "Training", "Unrecorded Leav
 # Service Appreciation policy's "5 days of relief" - a paid trip home, not
 # unpaid leave, and not an after-the-fact excuse needing supporting proof.
 PAID_TRIP_NOTICE_TYPES = ("Unrecorded Leave", "Home Leave (Malaysia)")
+# Movement Notice types that can't be submitted without a supporting document.
+DOC_REQUIRED_NOTICE_TYPES = ("Unrecorded Leave", "Home Leave (Malaysia)")
 BASE_OPTIONS = ["MY", "ZJ", "CD"]  # Malaysia, Zhejiang, Chengdu - which physical site this employee works at
 # Malaysia and China are both UTC+8 with no DST, so a fixed offset covers
 # every Base without needing an IANA tz database on the server (which runs
@@ -6502,8 +6504,8 @@ def portal_business_trip():
             error = "Destination, start date, and end date are required."
         elif end_date < start_date:
             error = "End date cannot be before start date."
-        elif notice_type == "Unrecorded Leave" and not has_file:
-            error = "Please attach a supporting document for Unrecorded Leave."
+        elif notice_type in DOC_REQUIRED_NOTICE_TYPES and not has_file:
+            error = f"Please attach a supporting document for {notice_type}."
         elif has_file:
             original_name = secure_filename(file.filename)
             ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
@@ -7573,8 +7575,8 @@ def hr_add_business_trip():
             error = "Destination, start date, and end date are required."
         elif end_date < start_date:
             error = "End date cannot be before start date."
-        elif notice_type == "Unrecorded Leave" and not has_file:
-            error = "Please attach a supporting document for Unrecorded Leave."
+        elif notice_type in DOC_REQUIRED_NOTICE_TYPES and not has_file:
+            error = f"Please attach a supporting document for {notice_type}."
         elif notice_type in PAID_TRIP_NOTICE_TYPES and _paid_notice_overlaps(db, emp_id, start_date, end_date):
             error = (f"{emp_id} already has an Approved Unrecorded Leave / Home Leave notice overlapping these dates - "
                      "check the existing one before adding another for the same days.")

@@ -49,7 +49,7 @@
           {% else %}
           {% if lr.supporting_doc_stored %}
           <a href="{{ url_for('business_trip_document', trip_id=lr.id) }}" target="_blank" rel="noopener">View</a>
-          {% elif lr.type_label == 'Unrecorded Leave' %}<span style="color:var(--danger);">Missing</span>
+          {% elif lr.type_label in ('Unrecorded Leave', 'Home Leave (Malaysia)') %}<span style="color:var(--danger);">Missing</span>
           {% else %}<span style="color:var(--muted);">-</span>{% endif %}
           {% endif %}
         </td>

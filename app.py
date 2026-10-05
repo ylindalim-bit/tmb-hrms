@@ -270,10 +270,11 @@ if not os.path.exists(DB_PATH):
 try:
     _ensure_conn = sqlite3.connect(DB_PATH)
     for _tbl, _col in (("leave_requests", "half_day"), ("attendance_daily", "half_leave_type"),
-                       ("attendance_daily", "half_leave_session")):
+                       ("attendance_daily", "half_leave_session"),
+                       ("tax_profile", "children_study_full"), ("tax_profile", "children_study_half")):
         _existing = [_r[1] for _r in _ensure_conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _existing and _col not in _existing:
-            _ensure_conn.execute(f"ALTER TABLE {_tbl} ADD COLUMN {_col} TEXT")
+            _ensure_conn.execute(f"ALTER TABLE {_tbl} ADD COLUMN {_col} " + ("INTEGER DEFAULT 0" if _tbl == "tax_profile" else "TEXT"))
     _ensure_conn.commit()
     _ensure_conn.close()
 except sqlite3.Error:
@@ -1365,6 +1366,8 @@ def update_tax_profile(emp_id):
     tax_category = f.get("tax_category") or "Single"
     children_full = int(f.get("children_full_relief") or 0)
     children_half = int(f.get("children_half_relief") or 0)
+    study_full = int(f.get("children_study_full") or 0)
+    study_half = int(f.get("children_study_half") or 0)
     tp1_submitted = "Y" if f.get("tp1_submitted") else ""
     tp1_date = f.get("tp1_date") or None
     zakat_paid_ytd = float(f.get("zakat_paid_ytd") or 0)
@@ -1376,20 +1379,24 @@ def update_tax_profile(emp_id):
     db.execute(
         """INSERT INTO tax_profile (
                emp_id, tax_category, children_full_relief, children_half_relief,
+               children_study_full, children_study_half,
                tp1_submitted, tp1_date, zakat_paid_ytd,
                tp3_submitted, tp3_date, tp3_prior_gross, tp3_prior_epf_employee, tp3_prior_pcb
-           ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+           ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(emp_id) DO UPDATE SET
              tax_category=excluded.tax_category,
              children_full_relief=excluded.children_full_relief,
              children_half_relief=excluded.children_half_relief,
+             children_study_full=excluded.children_study_full,
+             children_study_half=excluded.children_study_half,
              tp1_submitted=excluded.tp1_submitted, tp1_date=excluded.tp1_date,
              zakat_paid_ytd=excluded.zakat_paid_ytd,
              tp3_submitted=excluded.tp3_submitted, tp3_date=excluded.tp3_date,
              tp3_prior_gross=excluded.tp3_prior_gross,
              tp3_prior_epf_employee=excluded.tp3_prior_epf_employee,
              tp3_prior_pcb=excluded.tp3_prior_pcb""",
-        (emp_id, tax_category, children_full, children_half, tp1_submitted, tp1_date, zakat_paid_ytd,
+        (emp_id, tax_category, children_full, children_half, study_full, study_half,
+         tp1_submitted, tp1_date, zakat_paid_ytd,
          tp3_submitted, tp3_date, tp3_prior_gross, tp3_prior_epf_employee, tp3_prior_pcb),
     )
     db.commit()

@@ -258,6 +258,8 @@ CREATE TABLE tax_profile (
     tax_category           TEXT DEFAULT 'Single',   -- 'Single' / 'Married'
     children_full_relief   INTEGER DEFAULT 0,
     children_half_relief   INTEGER DEFAULT 0,
+    children_study_full    INTEGER DEFAULT 0,   -- child 18+ in full-time diploma/degree study, 100% (RM8,000 each)
+    children_study_half    INTEGER DEFAULT 0,   -- same, 50% share (RM4,000 each)
     tp1_submitted           TEXT DEFAULT '',          -- 'Y' or ''
     tp1_date                TEXT,
     zakat_paid_ytd           REAL DEFAULT 0,

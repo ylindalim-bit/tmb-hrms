@@ -816,6 +816,8 @@
       </div>
       <div><label>Children (Full Relief)</label><input type="number" step="1" name="children_full_relief" value="{{ tax_profile.children_full_relief if tax_profile else 0 }}"></div>
       <div><label>Children (Half Relief)</label><input type="number" step="1" name="children_half_relief" value="{{ tax_profile.children_half_relief if tax_profile else 0 }}"></div>
+      <div><label>Children 18+ in full-time study &mdash; 100% (RM8,000 each)</label><input type="number" step="1" min="0" name="children_study_full" value="{{ (tax_profile.children_study_full or 0) if tax_profile and 'children_study_full' in tax_profile.keys() else 0 }}"></div>
+      <div><label>Children 18+ in full-time study &mdash; 50% (RM4,000 each)</label><input type="number" step="1" min="0" name="children_study_half" value="{{ (tax_profile.children_study_half or 0) if tax_profile and 'children_study_half' in tax_profile.keys() else 0 }}"></div>
       <div><label>Zakat Paid (YTD, RM)</label><input type="number" step="0.01" name="zakat_paid_ytd" value="{{ "%.2f"|format(tax_profile.zakat_paid_ytd or 0) if tax_profile else "0.00" }}"></div>
     </div>
     <div class="form-grid" style="margin-top:10px;">

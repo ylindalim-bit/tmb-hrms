@@ -218,7 +218,7 @@ def calc_hrd_levy(gross_pay, registered, rate):
 def calc_pcb(month_index, current_gross, current_epf_employee, current_socso_eis_employee,
              ytd_gross, ytd_epf_employee, ytd_pcb_this_employer,
              tax_category, children_full, children_half, tp1_submitted, zakat_ytd,
-             pcb_brackets, pcb_constants):
+             pcb_brackets, pcb_constants, children_study_full=0, children_study_half=0):
     """
     'PCB Inputs & YTD' columns I-T: LHDN Computerised Calculation Method for
     NORMAL monthly remuneration only (not one-off bonuses).
@@ -241,6 +241,9 @@ def calc_pcb(month_index, current_gross, current_epf_employee, current_socso_eis
             spouse_child_relief += pcb_constants["spouse_relief"]
         spouse_child_relief += children_full * pcb_constants["child_relief_full"]
         spouse_child_relief += children_half * pcb_constants["child_relief_half"]
+        # Child aged 18+ in full-time diploma/degree study: RM8,000 (100%) or RM4,000 (50% share).
+        spouse_child_relief += (children_study_full or 0) * pcb_constants.get("child_relief_study_full", 8000.0)
+        spouse_child_relief += (children_study_half or 0) * pcb_constants.get("child_relief_study_half", 4000.0)
 
     chargeable_income = max(
         0.0,
@@ -496,6 +499,8 @@ def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: i
         tax_category=(tax_profile["tax_category"] if tax_profile else "Single"),
         children_full=(tax_profile["children_full_relief"] if tax_profile else 0),
         children_half=(tax_profile["children_half_relief"] if tax_profile else 0),
+        children_study_full=((tax_profile["children_study_full"] or 0) if tax_profile and "children_study_full" in tax_profile.keys() else 0),
+        children_study_half=((tax_profile["children_study_half"] or 0) if tax_profile and "children_study_half" in tax_profile.keys() else 0),
         tp1_submitted=(tax_profile["tp1_submitted"] if tax_profile else ""),
         zakat_ytd=(tax_profile["zakat_paid_ytd"] if tax_profile else 0),
         pcb_brackets=pcb_brackets,

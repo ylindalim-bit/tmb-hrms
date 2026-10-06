@@ -98,6 +98,14 @@ def _add_headcount_block(ws, start_row, totals, employee_count):
         r_idx += 1
     perkeso_last_row = r_idx - 1
 
+    # SOCSO + SKBBK subtotal (the combined contribution PERKESO collects as one
+    # amount), in column F beside the SKBBK row; EIS is then added on top in
+    # the combined total below.
+    socso_row, skbbk_row = perkeso_first_row, perkeso_first_row + 1
+    sub_cell = ws.cell(row=skbbk_row, column=6, value=f"=E{socso_row}+E{skbbk_row}")
+    sub_cell.number_format = "#,##0.00"
+    sub_cell.font = Font(bold=True)
+
     # Brace (column G) + combined PERKESO total (column H), vertically
     # centered across the SOCSO/SKBBK/EIS rows.
     brace_cell = ws.cell(row=perkeso_first_row, column=7, value="}")
@@ -3577,13 +3585,23 @@ def payroll_export(year, month):
         if label in money_cols and total_row[key] != "":
             cell.number_format = "#,##0.00"
 
-    for r in zero_results:  # directly under TOTAL, outside it
+    # RM0 net-pay staff get their own block under TOTAL, outside it: a heading,
+    # the "why RM0" notes, then their rows.
+    if zero_results:
+        row_idx += 2
+        ws.cell(row=row_idx, column=1,
+                value=f"Payroll: {year:04d}{month:02d} End Month (NETPAY ZERO)").font = Font(bold=True)
         row_idx += 1
-        write_staff_row(r, row_idx)
+        for note in _zero_pay_notes(results):
+            ws.cell(row=row_idx, column=1, value=note).font = Font(italic=True, color="B45309")
+            row_idx += 1
+        for r in zero_results:
+            write_staff_row(r, row_idx)
+            row_idx += 1
+        row_idx -= 1
 
     last_row = _add_headcount_block(ws, row_idx + 2, totals, len(results))
     last_row = _add_wage_base_composition_block(ws, last_row + 2, results)
-    _add_zero_pay_notes(ws, last_row + 2, _zero_pay_notes(results))
 
     ws.freeze_panes = "C4"
     ws.column_dimensions["A"].width = 10

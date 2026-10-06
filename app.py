@@ -4527,6 +4527,134 @@ def pcb_cp39_textfile(year, month):
     )
 
 
+# Different spellings staff / HR have typed for the same bank, grouped together
+# on the Finance payment list.
+_BANK_GROUP_ALIASES = {
+    "MBB": "Maybank", "MAYBANK": "Maybank", "MALAYAN BANKING": "Maybank",
+    "PBB": "Public Bank", "PUBLICBANK": "Public Bank", "PUBLIC BANK": "Public Bank",
+    "CIMB": "CIMB", "CIMB BANK": "CIMB",
+    "RHB": "RHB", "HLB": "Hong Leong Bank", "HONG LEONG": "Hong Leong Bank", "HONG LEONG BANK": "Hong Leong Bank",
+    "AMBANK": "AmBank", "AM BANK": "AmBank",
+    "B.ISLAM": "Bank Islam", "BANK ISLAM": "Bank Islam", "BIMB": "Bank Islam",
+    "B.MUAMALAT": "Bank Muamalat", "BANK MUAMALAT": "Bank Muamalat",
+    "OCBC": "OCBC", "UOB": "UOB", "BSN": "BSN", "BANK RAKYAT": "Bank Rakyat",
+}
+
+
+def _bank_group_name(raw):
+    raw = (raw or "").strip()
+    return _BANK_GROUP_ALIASES.get(raw.upper(), raw)
+
+
+@app.route("/payroll/<int:year>/<int:month>/payment-list")
+def payroll_payment_list(year, month):
+    """Salary payment list for Finance: one sheet with who to pay, bank, account
+    number and the NET pay only (no salary breakdown), grouped by bank with a
+    subtotal per bank, a grand total, and Prepared / Checked / Approved lines.
+    Staff with RM0 net pay are left off the list and named in a footnote;
+    anyone with missing bank details is flagged in red."""
+    db = get_db()
+    emps = employed_this_month(db, year, month)
+    results = [payroll_calc.get_payroll_result(db, r["emp_id"], year, month) for r in emps]
+    bank_info = {
+        r["emp_id"]: {"bank_name": (r["bank_name"] or "").strip(), "bank_account_no": (r["bank_account_no"] or "").strip()}
+        for r in db.execute("SELECT emp_id, bank_name, bank_account_no FROM employees").fetchall()
+    }
+    paid = [r for r in results if (r["net_pay"] or 0) > 0]
+    zero = [r for r in results if (r["net_pay"] or 0) <= 0]
+    for r in paid:
+        info = bank_info.get(r["emp_id"], {})
+        r["bank"] = _bank_group_name(info.get("bank_name"))
+        r["acct"] = info.get("bank_account_no") or ""
+    # Bank groups in a stable order: biggest group first, staff without a bank last.
+    groups = {}
+    for r in paid:
+        groups.setdefault(r["bank"].upper() or "~NO BANK DETAILS", []).append(r)
+    ordered = sorted(groups.items(), key=lambda kv: (kv[0].startswith("~"), -len(kv[1]), kv[0]))
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = f"{MONTH_NAMES[month]} {year} Payment"[:31]
+    pay_date = payment_date_for(year, month)
+    ncols = 7
+    ws.cell(row=1, column=1, value="TIANMA PRECISION SDN BHD").font = Font(bold=True, size=16)
+    ws.cell(row=2, column=1, value=f"Salary Payment List - {MONTH_NAMES[month]} {year}").font = Font(bold=True, size=13)
+    ws.cell(row=3, column=1, value=f"Payment date: {pay_date.strftime('%d %B %Y')}")
+    for rr in (1, 2, 3):
+        ws.merge_cells(start_row=rr, start_column=1, end_row=rr, end_column=ncols)
+
+    header_fill = PatternFill("solid", fgColor="1D4ED8")
+    for col_idx, label in enumerate(["No.", "Emp ID", "Name", "Bank", "Account No.", "Net Pay (RM)", "Paid (tick)"], start=1):
+        cell = ws.cell(row=5, column=col_idx, value=label)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center" if col_idx != 3 else "left")
+
+    thin = Side(style="thin", color="BFBFBF")
+    row_idx, n = 6, 0
+    grand = 0.0
+    sub_fill = PatternFill("solid", fgColor="E8EEF9")
+    for bank, members in ordered:
+        sub = 0.0
+        for r in sorted(members, key=lambda x: x["emp_id"]):
+            n += 1
+            sub += r["net_pay"]
+            missing = not r["bank"] or not r["acct"]
+            vals = [n, r["emp_id"], r["full_name"], r["bank"] or "-", r["acct"] or "NO ACCOUNT NO.", r["net_pay"], ""]
+            for col_idx, v in enumerate(vals, start=1):
+                cell = ws.cell(row=row_idx, column=col_idx, value=v)
+                cell.border = Border(bottom=thin)
+                if col_idx == 5 and not str(r["acct"]).strip():
+                    cell.font = Font(bold=True, color="B91C1C")
+                if col_idx == 6:
+                    cell.number_format = "#,##0.00"
+                if col_idx in (1, 2, 7):
+                    cell.alignment = Alignment(horizontal="center")
+                if col_idx == 5:
+                    cell.number_format = "@"
+                    cell.alignment = Alignment(horizontal="left")
+            row_idx += 1
+        grand += sub
+        label = "NO BANK DETAILS" if bank.startswith("~") else bank
+        ws.cell(row=row_idx, column=3, value=f"Subtotal - {label} ({len(members)})").font = Font(bold=True)
+        tcell = ws.cell(row=row_idx, column=6, value=round(sub, 2))
+        tcell.font = Font(bold=True)
+        tcell.number_format = "#,##0.00"
+        for col_idx in range(1, ncols + 1):
+            ws.cell(row=row_idx, column=col_idx).fill = sub_fill
+        row_idx += 1
+
+    row_idx += 1
+    ws.cell(row=row_idx, column=3, value=f"TOTAL TO PAY ({len(paid)} staff)").font = Font(bold=True, size=12)
+    total_cell = ws.cell(row=row_idx, column=6, value=round(grand, 2))
+    total_cell.font = Font(bold=True, size=12)
+    total_cell.number_format = "#,##0.00"
+    total_cell.border = Border(top=Side(style="medium"), bottom=Side(style="double"))
+    row_idx += 2
+    if zero:
+        ws.cell(row=row_idx, column=1, value="Not paid this month (net pay RM0.00): " + ", ".join(
+            f"{r['emp_id']} {r['full_name']}" for r in zero)).font = Font(italic=True, color="92400E")
+        row_idx += 1
+    row_idx += 2
+    for col_idx, label in [(1, "Prepared by:"), (3, "Checked by:"), (5, "Approved by:")]:
+        ws.cell(row=row_idx, column=col_idx, value=label).font = Font(bold=True)
+        ws.cell(row=row_idx + 3, column=col_idx, value="_______________________")
+        ws.cell(row=row_idx + 4, column=col_idx, value="Date:")
+
+    for col, width in zip("ABCDEFG", [6, 9, 44, 14, 22, 16, 12]):
+        ws.column_dimensions[col].width = width
+    ws.freeze_panes = "A6"
+    _set_a4_one_page(ws)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return Response(
+        buf.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=Salary_Payment_List_{MONTH_NAMES[month]}_{year}.xlsx"},
+    )
+
+
 def _kwsp_ic_format(ic):
     """12-digit New IC as ######-##-#### (the layout KWSP's e-Caruman CSV
     guide asks for); a passport number is left as it is."""

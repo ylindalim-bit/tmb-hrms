@@ -4557,6 +4557,8 @@ def _payment_list_data(db, year, month):
         for r in db.execute("SELECT emp_id, bank_name, bank_account_no FROM employees").fetchall()
     }
     ic_by_emp = {r["emp_id"]: r["ic_passport_no"] for r in db.execute("SELECT emp_id, ic_passport_no FROM employees").fetchall()}
+    dept_by_emp = {r["emp_id"]: (r["department"] or "").strip().upper()
+                   for r in db.execute("SELECT emp_id, department FROM employees").fetchall()}
     paid = [r for r in results if (r["net_pay"] or 0) > 0]
     zero = [r for r in results if (r["net_pay"] or 0) <= 0]
     for r in paid:
@@ -4564,11 +4566,11 @@ def _payment_list_data(db, year, month):
         r["bank"] = _bank_group_name(info.get("bank_name"))
         r["acct"] = info.get("bank_account_no") or ""
         r["ic"] = _kwsp_ic_format(ic_by_emp.get(r["emp_id"]))
-    # Bank groups in a stable order: biggest group first, staff without a bank last.
+    # Department groups: alphabetical, staff with no department set last.
     groups = {}
     for r in paid:
-        groups.setdefault(r["bank"].upper() or "~NO BANK DETAILS", []).append(r)
-    ordered = sorted(groups.items(), key=lambda kv: (kv[0].startswith("~"), -len(kv[1]), kv[0]))
+        groups.setdefault(dept_by_emp.get(r["emp_id"]) or "~NO DEPARTMENT SET", []).append(r)
+    ordered = sorted(groups.items(), key=lambda kv: (kv[0].startswith("~"), kv[0]))
     grand = round(sum(r["net_pay"] for r in paid), 2)
     return ordered, paid, zero, grand, payment_date_for(year, month)
 
@@ -4602,7 +4604,7 @@ def payroll_payment_list_pdf(year, month):
         ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
     ]
     n = 0
-    for bank, members in ordered:
+    for dept, members in ordered:
         sub_total = 0.0
         for r in sorted(members, key=lambda x: x["emp_id"]):
             n += 1
@@ -4611,7 +4613,7 @@ def payroll_payment_list_pdf(year, month):
                 style_cmds.append(("TEXTCOLOR", (5, len(data)), (5, len(data)), colors.HexColor("#B91C1C")))
             data.append([str(n), r["emp_id"], Paragraph(xml_escape(r["full_name"]), name_style), r["ic"] or "-",
                          r["bank"] or "-", r["acct"] or "NO ACCOUNT NO.", money(r["net_pay"])])
-        label = "NO BANK DETAILS" if bank.startswith("~") else bank
+        label = "NO DEPARTMENT SET" if dept.startswith("~") else dept
         row_no = len(data)
         data.append(["", "", f"Subtotal - {label} ({len(members)})", "", "", "", money(sub_total)])
         style_cmds += [("BACKGROUND", (0, row_no), (-1, row_no), colors.HexColor("#E8EEF9")),
@@ -4678,7 +4680,7 @@ def payroll_payment_list(year, month):
     row_idx, n = 6, 0
     grand_check = 0.0
     sub_fill = PatternFill("solid", fgColor="E8EEF9")
-    for bank, members in ordered:
+    for dept, members in ordered:
         sub = 0.0
         for r in sorted(members, key=lambda x: x["emp_id"]):
             n += 1
@@ -4699,7 +4701,7 @@ def payroll_payment_list(year, month):
                     cell.alignment = Alignment(horizontal="left")
             row_idx += 1
         grand_check += sub
-        label = "NO BANK DETAILS" if bank.startswith("~") else bank
+        label = "NO DEPARTMENT SET" if dept.startswith("~") else dept
         ws.cell(row=row_idx, column=3, value=f"Subtotal - {label} ({len(members)})").font = Font(bold=True)
         tcell = ws.cell(row=row_idx, column=7, value=round(sub, 2))
         tcell.font = Font(bold=True)

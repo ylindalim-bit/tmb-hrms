@@ -3462,9 +3462,6 @@ def payroll_export(year, month):
     db = get_db()
     emps = employed_this_month(db, year, month)
     results = [payroll_calc.get_payroll_result(db, r["emp_id"], year, month) for r in emps]
-    # Staff with RM0 net pay (e.g. a whole month of unpaid leave) go last, just
-    # above the TOTAL row; everyone else keeps their usual Emp ID order.
-    results.sort(key=lambda r: (r["net_pay"] or 0) <= 0)
     bank_info = {
         r["emp_id"]: {
             "bank_name": r["bank_name"], "bank_account_no": r["bank_account_no"],
@@ -3497,8 +3494,13 @@ def payroll_export(year, month):
                   "EIS (Er)", "PCB", "SKBBK", "HRD Levy", "UL Deduction", "Other Ded.",
                   "Total Ded.", "NET PAY", "SOCSO Base", "EPF Base", "PCB Base"}
 
-    row_idx = 4
-    for r in results:
+    # Staff with RM0 net pay (e.g. a whole month of unpaid leave) are listed
+    # directly UNDER the TOTAL row and are not part of it; everyone else keeps
+    # their usual Emp ID order above it.
+    paid_results = [r for r in results if (r["net_pay"] or 0) > 0]
+    zero_results = [r for r in results if (r["net_pay"] or 0) <= 0]
+
+    def write_staff_row(r, row_idx):
         socso_base = round((r["gross_pay"] or 0) - (r["other_deduction"] or 0), 2)
         epf_base = round(
             (r["gross_pay"] or 0) - (r["ot_pay"] or 0) - (r["transport_allowance"] or 0)
@@ -3530,10 +3532,14 @@ def payroll_export(year, month):
             cell = ws.cell(row=row_idx, column=col_idx, value=row[key])
             if label in money_cols:
                 cell.number_format = "#,##0.00"
+
+    row_idx = 4
+    for r in paid_results:
+        write_staff_row(r, row_idx)
         row_idx += 1
 
     totals = {
-        k: round(sum(r[k] for r in results), 2)
+        k: round(sum(r[k] for r in paid_results), 2)
         for k in ["gross_pay", "basic_salary", "fixed_allowance", "ot_hours_1_5", "ot_hours_2_0",
                    "ot_hours_3_0", "ot_pay", "transport_allowance", "meal_allowance", "cewi_allowance",
                    "epf_employee", "epf_employer", "socso_employee", "socso_employer",
@@ -3569,6 +3575,10 @@ def payroll_export(year, month):
         cell.font = Font(bold=True)
         if label in money_cols and total_row[key] != "":
             cell.number_format = "#,##0.00"
+
+    for r in zero_results:  # directly under TOTAL, outside it
+        row_idx += 1
+        write_staff_row(r, row_idx)
 
     last_row = _add_headcount_block(ws, row_idx + 2, totals, len(results))
     last_row = _add_wage_base_composition_block(ws, last_row + 2, results)

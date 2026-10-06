@@ -4433,9 +4433,10 @@ def _kwsp_ic_format(ic):
 def epf_ecaruman_csv(year, month):
     """Form A upload file for KWSP i-Akaun (e-Caruman), in the approved CSV
     layout from EPF's "Easy Guide: Preparing CSV File for e-Caruman" (June
-    2020): a header row, then one row per member with Member No, IC No
-    (######-##-####), Name, Salary (2 decimals, no thousands separator) and the
-    Employer and Employee shares in whole ringgit. Salary is the EPF wage
+    2020) with the header row of KWSP's own "Format Borang A CSV" template:
+    one row per member with Member EPF No, Employee Identification No
+    (######-##-####), Employee Name, Employee Salary (2 decimals, no thousands
+    separator) and the Employer / Employee Amount in whole ringgit. Salary is the EPF wage
     base this payroll used (gross less OT, transport and other deductions)."""
     db = get_db()
     rows = db.execute(
@@ -4451,7 +4452,8 @@ def epf_ecaruman_csv(year, month):
                 "Employees, then try again: " + ", ".join(missing)), 400
     out = io.StringIO(newline="")
     writer = csv.writer(out, lineterminator="\r\n")
-    writer.writerow(["Member No", "IC No", "Name", "Salary", "EM Share", "EMP Share"])
+    writer.writerow(["Member EPF No", "Employee Identification No", "Employee Name", "Employee Salary",
+                     "Employer Amount", "Employee Amount"])  # header exactly as in KWSP's Borang A CSV template
     for r in rows:
         wages = max(round((r["gross_pay"] or 0) - (r["ot_pay"] or 0) - (r["transport_allowance"] or 0)
                           - (r["other_deduction"] or 0), 2), 0)

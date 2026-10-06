@@ -2,6 +2,7 @@
 import calendar
 import datetime
 import functools
+import csv
 import io
 import json
 import math
@@ -4416,6 +4417,51 @@ def socso_eis_textfile(year, month):
     return Response(
         content, mimetype="text/plain",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+def _kwsp_ic_format(ic):
+    """12-digit New IC as ######-##-#### (the layout KWSP's e-Caruman CSV
+    guide asks for); a passport number is left as it is."""
+    digits = "".join(ch for ch in (ic or "") if ch.isdigit())
+    if len(digits) == 12 and digits == (ic or "").replace("-", "").strip():
+        return f"{digits[:6]}-{digits[6:8]}-{digits[8:]}"
+    return (ic or "").strip()
+
+
+@app.route("/epf-ecaruman-csv/<int:year>/<int:month>")
+def epf_ecaruman_csv(year, month):
+    """Form A upload file for KWSP i-Akaun (e-Caruman), in the approved CSV
+    layout from EPF's "Easy Guide: Preparing CSV File for e-Caruman" (June
+    2020): a header row, then one row per member with Member No, IC No
+    (######-##-####), Name, Salary (2 decimals, no thousands separator) and the
+    Employer and Employee shares in whole ringgit. Salary is the EPF wage
+    base this payroll used (gross less OT, transport and other deductions)."""
+    db = get_db()
+    rows = db.execute(
+        """SELECT pr.*, e.ic_passport_no, e.full_name, e.epf_no
+           FROM payroll_runs pr JOIN employees e ON e.emp_id = pr.emp_id
+           WHERE pr.year=? AND pr.month=? AND (pr.epf_employer + pr.epf_employee) > 0
+           ORDER BY pr.emp_id""",
+        (year, month),
+    ).fetchall()
+    missing = [f"{r['emp_id']} ({r['full_name']})" for r in rows if not (r["epf_no"] or "").strip()]
+    if missing:
+        return ("Cannot create the EPF file: these employees have no EPF Member No. on file - add it under "
+                "Employees, then try again: " + ", ".join(missing)), 400
+    out = io.StringIO(newline="")
+    writer = csv.writer(out, lineterminator="\r\n")
+    writer.writerow(["Member No", "IC No", "Name", "Salary", "EM Share", "EMP Share"])
+    for r in rows:
+        wages = max(round((r["gross_pay"] or 0) - (r["ot_pay"] or 0) - (r["transport_allowance"] or 0)
+                          - (r["other_deduction"] or 0), 2), 0)
+        writer.writerow([
+            str(r["epf_no"]).strip(), _kwsp_ic_format(r["ic_passport_no"]), r["full_name"],
+            f"{wages:.2f}", int(round(r["epf_employer"] or 0)), int(round(r["epf_employee"] or 0)),
+        ])
+    return Response(
+        out.getvalue(), mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=EPF_iAkaun_{month:02d}{year:04d}.csv"},
     )
 
 

@@ -1,18 +1,4 @@
-<div class="card table-wrap frozen-header">
-<table>
-<thead>
-<tr>
-  {% if not totals_only %}<th class="text">Emp ID</th><th class="text">Name</th>{% endif %}
-  <th>Basic</th><th>Total Allowance</th><th>Total OT</th><th>Gross Pay</th>
-  <th>EPF (Emp)</th><th>SOCSO (Emp)</th><th>EIS (Emp)</th><th>SKBBK</th><th>PCB</th>
-  <th>EPF (Er)</th><th>SOCSO (Er)</th><th>EIS (Er)</th><th>HRD Levy</th>
-  <th>Total Ded.</th><th>NET PAY</th>
-  {% if not totals_only %}<th class="text">Bank</th><th class="text">Acct No.</th>{% endif %}
-</tr>
-</thead>
-<tbody>
-{% if not totals_only %}
-{% for r in results %}
+{% macro staff_row(r) %}
 <tr>
   <td class="text">{{ r.emp_id }}</td>
   <td class="text">{{ r.full_name }}</td>
@@ -34,11 +20,26 @@
   <td class="text">{{ r.bank_name or "-" }}</td>
   <td class="text">{{ r.bank_account_no or "-" }}</td>
 </tr>
-{% endfor %}
+{% endmacro %}
+<div class="card table-wrap frozen-header">
+<table>
+<thead>
+<tr>
+  {% if not totals_only %}<th class="text">Emp ID</th><th class="text">Name</th>{% endif %}
+  <th>Basic</th><th>Total Allowance</th><th>Total OT</th><th>Gross Pay</th>
+  <th>EPF (Emp)</th><th>SOCSO (Emp)</th><th>EIS (Emp)</th><th>SKBBK</th><th>PCB</th>
+  <th>EPF (Er)</th><th>SOCSO (Er)</th><th>EIS (Er)</th><th>HRD Levy</th>
+  <th>Total Ded.</th><th>NET PAY</th>
+  {% if not totals_only %}<th class="text">Bank</th><th class="text">Acct No.</th>{% endif %}
+</tr>
+</thead>
+<tbody>
+{% if not totals_only %}
+{% for r in results if not r.zero_pay %}{{ staff_row(r) }}{% endfor %}
 {% endif %}
 <tr class="totals-row">
-  {% if not totals_only %}<td class="text" colspan="2">TOTAL ({{ results|length }} employees)</td>
-  {% else %}<td class="text">TOTAL ({{ results|length }} employees)</td>{% endif %}
+  {% if not totals_only %}<td class="text" colspan="2">TOTAL ({{ results|rejectattr("zero_pay")|list|length }} employees)</td>
+  {% else %}<td class="text">TOTAL ({{ results|rejectattr("zero_pay")|list|length }} employees)</td>{% endif %}
   <td>{{ "%.2f"|format(totals.basic) }}</td>
   <td>{{ "%.2f"|format(totals.total_allowance) }}</td>
   <td>{{ "%.2f"|format(totals.ot_pay) }}</td>
@@ -56,6 +57,7 @@
   <td>{{ "%.2f"|format(totals.net_pay) }}</td>
   {% if not totals_only %}<td colspan="2"></td>{% endif %}
 </tr>
+{% if not totals_only %}{% for r in results if r.zero_pay %}{{ staff_row(r) }}{% endfor %}{% endif %}
 </tbody>
 </table>
 </div>

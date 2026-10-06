@@ -3620,8 +3620,12 @@ def _payroll_summary_data(db, year, month):
         r["bank_name"] = bank_info.get(r["emp_id"], {}).get("bank_name") or ""
         r["bank_account_no"] = bank_info.get(r["emp_id"], {}).get("bank_account_no") or ""
         r["base"] = base_by_emp.get(r["emp_id"])
+        r["zero_pay"] = (r["net_pay"] or 0) <= 0
+    # RM0 net-pay staff are listed under the TOTAL row and are not part of it.
+    paid_results = [r for r in results if not r["zero_pay"]]
+    results = paid_results + [r for r in results if r["zero_pay"]]
     totals = {
-        k: round(sum(r[k] for r in results), 2)
+        k: round(sum(r[k] for r in paid_results), 2)
         for k in ["basic", "total_allowance", "ot_pay", "gross_pay", "epf_employee", "epf_employer",
                    "socso_employee", "socso_employer", "eis_employee", "eis_employer", "pcb",
                    "skbbk_employee", "hrd_levy_employer", "total_deductions", "net_pay"]
@@ -3704,17 +3708,22 @@ def payroll_summary_export(year, month):
         cell.font = header_font
         cell.fill = header_fill
 
+    def write_summary_row(r, row_idx):
+        for col_idx, (label, key) in enumerate(columns, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=r[key])
+            if label in money_cols:
+                cell.number_format = "#,##0.00"
+
+    paid_results = [r for r in results if not r["zero_pay"]]
+    zero_results = [r for r in results if r["zero_pay"]]
     row_idx = 4
     if not totals_only:
-        for r in results:
-            for col_idx, (label, key) in enumerate(columns, start=1):
-                cell = ws.cell(row=row_idx, column=col_idx, value=r[key])
-                if label in money_cols:
-                    cell.number_format = "#,##0.00"
+        for r in paid_results:
+            write_summary_row(r, row_idx)
             row_idx += 1
 
     label_col_span = 1 if totals_only else 2
-    total_label = f"TOTAL ({len(results)} employees)"
+    total_label = f"TOTAL ({len(paid_results)} employees)"
     ws.cell(row=row_idx, column=1, value=total_label).font = Font(bold=True)
     for col_idx, (label, key) in enumerate(columns, start=1):
         if col_idx <= label_col_span or key in ("bank_name", "bank_account_no"):
@@ -3722,6 +3731,11 @@ def payroll_summary_export(year, month):
         cell = ws.cell(row=row_idx, column=col_idx, value=totals[key])
         cell.font = Font(bold=True)
         cell.number_format = "#,##0.00"
+
+    if not totals_only:  # RM0 net-pay staff directly under TOTAL, outside it
+        for r in zero_results:
+            row_idx += 1
+            write_summary_row(r, row_idx)
 
     last_row = _add_headcount_block(ws, row_idx + 2, totals, len(results))
     last_row = _add_wage_base_composition_block(ws, last_row + 2, results)

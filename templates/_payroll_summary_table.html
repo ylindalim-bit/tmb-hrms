@@ -61,7 +61,8 @@
 </tbody>
 </table>
 </div>
-<p><strong>Total Headcount: {{ results|length }} employees</strong></p>
+{% set paid_n = results|rejectattr("zero_pay")|list|length %}
+<p><strong>Total Headcount: {{ results|length }} employees{% if paid_n != results|length %} ({{ paid_n }} with payment, {{ results|length - paid_n }} net pay zero){% endif %}</strong></p>
 {% if zero_pay_notes %}
 <div style="background:#fef3c7; color:#92400e; padding:10px 14px; border-radius:6px; font-size:13px; margin-top:8px;">
   <strong>Note:</strong>

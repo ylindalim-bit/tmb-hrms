@@ -54,7 +54,7 @@ def _set_a4_one_page(ws):
     ws.print_options.horizontalCentered = True
 
 
-def _add_headcount_block(ws, start_row, totals, employee_count):
+def _add_headcount_block(ws, start_row, totals, employee_count, paid_count=None):
     """Head count + statutory contribution (Employee/Employer/Total) summary
     box, written starting at start_row in columns A-E. Shared by both
     payroll export routes so the block stays identical in each.
@@ -64,7 +64,10 @@ def _add_headcount_block(ws, start_row, totals, employee_count):
     separately with no combined figure."""
     hc_row = start_row
     ws.cell(row=hc_row, column=1, value="Head count").font = Font(bold=True)
-    ws.cell(row=hc_row, column=2, value=f"{employee_count} employees")
+    headcount_text = f"{employee_count} employees"
+    if paid_count is not None and paid_count != employee_count:
+        headcount_text += f" ({paid_count} with payment, {employee_count - paid_count} net pay zero)"
+    ws.cell(row=hc_row, column=2, value=headcount_text)
 
     header_row = hc_row + 2
     for col_idx, label in [(3, "E'yee"), (4, "E'yer"), (5, "Total")]:
@@ -3600,7 +3603,7 @@ def payroll_export(year, month):
             row_idx += 1
         row_idx -= 1
 
-    last_row = _add_headcount_block(ws, row_idx + 2, totals, len(results))
+    last_row = _add_headcount_block(ws, row_idx + 2, totals, len(results), len(paid_results))
     last_row = _add_wage_base_composition_block(ws, last_row + 2, results)
 
     ws.freeze_panes = "C4"
@@ -3756,7 +3759,7 @@ def payroll_summary_export(year, month):
             row_idx += 1
             write_summary_row(r, row_idx)
 
-    last_row = _add_headcount_block(ws, row_idx + 2, totals, len(results))
+    last_row = _add_headcount_block(ws, row_idx + 2, totals, len(results), len(paid_results))
     last_row = _add_wage_base_composition_block(ws, last_row + 2, results)
     _add_zero_pay_notes(ws, last_row + 2, _zero_pay_notes(results))
 

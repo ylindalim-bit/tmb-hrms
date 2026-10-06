@@ -3656,7 +3656,12 @@ def _payroll_summary_data(db, year, month):
     base_by_emp = {
         r["emp_id"]: r["base"] for r in db.execute("SELECT emp_id, base FROM employees").fetchall()
     }
+    dept_by_emp = {
+        r["emp_id"]: (r["department"] or "").strip().upper()
+        for r in db.execute("SELECT emp_id, department FROM employees").fetchall()
+    }
     for r in results:
+        r["department"] = dept_by_emp.get(r["emp_id"]) or "NO DEPARTMENT SET"
         r["basic"] = round(r["basic_salary"] + (r["unpaid_deduction"] or 0), 2)
         r["total_allowance"] = round(
             (r["fixed_allowance"] or 0) + (r["variable_allowance"] or 0)
@@ -3674,6 +3679,16 @@ def _payroll_summary_data(db, year, month):
                    "socso_employee", "socso_employer", "eis_employee", "eis_employer", "pcb",
                    "skbbk_employee", "hrd_levy_employer", "total_deductions", "net_pay"]
     }
+    # The same figures per department (paid staff only, so the department rows add
+    # up to the TOTAL row) - used by the Totals Only report.
+    by_department = {}
+    for r in paid_results:
+        d = by_department.setdefault(r["department"], {"name": r["department"], "count": 0, **{k: 0.0 for k in totals}})
+        d["count"] += 1
+        for k in totals:
+            d[k] = round(d[k] + r[k], 2)
+    totals["by_department"] = sorted(
+        by_department.values(), key=lambda d: (d["name"] == "NO DEPARTMENT SET", d["name"]))
     return results, totals
 
 
@@ -3730,7 +3745,7 @@ def payroll_summary_export(year, month):
     totals_only = request.args.get("totals_only") == "1"
     non_aggregate_keys = ("emp_id", "full_name", "bank_name", "bank_account_no")
     columns = (
-        [c for c in PAYROLL_SUMMARY_EXPORT_COLUMNS if c[1] not in non_aggregate_keys]
+        [("Department", "dept_label")] + [c for c in PAYROLL_SUMMARY_EXPORT_COLUMNS if c[1] not in non_aggregate_keys]
         if totals_only else PAYROLL_SUMMARY_EXPORT_COLUMNS
     )
     money_cols = {label for label, key in PAYROLL_SUMMARY_EXPORT_COLUMNS if key not in non_aggregate_keys}
@@ -3765,6 +3780,15 @@ def payroll_summary_export(year, month):
         for r in paid_results:
             write_summary_row(r, row_idx)
             row_idx += 1
+    else:  # Totals Only: one row per department, then the overall TOTAL
+        for d in totals["by_department"]:
+            ws.cell(row=row_idx, column=1, value=f"{d['name']} ({d['count']})")
+            for col_idx, (label, key) in enumerate(columns, start=1):
+                if col_idx == 1:
+                    continue
+                cell = ws.cell(row=row_idx, column=col_idx, value=d[key])
+                cell.number_format = "#,##0.00"
+            row_idx += 1
 
     label_col_span = 1 if totals_only else 2
     total_label = f"TOTAL ({len(paid_results)} employees)"
@@ -3789,6 +3813,8 @@ def payroll_summary_export(year, month):
     if not totals_only:
         ws.column_dimensions["A"].width = 10
         ws.column_dimensions["B"].width = 26
+    else:
+        ws.column_dimensions["A"].width = 26
     for col_idx in range(label_col_span + 1, len(columns) + 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = 14
     _set_a4_one_page(ws)

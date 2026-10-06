@@ -37,6 +37,28 @@
 {% if not totals_only %}
 {% for r in results if not r.zero_pay %}{{ staff_row(r) }}{% endfor %}
 {% endif %}
+{% if totals_only %}
+{% for d in totals.by_department %}
+<tr>
+  <td class="text">{{ d.name }} ({{ d.count }})</td>
+  <td>{{ "%.2f"|format(d.basic) }}</td>
+  <td>{{ "%.2f"|format(d.total_allowance) }}</td>
+  <td>{{ "%.2f"|format(d.ot_pay) }}</td>
+  <td>{{ "%.2f"|format(d.gross_pay) }}</td>
+  <td>{{ "%.2f"|format(d.epf_employee) }}</td>
+  <td>{{ "%.2f"|format(d.socso_employee) }}</td>
+  <td>{{ "%.2f"|format(d.eis_employee) }}</td>
+  <td>{{ "%.2f"|format(d.skbbk_employee) }}</td>
+  <td>{{ "%.2f"|format(d.pcb) }}</td>
+  <td>{{ "%.2f"|format(d.epf_employer) }}</td>
+  <td>{{ "%.2f"|format(d.socso_employer) }}</td>
+  <td>{{ "%.2f"|format(d.eis_employer) }}</td>
+  <td>{{ "%.2f"|format(d.hrd_levy_employer) }}</td>
+  <td>{{ "%.2f"|format(d.total_deductions) }}</td>
+  <td><strong>{{ "%.2f"|format(d.net_pay) }}</strong></td>
+</tr>
+{% endfor %}
+{% endif %}
 <tr class="totals-row">
   {% if not totals_only %}<td class="text" colspan="2">TOTAL ({{ results|rejectattr("zero_pay")|list|length }} employees)</td>
   {% else %}<td class="text">TOTAL ({{ results|rejectattr("zero_pay")|list|length }} employees)</td>{% endif %}

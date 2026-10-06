@@ -3462,6 +3462,9 @@ def payroll_export(year, month):
     db = get_db()
     emps = employed_this_month(db, year, month)
     results = [payroll_calc.get_payroll_result(db, r["emp_id"], year, month) for r in emps]
+    # Staff with RM0 net pay (e.g. a whole month of unpaid leave) go last, just
+    # above the TOTAL row; everyone else keeps their usual Emp ID order.
+    results.sort(key=lambda r: (r["net_pay"] or 0) <= 0)
     bank_info = {
         r["emp_id"]: {
             "bank_name": r["bank_name"], "bank_account_no": r["bank_account_no"],

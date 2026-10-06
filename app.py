@@ -4762,6 +4762,175 @@ def payroll_payment_list(year, month):
     )
 
 
+@app.route("/payroll/<int:year>/<int:month>/statutory-report")
+def payroll_statutory_report(year, month):
+    """One Excel pack with every statutory report for the month: a Summary sheet
+    (what is payable to whom, and by when) plus a per-employee sheet each for EPF,
+    SOCSO + SKBBK, EIS, PCB (CP39) and HRD Corp. Built from the finalised payroll
+    figures, so it always agrees with the payroll Excel. A missing member / tax
+    number is flagged in red so it can be fixed before submitting."""
+    db = get_db()
+    employer = get_employer_info(db)
+    rows = db.execute(
+        """SELECT pr.*, e.full_name, e.ic_passport_no, e.epf_no, e.socso_no, e.tax_no
+           FROM payroll_runs pr JOIN employees e ON e.emp_id = pr.emp_id
+           WHERE pr.year=? AND pr.month=? ORDER BY pr.emp_id""",
+        (year, month),
+    ).fetchall()
+    due_year, due_month = (year + 1, 1) if month == 12 else (year, month + 1)
+    due = datetime.date(due_year, due_month, 15)
+
+    wb = openpyxl.Workbook()
+    header_fill = PatternFill("solid", fgColor="1D4ED8")
+    red = Font(bold=True, color="B91C1C")
+    money = "#,##0.00"
+
+    def make_sheet(title, headline, headers, data_rows, total_cols, widths, flag_col=None, first=False):
+        ws = wb.active if first else wb.create_sheet()
+        ws.title = title
+        ws.cell(row=1, column=1, value="TIANMA PRECISION SDN BHD").font = Font(bold=True, size=14)
+        ws.cell(row=2, column=1, value=f"{headline} - {MONTH_NAMES[month]} {year}").font = Font(bold=True, size=12)
+        ws.cell(row=3, column=1, value=f"Payable by {due.strftime('%d %B %Y')}").font = Font(italic=True, color="595959")
+        for ci, h in enumerate(headers, start=1):
+            c = ws.cell(row=5, column=ci, value=h)
+            c.font = Font(bold=True, color="FFFFFF")
+            c.fill = header_fill
+            c.alignment = Alignment(horizontal="center", wrap_text=True)
+        ri = 6
+        sums = {ci: 0.0 for ci in total_cols}
+        for dr in data_rows:
+            for ci, v in enumerate(dr, start=1):
+                c = ws.cell(row=ri, column=ci, value=v)
+                if ci in total_cols:
+                    c.number_format = money
+                    sums[ci] += v or 0
+                if flag_col == ci and (v in (None, "")):
+                    c.value = "MISSING"
+                    c.font = red
+            ri += 1
+        ws.cell(row=ri + 1, column=1, value=f"TOTAL ({len(data_rows)} employees)").font = Font(bold=True)
+        for ci, tot in sums.items():
+            c = ws.cell(row=ri + 1, column=ci, value=round(tot, 2))
+            c.font = Font(bold=True)
+            c.number_format = money
+            c.border = Border(top=Side(style="thin"), bottom=Side(style="double"))
+        for ci, w in enumerate(widths, start=1):
+            ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = w
+        ws.freeze_panes = "A6"
+        _set_a4_one_page(ws)
+        return round(sums.get(total_cols[-1], 0), 2) if total_cols else 0
+
+    def ic_of(r):
+        return _kwsp_ic_format(r["ic_passport_no"])
+
+    # ---- per-body sheets (a dummy Summary sheet is created first, filled in last) ----
+    summary = wb.active
+    summary.title = "Summary"
+
+    epf_rows = [r for r in rows if (r["epf_employer"] or 0) + (r["epf_employee"] or 0) > 0]
+    epf_tot = make_sheet("EPF", "EPF (KWSP) Form A",
+        ["Member EPF No.", "IC No.", "Name", "EPF Wages (RM)", "Employer (RM)", "Employee (RM)", "Total (RM)"],
+        [[r["epf_no"], ic_of(r), r["full_name"],
+          max(round((r["gross_pay"] or 0) - (r["ot_pay"] or 0) - (r["transport_allowance"] or 0) - (r["other_deduction"] or 0), 2), 0),
+          r["epf_employer"] or 0, r["epf_employee"] or 0, round((r["epf_employer"] or 0) + (r["epf_employee"] or 0), 2)] for r in epf_rows],
+        [4, 5, 6, 7], [16, 17, 44, 16, 15, 15, 15], flag_col=1)
+
+    socso_rows = [r for r in rows if (r["socso_employer"] or 0) + (r["socso_employee"] or 0) + (r["skbbk_employee"] or 0) > 0]
+    socso_tot = make_sheet("SOCSO & SKBBK", "SOCSO (PERKESO) and SKBBK",
+        ["SOCSO No.", "IC No.", "Name", "Wages (RM)", "SOCSO Employer", "SOCSO Employee", "SKBBK Employee", "Total (RM)"],
+        [[r["socso_no"] if (r["socso_no"] or "").strip() not in ("", "0") else "-", ic_of(r), r["full_name"], r["gross_pay"] or 0,
+          r["socso_employer"] or 0, r["socso_employee"] or 0, r["skbbk_employee"] or 0,
+          round((r["socso_employer"] or 0) + (r["socso_employee"] or 0) + (r["skbbk_employee"] or 0), 2)] for r in socso_rows],
+        [4, 5, 6, 7, 8], [14, 17, 44, 15, 15, 15, 15, 15])
+
+    eis_rows = [r for r in rows if (r["eis_employer"] or 0) + (r["eis_employee"] or 0) > 0]
+    eis_tot = make_sheet("EIS", "EIS (PERKESO)",
+        ["IC No.", "Name", "Wages (RM)", "Employer (RM)", "Employee (RM)", "Total (RM)"],
+        [[ic_of(r), r["full_name"], r["gross_pay"] or 0, r["eis_employer"] or 0, r["eis_employee"] or 0,
+          round((r["eis_employer"] or 0) + (r["eis_employee"] or 0), 2)] for r in eis_rows],
+        [3, 4, 5, 6], [17, 44, 15, 15, 15, 15])
+
+    pcb_rows = [r for r in rows if (r["pcb"] or 0) > 0]
+    pcb_tot = make_sheet("PCB (CP39)", "PCB / MTD (LHDN CP39)",
+        ["Tax Ref. No.", "IC No.", "Name", "Gross Pay (RM)", "PCB (RM)"],
+        [[(r["tax_no"] or "").strip() or None, ic_of(r), r["full_name"], r["gross_pay"] or 0, r["pcb"] or 0] for r in pcb_rows],
+        [4, 5], [16, 17, 44, 16, 15], flag_col=1)
+
+    hrd_rows = [r for r in rows if (r["hrd_levy_employer"] or 0) > 0]
+    hrd_tot = make_sheet("HRD Corp", "HRD Corp Levy (employer only)",
+        ["IC No.", "Name", "Monthly Wages (RM)", "Levy (RM)"],
+        [[ic_of(r), r["full_name"], r["gross_pay"] or 0, r["hrd_levy_employer"] or 0] for r in hrd_rows],
+        [3, 4], [17, 44, 18, 15])
+
+    # ---- Summary sheet ----
+    ws = summary
+    ws.cell(row=1, column=1, value="TIANMA PRECISION SDN BHD").font = Font(bold=True, size=14)
+    ws.cell(row=2, column=1, value=f"Statutory Contributions Summary - {MONTH_NAMES[month]} {year}").font = Font(bold=True, size=12)
+    ws.cell(row=3, column=1, value=f"Payable by {due.strftime('%d %B %Y')}").font = Font(italic=True, color="595959")
+    heads = ["Statutory body", "Employer reference", "Employees", "Employee share (RM)", "Employer share (RM)", "Total payable (RM)"]
+    for ci, h in enumerate(heads, start=1):
+        c = ws.cell(row=5, column=ci, value=h)
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = header_fill
+        c.alignment = Alignment(horizontal="center", wrap_text=True)
+
+    def s(rows_, a, b):
+        return round(sum(r[a] or 0 for r in rows_), 2), round(sum(r[b] or 0 for r in rows_), 2)
+
+    epf_ee, epf_er = s(epf_rows, "epf_employee", "epf_employer")
+    soc_ee, soc_er = s(socso_rows, "socso_employee", "socso_employer")
+    skb_ee = round(sum(r["skbbk_employee"] or 0 for r in socso_rows), 2)
+    eis_ee, eis_er = s(eis_rows, "eis_employee", "eis_employer")
+    pcb_ee = round(sum(r["pcb"] or 0 for r in pcb_rows), 2)
+    hrd_er = round(sum(r["hrd_levy_employer"] or 0 for r in hrd_rows), 2)
+    lines = [
+        ("EPF (KWSP)", employer["epf_employer_no"], len(epf_rows), epf_ee, epf_er),
+        ("SOCSO (PERKESO)", employer["socso_eis_employer_code"], len(socso_rows), soc_ee, soc_er),
+        ("SKBBK (PERKESO)", employer["socso_eis_employer_code"], len(socso_rows), skb_ee, 0),
+        ("EIS (PERKESO)", employer["socso_eis_employer_code"], len(eis_rows), eis_ee, eis_er),
+        ("PCB / MTD (LHDN)", employer["income_tax_employer_no"], len(pcb_rows), pcb_ee, 0),
+        ("HRD Corp Levy", employer["hrdcorp_employer_no"], len(hrd_rows), 0, hrd_er),
+    ]
+    ri = 6
+    for name, ref, n, ee, er in lines:
+        vals = [name, ref or "NOT SET", n, ee, er, round(ee + er, 2)]
+        for ci, v in enumerate(vals, start=1):
+            c = ws.cell(row=ri, column=ci, value=v)
+            if ci >= 4:
+                c.number_format = money
+            if ci == 2 and not ref:
+                c.font = red
+        ri += 1
+    ws.cell(row=ri + 1, column=1, value="TOTAL PAYABLE").font = Font(bold=True, size=12)
+    for ci, tot in [(4, sum(l[3] for l in lines)), (5, sum(l[4] for l in lines)), (6, sum(l[3] + l[4] for l in lines))]:
+        c = ws.cell(row=ri + 1, column=ci, value=round(tot, 2))
+        c.font = Font(bold=True, size=12)
+        c.number_format = money
+        c.border = Border(top=Side(style="thin"), bottom=Side(style="double"))
+    ws.cell(row=ri + 3, column=1, value="Notes").font = Font(bold=True)
+    notes = [
+        "SOCSO + SKBBK + EIS are all paid to PERKESO: SOCSO + SKBBK combined = "
+        f"RM{soc_ee + soc_er + skb_ee:,.2f}; with EIS RM{soc_ee + soc_er + skb_ee + eis_ee + eis_er:,.2f}.",
+        "PCB is the amount deducted from employees (LHDN CP39); it is paid in full to LHDN.",
+        "HRD Corp levy is an employer-only cost, not deducted from employees.",
+        "Red \"MISSING\" / \"NOT SET\" on the sheets = a number that must be added before you submit.",
+    ]
+    for i, n_ in enumerate(notes):
+        ws.cell(row=ri + 4 + i, column=1, value="- " + n_).font = Font(italic=True, color="595959")
+    for ci, w in enumerate([24, 24, 12, 20, 20, 20], start=1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = w
+    _set_a4_one_page(ws)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return Response(
+        buf.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=Statutory_Reports_{MONTH_NAMES[month]}_{year}.xlsx"},
+    )
+
+
 def _kwsp_ic_format(ic):
     """12-digit New IC as ######-##-#### (the layout KWSP's e-Caruman CSV
     guide asks for); a passport number is left as it is."""

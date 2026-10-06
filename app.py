@@ -245,9 +245,8 @@ def _add_cewi_remark(ws, start_row, db):
     rate_text = " / ".join(f"RM{x:g}" for x in rates) if rates else "the rate set per employee"
     ws.cell(row=start_row, column=1, value="Remarks:").font = Font(bold=True)
     ws.cell(row=start_row + 1, column=1, value=(
-        f"CEWI = Challenging Environment Workplace Incentive: {rate_text} per eligible day (days ticked CEWI on the "
-        "daily attendance sheet; a half-day leave counts as 0.5 day). Only for employees with CEWI switched on. "
-        "Included in gross pay, so it counts for EPF, SOCSO/SKBBK/EIS and PCB."
+        f"CEWI = Challenging Environment Workplace Incentive: {rate_text} per eligible day. "
+        "Paid for full working days only, not for a half day (0.5 day)."
     )).font = Font(italic=True, color="595959")
     return start_row + 1
 
@@ -2287,8 +2286,9 @@ def _sync_daily_to_monthly(db, emp_id, year, month):
     cewi_days = 0.0
     for r in rows:
         counts[r["day_type"]] = counts.get(r["day_type"], 0) + 1
-        # A half-day leave day is half worked, half leave - and earns half
-        # the Meal/CEWI allowance (they're per full day worked).
+        # A half-day leave day is half worked, half leave. Meal allowance is
+        # paid at half rate for it; CEWI is for full working days only, so a
+        # half-day earns none.
         weight = 1.0
         half_type = _half_leave_type(r)
         if half_type:
@@ -2297,8 +2297,8 @@ def _sync_daily_to_monthly(db, emp_id, year, month):
             weight = 0.5
         if r["meal_allowance_flag"] == "Y":
             meal_days += weight
-        if r["cewi_flag"] == "Y":
-            cewi_days += weight
+        if r["cewi_flag"] == "Y" and not half_type:
+            cewi_days += 1
     ot_1_5 = sum(r["ot_hours_1_5"] or 0 for r in rows)
     ot_2_0 = sum(r["ot_hours_2_0"] or 0 for r in rows)
     ot_3_0 = sum(r["ot_hours_3_0"] or 0 for r in rows)
@@ -7551,10 +7551,21 @@ def _sync_days_to_attendance_monthly(db, emp_id, start_date, end_date, column, w
             ("al_days", "mc_days", "hl_days", "ul_days", "other_paid_leave", "absent_days")
         )
         recomputed_days = max((row["working_days_in_month"] or 0) - total_leave, 0)
+        # CEWI is for full working days only: each approved half-day leave
+        # takes its whole day (not just half) out of the CEWI days.
+        try:
+            half_n = db.execute(
+                """SELECT COUNT(*) FROM leave_requests WHERE emp_id=? AND status='Approved'
+                   AND half_day IS NOT NULL AND start_date LIKE ?""",
+                (emp_id, f"{year:04d}-{month:02d}-%"),
+            ).fetchone()[0]
+        except sqlite3.OperationalError:
+            half_n = 0
+        cewi_days = max(recomputed_days - 0.5 * half_n, 0)
         db.execute(
             """UPDATE attendance_monthly SET days_worked=?, meal_eligible_days=?, cewi_eligible_days=?
                WHERE emp_id=? AND year=? AND month=?""",
-            (recomputed_days, recomputed_days, recomputed_days, emp_id, year, month),
+            (recomputed_days, recomputed_days, cewi_days, emp_id, year, month),
         )
 
 
@@ -11351,13 +11362,14 @@ def _unsync_deleted_leave_request(db, leave_request):
                 )
         d = datetime.date.fromisoformat(date_str)
         _resync_leave_days_from_daily(db, leave_request["emp_id"], d.year, d.month)
-        # Approving took half a day off Days Worked / Meal / CEWI eligible
-        # days; give that half back (never above the month's working days).
+        # Approving took half a day off Days Worked / Meal eligible days and the
+        # whole day off CEWI days (CEWI is for full days only); give them back
+        # (never above the month's working days).
         db.execute(
             """UPDATE attendance_monthly SET
                    days_worked = MIN(COALESCE(days_worked, 0) + 0.5, COALESCE(working_days_in_month, 0)),
                    meal_eligible_days = MIN(COALESCE(meal_eligible_days, 0) + 0.5, COALESCE(working_days_in_month, 0)),
-                   cewi_eligible_days = MIN(COALESCE(cewi_eligible_days, 0) + 0.5, COALESCE(working_days_in_month, 0))
+                   cewi_eligible_days = MIN(COALESCE(cewi_eligible_days, 0) + 1, COALESCE(working_days_in_month, 0))
                WHERE emp_id=? AND year=? AND month=?""",
             (leave_request["emp_id"], d.year, d.month),
         )

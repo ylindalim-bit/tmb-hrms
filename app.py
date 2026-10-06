@@ -5076,6 +5076,137 @@ def payroll_statutory_report_pdf(year, month):
         "Content-Disposition": f"attachment; filename=Statutory_Reports_{MONTH_NAMES[month]}_{year}.pdf"})
 
 
+# ---------------- HR: IT onboarding / leaver checklist ----------------
+# HR fills in an online form when someone joins or leaves; IT (any HR login)
+# ticks each item off as it is set up / removed, and the request completes once
+# every item is done. A printable copy carries the sign-off lines.
+
+IT_CHECKLIST_ITEMS = {
+    "Onboarding": [
+        "Company email account", "Laptop / PC", "Monitor, keyboard & mouse", "HRMS Staff Portal login",
+        "ERP / system accounts", "Office Wi-Fi & network access", "Phone / SIM card",
+        "Software licences (Office, CAD etc.)", "Printer / scanner access", "Access card / door key",
+    ],
+    "Leaver": [
+        "Disable company email (set auto-forward)", "Return laptop / PC", "Return phone / SIM card",
+        "Disable HRMS Staff Portal login", "Revoke ERP / system accounts", "Return access card / door key",
+        "Back up and hand over files", "Remove software licences", "Remove from Wi-Fi / network access",
+    ],
+}
+
+
+def _ensure_it_tables(db):
+    db.execute("""CREATE TABLE IF NOT EXISTS it_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, request_type TEXT NOT NULL, emp_id TEXT, person_name TEXT NOT NULL,
+        department TEXT, position TEXT, effective_date TEXT NOT NULL, remarks TEXT,
+        status TEXT NOT NULL DEFAULT 'Open', created_by TEXT, created_at TEXT NOT NULL, completed_at TEXT)""")
+    db.execute("""CREATE TABLE IF NOT EXISTS it_request_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, request_id INTEGER NOT NULL REFERENCES it_requests(id),
+        item TEXT NOT NULL, done_at TEXT, done_by TEXT)""")
+
+
+def _hr_display_name(db):
+    row = db.execute("SELECT full_name FROM hr_users WHERE username=?", (session.get("hr_username"),)).fetchone()
+    return row["full_name"] if row else session.get("hr_username")
+
+
+@app.route("/it-requests")
+def it_requests_list():
+    db = get_db()
+    _ensure_it_tables(db)
+    requests_ = db.execute(
+        """SELECT r.*, (SELECT COUNT(*) FROM it_request_items i WHERE i.request_id=r.id) AS total,
+                  (SELECT COUNT(*) FROM it_request_items i WHERE i.request_id=r.id AND i.done_at IS NOT NULL) AS done
+           FROM it_requests r ORDER BY (r.status='Completed'), r.effective_date DESC, r.id DESC"""
+    ).fetchall()
+    return render_template("it_requests.html", requests=requests_)
+
+
+@app.route("/it-requests/new", methods=["GET", "POST"])
+def it_request_new():
+    db = get_db()
+    _ensure_it_tables(db)
+    employees = db.execute(
+        "SELECT emp_id, full_name, department, position, status FROM employees ORDER BY emp_id"
+    ).fetchall()
+    error = None
+    if request.method == "POST":
+        req_type = request.form.get("request_type")
+        if req_type not in IT_CHECKLIST_ITEMS:
+            req_type = "Onboarding"
+        emp_id = (request.form.get("emp_id") or "").strip() or None
+        person_name = (request.form.get("person_name") or "").strip()
+        emp = db.execute("SELECT * FROM employees WHERE emp_id=?", (emp_id,)).fetchone() if emp_id else None
+        if emp and not person_name:
+            person_name = emp["full_name"]
+        effective = request.form.get("effective_date") or ""
+        chosen = [i for i in request.form.getlist("items") if i in IT_CHECKLIST_ITEMS[req_type]]
+        extra = [x.strip() for x in (request.form.get("other_items") or "").split(",") if x.strip()]
+        if not person_name or not effective:
+            error = "Employee / name and the date are required."
+        elif not chosen and not extra:
+            error = "Tick at least one item (or type one under Other)."
+        else:
+            cur = db.execute(
+                """INSERT INTO it_requests (request_type, emp_id, person_name, department, position, effective_date,
+                       remarks, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?)""",
+                (req_type, emp_id, person_name,
+                 (request.form.get("department") or (emp["department"] if emp else "") or "").strip() or None,
+                 (request.form.get("position") or (emp["position"] if emp else "") or "").strip() or None,
+                 effective, (request.form.get("remarks") or "").strip() or None, _hr_display_name(db),
+                 datetime.datetime.now().isoformat(timespec="seconds")),
+            )
+            for it in chosen + extra:
+                db.execute("INSERT INTO it_request_items (request_id, item) VALUES (?,?)", (cur.lastrowid, it))
+            db.commit()
+            return redirect(url_for("it_request_detail", request_id=cur.lastrowid))
+    return render_template("it_request_new.html", employees=employees, items=IT_CHECKLIST_ITEMS, error=error,
+                           today=datetime.date.today().isoformat())
+
+
+@app.route("/it-requests/<int:request_id>")
+def it_request_detail(request_id):
+    db = get_db()
+    _ensure_it_tables(db)
+    req = db.execute("SELECT * FROM it_requests WHERE id=?", (request_id,)).fetchone()
+    if req is None:
+        return "IT request not found", 404
+    items = db.execute("SELECT * FROM it_request_items WHERE request_id=? ORDER BY id", (request_id,)).fetchall()
+    return render_template("it_request_detail.html", req=req, items=items)
+
+
+@app.route("/it-requests/<int:request_id>/items/<int:item_id>/toggle", methods=["POST"])
+def it_request_item_toggle(request_id, item_id):
+    db = get_db()
+    _ensure_it_tables(db)
+    item = db.execute("SELECT * FROM it_request_items WHERE id=? AND request_id=?", (item_id, request_id)).fetchone()
+    if item is None:
+        abort(404)
+    if item["done_at"]:
+        db.execute("UPDATE it_request_items SET done_at=NULL, done_by=NULL WHERE id=?", (item_id,))
+    else:
+        db.execute("UPDATE it_request_items SET done_at=?, done_by=? WHERE id=?",
+                   (datetime.datetime.now().isoformat(timespec="seconds"), _hr_display_name(db), item_id))
+    remaining = db.execute("SELECT COUNT(*) FROM it_request_items WHERE request_id=? AND done_at IS NULL", (request_id,)).fetchone()[0]
+    db.execute("UPDATE it_requests SET status=?, completed_at=? WHERE id=?",
+               ("Completed" if remaining == 0 else "Open",
+                datetime.datetime.now().isoformat(timespec="seconds") if remaining == 0 else None, request_id))
+    db.commit()
+    return redirect(url_for("it_request_detail", request_id=request_id))
+
+
+@app.route("/it-requests/<int:request_id>/delete", methods=["POST"])
+def it_request_delete(request_id):
+    if session.get("hr_role") != "admin":
+        abort(403)
+    db = get_db()
+    _ensure_it_tables(db)
+    db.execute("DELETE FROM it_request_items WHERE request_id=?", (request_id,))
+    db.execute("DELETE FROM it_requests WHERE id=?", (request_id,))
+    db.commit()
+    return redirect(url_for("it_requests_list"))
+
+
 def _kwsp_ic_format(ic):
     """12-digit New IC as ######-##-#### (the layout KWSP's e-Caruman CSV
     guide asks for); a passport number is left as it is."""

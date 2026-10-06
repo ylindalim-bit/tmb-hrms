@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}New IT Request - TMB Payroll{% endblock %}
+{% block content %}
+<h1>New IT Request</h1>
+{% if error %}
+<div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger);">{{ error }}</div>
+{% endif %}
+<div class="card">
+<form method="post">
+  <div class="form-grid">
+    <div>
+      <label>Request type</label>
+      <select name="request_type" id="request_type" onchange="showItems()">
+        <option value="Onboarding">New staff (Onboarding)</option>
+        <option value="Leaver">Staff leaving (Leaver)</option>
+      </select>
+    </div>
+    <div>
+      <label>Existing employee (optional)</label>
+      <select name="emp_id" id="emp_id" onchange="fillFromEmployee()">
+        <option value="">-- not in the system yet --</option>
+        {% for e in employees %}
+        <option value="{{ e.emp_id }}" data-name="{{ e.full_name }}" data-dept="{{ e.department or '' }}" data-pos="{{ e.position or '' }}">{{ e.emp_id }} &mdash; {{ e.full_name }}{% if e.status == 'Inactive' %} (inactive){% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div><label>Name</label><input type="text" name="person_name" id="person_name" placeholder="Full name (for a new hire not yet in the system)"></div>
+    <div><label>Department</label><input type="text" name="department" id="department"></div>
+    <div><label>Position</label><input type="text" name="position" id="position"></div>
+    <div><label id="date_label">Start date</label><input type="date" name="effective_date" value="{{ today }}" required></div>
+  </div>
+
+  {% for kind, list_ in items.items() %}
+  <div class="items-group" data-kind="{{ kind }}" style="margin-top:14px; display:none;">
+    <label style="display:block; font-size:12px; color:var(--muted); font-weight:600; margin-bottom:6px;">
+      {% if kind == 'Onboarding' %}Tick what IT must set up{% else %}Tick what IT must remove / collect{% endif %}
+    </label>
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:6px 18px;">
+      {% for it in list_ %}
+      <label style="display:flex; gap:8px; align-items:center; font-weight:400;">
+        <input type="checkbox" name="items" value="{{ it }}" checked style="width:auto;"> {{ it }}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <div style="margin-top:12px;"><label>Other items (separate with commas)</label><input type="text" name="other_items" style="width:100%;" placeholder="e.g. Second monitor, VPN access"></div>
+  <div style="margin-top:12px;"><label>Remarks</label><input type="text" name="remarks" style="width:100%;"></div>
+  <div class="form-actions">
+    <button class="btn" type="submit">Submit Request</button>
+    <a class="btn secondary" href="{{ url_for('it_requests_list') }}">Cancel</a>
+  </div>
+</form>
+</div>
+<script>
+function showItems() {
+  var kind = document.getElementById('request_type').value;
+  document.querySelectorAll('.items-group').forEach(function (g) {
+    var on = g.dataset.kind === kind;
+    g.style.display = on ? 'block' : 'none';
+    g.querySelectorAll('input[type=checkbox]').forEach(function (c) { c.disabled = !on; });
+  });
+  document.getElementById('date_label').textContent = kind === 'Leaver' ? 'Last working day' : 'Start date';
+}
+function fillFromEmployee() {
+  var o = document.getElementById('emp_id').selectedOptions[0];
+  if (!o || !o.value) return;
+  document.getElementById('person_name').value = o.dataset.name || '';
+  document.getElementById('department').value = o.dataset.dept || '';
+  document.getElementById('position').value = o.dataset.pos || '';
+}
+showItems();
+</script>
+{% endblock %}

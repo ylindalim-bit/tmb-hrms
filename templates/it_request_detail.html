@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}IT Request {{ req.id }} - TMB Payroll{% endblock %}
+{% block content %}
+<div class="no-print" style="margin-bottom:8px;">
+  <a href="{{ url_for('it_requests_list') }}">&laquo; All IT requests</a>
+  <button class="btn secondary" type="button" style="margin-left:12px;" onclick="window.print()">Print form</button>
+</div>
+<div class="card" style="max-width:820px;">
+  <h1 style="margin-top:0;">IT {{ 'Onboarding' if req.request_type == 'Onboarding' else 'Leaver' }} Checklist</h1>
+  <p style="margin:0 0 10px; color:var(--muted); font-size:13px;">TIANMA PRECISION SDN BHD &mdash; Request #{{ req.id }}</p>
+  <table style="width:auto; font-size:14px;">
+    <tr><td class="text" style="border:none;"><strong>Name</strong></td><td class="text" style="border:none;">{{ req.person_name }}{% if req.emp_id %} ({{ req.emp_id }}){% endif %}</td></tr>
+    <tr><td class="text" style="border:none;"><strong>Department / Position</strong></td><td class="text" style="border:none;">{{ req.department or "-" }}{% if req.position %} / {{ req.position }}{% endif %}</td></tr>
+    <tr><td class="text" style="border:none;"><strong>{{ 'Last working day' if req.request_type == 'Leaver' else 'Start date' }}</strong></td><td class="text" style="border:none;">{{ req.effective_date }}</td></tr>
+    <tr><td class="text" style="border:none;"><strong>Raised by</strong></td><td class="text" style="border:none;">{{ req.created_by or "" }} ({{ req.created_at[:10] }})</td></tr>
+    <tr><td class="text" style="border:none;"><strong>Status</strong></td><td class="text" style="border:none;"><span class="pill {% if req.status == 'Completed' %}finalized{% else %}draft{% endif %}">{{ req.status }}</span>{% if req.completed_at %} &nbsp;{{ req.completed_at[:10] }}{% endif %}</td></tr>
+    {% if req.remarks %}<tr><td class="text" style="border:none;"><strong>Remarks</strong></td><td class="text" style="border:none;">{{ req.remarks }}</td></tr>{% endif %}
+  </table>
+
+  <table style="margin-top:14px;">
+    <thead><tr><th class="text">Item</th><th class="text">Done by IT</th><th class="text">Date</th><th class="no-print"></th></tr></thead>
+    <tbody>
+      {% for i in items %}
+      <tr>
+        <td class="text">{% if i.done_at %}&#9745;{% else %}&#9744;{% endif %} {{ i.item }}</td>
+        <td class="text">{{ i.done_by or "" }}</td>
+        <td class="text">{{ i.done_at[:10] if i.done_at else "" }}</td>
+        <td class="text no-print">
+          <form method="post" action="{{ url_for('it_request_item_toggle', request_id=req.id, item_id=i.id) }}">
+            <button class="btn {% if i.done_at %}secondary{% endif %}" type="submit" style="padding:3px 10px; font-size:12px;">{% if i.done_at %}Undo{% else %}Mark done{% endif %}</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div style="display:flex; gap:40px; margin-top:34px; font-size:13px;">
+    <div>Requested by (HR):<br><br><br>____________________<br>Date:</div>
+    <div>Completed by (IT):<br><br><br>____________________<br>Date:</div>
+    <div>{{ 'Employee acknowledgement' if req.request_type == 'Onboarding' else 'Employee / supervisor' }}:<br><br><br>____________________<br>Date:</div>
+  </div>
+  {% if hr_role == "admin" %}
+  <form class="no-print" method="post" action="{{ url_for('it_request_delete', request_id=req.id) }}" style="margin-top:18px;"
+        onsubmit="return confirm('Delete this IT request?');">
+    <button class="btn secondary" type="submit" style="padding:3px 10px; font-size:12px;">Delete request</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}IT Requests - TMB Payroll{% endblock %}
+{% block content %}
+<h1>IT Requests &mdash; New Staff / Leaver Checklist</h1>
+<p style="color:var(--muted); font-size:13px; margin-top:-8px;">
+  Fill in a request when someone joins or leaves, so IT sets up or removes their email, laptop and system access.
+  IT ticks each item off as it is done; the request completes when every item is ticked.
+  <a href="{{ url_for('it_request_new') }}" style="font-weight:600; margin-left:8px;">+ New IT Request</a>
+</p>
+<div class="card table-wrap">
+<table>
+  <thead>
+    <tr><th class="text">Type</th><th class="text">Name</th><th class="text">Department / Position</th>
+        <th class="text">Date</th><th>Items done</th><th class="text">Status</th><th class="text">Raised by</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for r in requests %}
+    <tr>
+      <td class="text">{{ r.request_type }}</td>
+      <td class="text"><a href="{{ url_for('it_request_detail', request_id=r.id) }}">{{ r.person_name }}</a>{% if r.emp_id %} ({{ r.emp_id }}){% endif %}</td>
+      <td class="text">{{ r.department or "-" }}{% if r.position %} / {{ r.position }}{% endif %}</td>
+      <td class="text">{{ r.effective_date }}</td>
+      <td>{{ r.done }} / {{ r.total }}</td>
+      <td class="text"><span class="pill {% if r.status == 'Completed' %}finalized{% else %}draft{% endif %}">{{ r.status }}</span></td>
+      <td class="text">{{ r.created_by or "" }}</td>
+      <td class="text"><a href="{{ url_for('it_request_detail', request_id=r.id) }}">Open</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" class="text" style="color:var(--muted);">No IT requests yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

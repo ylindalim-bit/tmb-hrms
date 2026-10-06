@@ -4627,19 +4627,12 @@ def payroll_payment_list_pdf(year, month):
     table = Table(data, colWidths=[0.8 * cm, 1.2 * cm, 5.4 * cm, 2.9 * cm, 2.1 * cm, 3.1 * cm, 2.5 * cm], repeatRows=1)
     table.setStyle(TableStyle(style_cmds))
 
-    sign = Table([["Prepared by:", "Checked by:", "Approved by:"],
-                  ["", "", ""], ["_____________________", "_____________________", "_____________________"],
-                  ["Date:", "Date:", "Date:"]], colWidths=[6.1 * cm] * 3)
-    sign.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 9),
-                              ("TOPPADDING", (0, 0), (-1, -1), 4)]))
-
     story = [Paragraph("TIANMA PRECISION SDN BHD", title),
              Paragraph(f"<b>Salary Payment List - {MONTH_NAMES[month]} {year}</b>", sub),
              Paragraph(f"Payment date: {pay_date.strftime('%d %B %Y')}", sub), Spacer(1, 8), table, Spacer(1, 8)]
     if zero:
         story.append(Paragraph("Not paid this month (net pay RM0.00): " + xml_escape(", ".join(
             f"{r['emp_id']} {r['full_name']}" for r in zero)), note))
-    story += [Spacer(1, 14), KeepTogether([sign])]
 
     buf = io.BytesIO()
     SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.5 * cm, rightMargin=1.5 * cm, topMargin=1.2 * cm,
@@ -4721,12 +4714,6 @@ def payroll_payment_list(year, month):
         ws.cell(row=row_idx, column=1, value="Not paid this month (net pay RM0.00): " + ", ".join(
             f"{r['emp_id']} {r['full_name']}" for r in zero)).font = Font(italic=True, color="92400E")
         row_idx += 1
-    row_idx += 2
-    for col_idx, label in [(1, "Prepared by:"), (3, "Checked by:"), (5, "Approved by:")]:
-        ws.cell(row=row_idx, column=col_idx, value=label).font = Font(bold=True)
-        ws.cell(row=row_idx + 3, column=col_idx, value="_______________________")
-        ws.cell(row=row_idx + 4, column=col_idx, value="Date:")
-
     for col, width in zip("ABCDEFG", [6, 9, 42, 17, 14, 20, 15]):
         ws.column_dimensions[col].width = width
     ws.freeze_panes = "A6"

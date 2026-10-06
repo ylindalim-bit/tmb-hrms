@@ -3486,6 +3486,38 @@ PAYROLL_EXPORT_COLUMNS = [
 ]
 
 
+# The department summary uses exactly the numeric columns of the full payroll Excel.
+SUMMARY_DEPT_COLUMNS = [
+    (label, key) for label, key in PAYROLL_EXPORT_COLUMNS
+    if key not in ("emp_id", "full_name", "base", "ic_passport_no", "bank_name", "bank_account_no")
+]
+SUMMARY_HOUR_KEYS = ("ot_hours_1_5", "ot_hours_2_0", "ot_hours_3_0")
+
+
+def _summary_row_values(r):
+    """One employee's numbers for every SUMMARY_DEPT_COLUMNS key, computed exactly
+    as the full payroll Excel export computes them (Basic and Gross before the
+    unpaid-leave deduction, Total Ded. including it, and the wage bases)."""
+    other = r["other_deduction"] or 0
+    socso_base = round((r["gross_pay"] or 0) - other, 2)
+    return {
+        "basic": round(r["basic_salary"] + (r["unpaid_deduction"] or 0), 2),
+        "fixed_allowance": r["fixed_allowance"], "ot_hours_1_5": r["ot_hours_1_5"],
+        "ot_hours_2_0": r["ot_hours_2_0"], "ot_hours_3_0": r["ot_hours_3_0"], "ot_pay": r["ot_pay"],
+        "transport_allowance": r["transport_allowance"], "meal_allowance": r["meal_allowance"],
+        "cewi_allowance": r["cewi_allowance"], "gross": round(r["gross_pay"] + (r["unpaid_deduction"] or 0), 2),
+        "epf_employee": r["epf_employee"], "socso_employee": r["socso_employee"],
+        "eis_employee": r["eis_employee"], "skbbk_employee": r["skbbk_employee"], "pcb": r["pcb"],
+        "epf_employer": r["epf_employer"], "socso_employer": r["socso_employer"],
+        "eis_employer": r["eis_employer"], "hrd_levy_employer": r["hrd_levy_employer"],
+        "unpaid_deduction": r["unpaid_deduction"] or 0, "other_deduction": other,
+        "total_deduction": round(r["total_deductions"] + (r["unpaid_deduction"] or 0), 2),
+        "net_pay": r["net_pay"], "socso_base": socso_base,
+        "epf_base": round((r["gross_pay"] or 0) - (r["ot_pay"] or 0) - (r["transport_allowance"] or 0) - other, 2),
+        "pcb_base": socso_base,
+    }
+
+
 @app.route("/payroll/<int:year>/<int:month>/export")
 def payroll_export(year, month):
     """Same figures/columns shown on the Run Payroll page, as a downloadable
@@ -3681,12 +3713,17 @@ def _payroll_summary_data(db, year, month):
     }
     # The same figures per department (paid staff only, so the department rows add
     # up to the TOTAL row) - used by the Totals Only report.
+    keys = [k for _, k in SUMMARY_DEPT_COLUMNS]
     by_department = {}
+    grand = {k: 0.0 for k in keys}
     for r in paid_results:
-        d = by_department.setdefault(r["department"], {"name": r["department"], "count": 0, **{k: 0.0 for k in totals}})
+        vals = _summary_row_values(r)
+        d = by_department.setdefault(r["department"], {"name": r["department"], "count": 0, **{k: 0.0 for k in keys}})
         d["count"] += 1
-        for k in totals:
-            d[k] = round(d[k] + r[k], 2)
+        for k in keys:
+            d[k] = round(d[k] + (vals[k] or 0), 2)
+            grand[k] = round(grand[k] + (vals[k] or 0), 2)
+    totals.update(grand)   # same figures as the TOTAL row of the full payroll Excel
     totals["by_department"] = sorted(
         by_department.values(), key=lambda d: (d["name"] == "NO DEPARTMENT SET", d["name"]))
     return results, totals
@@ -3713,6 +3750,7 @@ def payroll_summary(year, month):
     totals_only = request.args.get("totals_only") == "1"
     return render_template("payroll_summary.html", results=results, totals_only=totals_only,
                             year=year, month=month, totals=totals,
+                            summary_columns=SUMMARY_DEPT_COLUMNS, hour_keys=SUMMARY_HOUR_KEYS,
                             zero_pay_notes=_zero_pay_notes(results))
 
 
@@ -3722,6 +3760,7 @@ def payroll_summary_view(year, month):
     totals_only = request.args.get("totals_only") == "1"
     return render_template("payroll_summary_view.html", results=results, totals_only=totals_only,
                             year=year, month=month, totals=totals,
+                            summary_columns=SUMMARY_DEPT_COLUMNS, hour_keys=SUMMARY_HOUR_KEYS,
                             zero_pay_notes=_zero_pay_notes(results))
 
 
@@ -3742,13 +3781,8 @@ PAYROLL_SUMMARY_EXPORT_COLUMNS = [
 def payroll_summary_export(year, month):
     db = get_db()
     results, totals = _payroll_summary_data(db, year, month)
-    totals_only = request.args.get("totals_only") == "1"
-    non_aggregate_keys = ("emp_id", "full_name", "bank_name", "bank_account_no")
-    columns = (
-        [("Department", "dept_label")] + [c for c in PAYROLL_SUMMARY_EXPORT_COLUMNS if c[1] not in non_aggregate_keys]
-        if totals_only else PAYROLL_SUMMARY_EXPORT_COLUMNS
-    )
-    money_cols = {label for label, key in PAYROLL_SUMMARY_EXPORT_COLUMNS if key not in non_aggregate_keys}
+    columns = [("Department", "dept_label")] + SUMMARY_DEPT_COLUMNS
+    paid_results = [r for r in results if not r["zero_pay"]]
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -3757,7 +3791,7 @@ def payroll_summary_export(year, month):
     ws.cell(row=1, column=1, value="TIANMA PRECISION SDN BHD").font = Font(bold=True, size=16)
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(columns))
 
-    ws.cell(row=2, column=1, value=f"Payroll Summary: {year:04d}{month:02d} End Month").font = Font(bold=True, size=14)
+    ws.cell(row=2, column=1, value=f"Payroll Summary by Department: {year:04d}{month:02d} End Month").font = Font(bold=True, size=14)
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(columns))
 
     header_font = Font(bold=True, color="FFFFFF")
@@ -3767,63 +3801,37 @@ def payroll_summary_export(year, month):
         cell.font = header_font
         cell.fill = header_fill
 
-    def write_summary_row(r, row_idx):
-        for col_idx, (label, key) in enumerate(columns, start=1):
-            cell = ws.cell(row=row_idx, column=col_idx, value=r[key])
-            if label in money_cols:
-                cell.number_format = "#,##0.00"
+    def write_values(row_idx, label, values, bold=False):
+        cell = ws.cell(row=row_idx, column=1, value=label)
+        if bold:
+            cell.font = Font(bold=True)
+        for col_idx, (_lbl, key) in enumerate(columns[1:], start=2):
+            c = ws.cell(row=row_idx, column=col_idx, value=values[key])
+            c.number_format = "General" if key in SUMMARY_HOUR_KEYS else "#,##0.00"
+            if bold:
+                c.font = Font(bold=True)
 
-    paid_results = [r for r in results if not r["zero_pay"]]
-    zero_results = [r for r in results if r["zero_pay"]]
     row_idx = 4
-    if not totals_only:
-        for r in paid_results:
-            write_summary_row(r, row_idx)
-            row_idx += 1
-    else:  # Totals Only: one row per department, then the overall TOTAL
-        for d in totals["by_department"]:
-            ws.cell(row=row_idx, column=1, value=f"{d['name']} ({d['count']})")
-            for col_idx, (label, key) in enumerate(columns, start=1):
-                if col_idx == 1:
-                    continue
-                cell = ws.cell(row=row_idx, column=col_idx, value=d[key])
-                cell.number_format = "#,##0.00"
-            row_idx += 1
-
-    label_col_span = 1 if totals_only else 2
-    total_label = f"TOTAL ({len(paid_results)} employees)"
-    ws.cell(row=row_idx, column=1, value=total_label).font = Font(bold=True)
-    for col_idx, (label, key) in enumerate(columns, start=1):
-        if col_idx <= label_col_span or key in ("bank_name", "bank_account_no"):
-            continue
-        cell = ws.cell(row=row_idx, column=col_idx, value=totals[key])
-        cell.font = Font(bold=True)
-        cell.number_format = "#,##0.00"
-
-    if not totals_only:  # RM0 net-pay staff directly under TOTAL, outside it
-        for r in zero_results:
-            row_idx += 1
-            write_summary_row(r, row_idx)
+    for d in totals["by_department"]:
+        write_values(row_idx, f"{d['name']} ({d['count']})", d)
+        row_idx += 1
+    write_values(row_idx, f"TOTAL ({len(paid_results)} employees)", totals, bold=True)
 
     last_row = _add_headcount_block(ws, row_idx + 2, totals, len(results), len(paid_results))
     last_row = _add_wage_base_composition_block(ws, last_row + 2, results)
     notes_last_row = _add_zero_pay_notes(ws, last_row + 2, _zero_pay_notes(results))
     _add_cewi_remark(ws, max(notes_last_row, last_row) + 2, db)
 
-    if not totals_only:
-        ws.column_dimensions["A"].width = 10
-        ws.column_dimensions["B"].width = 26
-    else:
-        ws.column_dimensions["A"].width = 26
-    for col_idx in range(label_col_span + 1, len(columns) + 1):
-        ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = 14
+    ws.column_dimensions["A"].width = 26
+    for col_idx in range(2, len(columns) + 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = 12
+    ws.freeze_panes = "B4"
     _set_a4_one_page(ws)
 
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-    suffix = "_TotalsOnly" if totals_only else ""
-    filename = f"Payroll_Summary_{MONTH_NAMES[month]}_{year}{suffix}.xlsx"
+    filename = f"Payroll_Summary_by_Department_{MONTH_NAMES[month]}_{year}.xlsx"
     return Response(
         buf.getvalue(),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

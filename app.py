@@ -21,13 +21,13 @@ from xml.sax.saxutils import escape as xml_escape
 
 from pypdf import PdfReader, PdfWriter
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfgen import canvas as pdfcanvas
-from reportlab.platypus import Image as RLImage, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Image as RLImage, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from PIL import Image as PILImage
 
 # Built-in CJK CID font (no font file to bundle/deploy) - needed so a
@@ -4928,6 +4928,152 @@ def payroll_statutory_report(year, month):
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename=Statutory_Reports_{MONTH_NAMES[month]}_{year}.xlsx"},
     )
+
+
+@app.route("/payroll/<int:year>/<int:month>/statutory-report.pdf")
+def payroll_statutory_report_pdf(year, month):
+    """PDF version of the statutory report pack: a Summary page, then one page
+    per body (EPF, SOCSO + SKBBK, EIS, PCB / CP39, HRD Corp), A4 landscape.
+    Same figures and rules as the Excel pack."""
+    db = get_db()
+    employer = get_employer_info(db)
+    rows = db.execute(
+        """SELECT pr.*, e.full_name, e.ic_passport_no, e.epf_no, e.socso_no, e.tax_no
+           FROM payroll_runs pr JOIN employees e ON e.emp_id = pr.emp_id
+           WHERE pr.year=? AND pr.month=? ORDER BY pr.emp_id""",
+        (year, month),
+    ).fetchall()
+    due_year, due_month = (year + 1, 1) if month == 12 else (year, month + 1)
+    due = datetime.date(due_year, due_month, 15)
+
+    styles = getSampleStyleSheet()
+    small = ParagraphStyle("sm", parent=styles["Normal"], fontSize=8, leading=9.5)
+    title = ParagraphStyle("tt", parent=styles["Title"], fontSize=15, spaceAfter=2, alignment=0)
+    sub = ParagraphStyle("sb", parent=styles["Normal"], fontSize=11, leading=14)
+    note = ParagraphStyle("nt", parent=small, textColor=colors.HexColor("#595959"), fontName="Helvetica-Oblique", fontSize=8.5, leading=11)
+    red = colors.HexColor("#B91C1C")
+
+    def m(v):
+        return f"{(v or 0):,.2f}"
+
+    def heading(text):
+        return [Paragraph("TIANMA PRECISION SDN BHD", title),
+                Paragraph(f"<b>{xml_escape(text)} - {MONTH_NAMES[month]} {year}</b>", sub),
+                Paragraph(f"Payable by {due.strftime('%d %B %Y')}", note), Spacer(1, 8)]
+
+    def base_style(n_rows, money_from):
+        return [
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1D4ED8")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+            ("ALIGN", (money_from, 0), (-1, -1), "RIGHT"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LINEBELOW", (0, 1), (-1, -2), 0.25, colors.HexColor("#BFBFBF")),
+            ("TOPPADDING", (0, 0), (-1, -1), 2.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+            ("FONTNAME", (0, n_rows - 1), (-1, n_rows - 1), "Helvetica-Bold"),
+            ("LINEABOVE", (0, n_rows - 1), (-1, n_rows - 1), 1, colors.black),
+            ("LINEBELOW", (0, n_rows - 1), (-1, n_rows - 1), 1, colors.black),
+        ]
+
+    name_style = ParagraphStyle("nm2", parent=small, fontSize=8, leading=9.5)
+
+    def body_table(headers, data_rows, money_cols, widths, flag_col=None):
+        """money_cols: indexes (0-based) of numeric columns - totalled in the last row."""
+        data = [headers]
+        sums = {c: 0.0 for c in money_cols}
+        extra = []
+        for ri, dr in enumerate(data_rows, start=1):
+            line = []
+            for ci, v in enumerate(dr):
+                if ci in money_cols:
+                    sums[ci] += v or 0
+                    line.append(m(v))
+                elif flag_col == ci and v in (None, ""):
+                    line.append("MISSING")
+                    extra.append(("TEXTCOLOR", (ci, ri), (ci, ri), red))
+                elif headers[ci] == "Name":
+                    line.append(Paragraph(xml_escape(str(v or "")), name_style))
+                else:
+                    line.append(str(v if v is not None else ""))
+            data.append(line)
+        total_line = [f"TOTAL ({len(data_rows)} employees)"] + [""] * (len(headers) - 1)
+        for c, tot in sums.items():
+            total_line[c] = m(tot)
+        data.append(total_line)
+        t = Table(data, colWidths=[w * cm for w in widths], repeatRows=1)
+        t.setStyle(TableStyle(base_style(len(data), min(money_cols)) + extra))
+        return t
+
+    def ic_of(r):
+        return _kwsp_ic_format(r["ic_passport_no"])
+
+    epf_rows = [r for r in rows if (r["epf_employer"] or 0) + (r["epf_employee"] or 0) > 0]
+    socso_rows = [r for r in rows if (r["socso_employer"] or 0) + (r["socso_employee"] or 0) + (r["skbbk_employee"] or 0) > 0]
+    eis_rows = [r for r in rows if (r["eis_employer"] or 0) + (r["eis_employee"] or 0) > 0]
+    pcb_rows = [r for r in rows if (r["pcb"] or 0) > 0]
+    hrd_rows = [r for r in rows if (r["hrd_levy_employer"] or 0) > 0]
+
+    def sm(rs, key):
+        return round(sum(r[key] or 0 for r in rs), 2)
+
+    # ---- Summary page ----
+    lines = [
+        ("EPF (KWSP)", employer["epf_employer_no"], len(epf_rows), sm(epf_rows, "epf_employee"), sm(epf_rows, "epf_employer")),
+        ("SOCSO (PERKESO)", employer["socso_eis_employer_code"], len(socso_rows), sm(socso_rows, "socso_employee"), sm(socso_rows, "socso_employer")),
+        ("SKBBK (PERKESO)", employer["socso_eis_employer_code"], len(socso_rows), sm(socso_rows, "skbbk_employee"), 0),
+        ("EIS (PERKESO)", employer["socso_eis_employer_code"], len(eis_rows), sm(eis_rows, "eis_employee"), sm(eis_rows, "eis_employer")),
+        ("PCB / MTD (LHDN)", employer["income_tax_employer_no"], len(pcb_rows), sm(pcb_rows, "pcb"), 0),
+        ("HRD Corp Levy", employer["hrdcorp_employer_no"], len(hrd_rows), 0, sm(hrd_rows, "hrd_levy_employer")),
+    ]
+    sdata = [["Statutory body", "Employer reference", "Employees", "Employee share (RM)", "Employer share (RM)", "Total payable (RM)"]]
+    extra = []
+    for i, (name, ref, n, ee, er) in enumerate(lines, start=1):
+        sdata.append([name, ref or "NOT SET", str(n), m(ee), m(er), m(ee + er)])
+        if not ref:
+            extra.append(("TEXTCOLOR", (1, i), (1, i), red))
+    sdata.append(["TOTAL PAYABLE", "", "", m(sum(l[3] for l in lines)), m(sum(l[4] for l in lines)),
+                  m(sum(l[3] + l[4] for l in lines))])
+    st = Table(sdata, colWidths=[5.0 * cm, 5.0 * cm, 2.4 * cm, 4.2 * cm, 4.2 * cm, 4.2 * cm])
+    st.setStyle(TableStyle(base_style(len(sdata), 2) + extra))
+    perkeso = round(lines[1][3] + lines[1][4] + lines[2][3] + lines[3][3] + lines[3][4], 2)
+    soc_skb = round(lines[1][3] + lines[1][4] + lines[2][3], 2)
+    story = heading("Statutory Contributions Summary") + [st, Spacer(1, 12), Paragraph("<b>Notes</b>", small)]
+    for n_ in [f"SOCSO + SKBBK + EIS are all paid to PERKESO: SOCSO + SKBBK combined = RM{soc_skb:,.2f}; with EIS RM{perkeso:,.2f}.",
+               "PCB is the amount deducted from employees (LHDN CP39); it is paid in full to LHDN.",
+               "HRD Corp levy is an employer-only cost, not deducted from employees."]:
+        story.append(Paragraph("- " + xml_escape(n_), note))
+
+    # ---- one page per body ----
+    story += [PageBreak()] + heading("EPF (KWSP) Form A") + [body_table(
+        ["Member EPF No.", "IC No.", "Name", "EPF Wages (RM)", "Employer (RM)", "Employee (RM)", "Total (RM)"],
+        [[r["epf_no"], ic_of(r), r["full_name"],
+          max(round((r["gross_pay"] or 0) - (r["ot_pay"] or 0) - (r["transport_allowance"] or 0) - (r["other_deduction"] or 0), 2), 0),
+          r["epf_employer"] or 0, r["epf_employee"] or 0, round((r["epf_employer"] or 0) + (r["epf_employee"] or 0), 2)] for r in epf_rows],
+        {3, 4, 5, 6}, [3.2, 3.6, 8.2, 3.4, 3.0, 3.0, 3.0], flag_col=0)]
+    story += [PageBreak()] + heading("SOCSO (PERKESO) and SKBBK") + [body_table(
+        ["IC No.", "Name", "Wages (RM)", "SOCSO Employer", "SOCSO Employee", "SKBBK Employee", "Total (RM)"],
+        [[ic_of(r), r["full_name"], r["gross_pay"] or 0, r["socso_employer"] or 0, r["socso_employee"] or 0,
+          r["skbbk_employee"] or 0, round((r["socso_employer"] or 0) + (r["socso_employee"] or 0) + (r["skbbk_employee"] or 0), 2)]
+         for r in socso_rows],
+        {2, 3, 4, 5, 6}, [3.6, 8.4, 3.2, 3.4, 3.4, 3.4, 3.2])]
+    story += [PageBreak()] + heading("EIS (PERKESO)") + [body_table(
+        ["IC No.", "Name", "Wages (RM)", "Employer (RM)", "Employee (RM)", "Total (RM)"],
+        [[ic_of(r), r["full_name"], r["gross_pay"] or 0, r["eis_employer"] or 0, r["eis_employee"] or 0,
+          round((r["eis_employer"] or 0) + (r["eis_employee"] or 0), 2)] for r in eis_rows],
+        {2, 3, 4, 5}, [3.8, 9.2, 3.6, 3.6, 3.6, 3.6])]
+    story += [PageBreak()] + heading("PCB / MTD (LHDN CP39)") + [body_table(
+        ["Tax Ref. No.", "IC No.", "Name", "Gross Pay (RM)", "PCB (RM)"],
+        [[(r["tax_no"] or "").strip() or None, ic_of(r), r["full_name"], r["gross_pay"] or 0, r["pcb"] or 0] for r in pcb_rows],
+        {3, 4}, [3.8, 4.0, 10.2, 4.2, 3.6], flag_col=0)]
+    story += [PageBreak()] + heading("HRD Corp Levy (employer only)") + [body_table(
+        ["IC No.", "Name", "Monthly Wages (RM)", "Levy (RM)"],
+        [[ic_of(r), r["full_name"], r["gross_pay"] or 0, r["hrd_levy_employer"] or 0] for r in hrd_rows],
+        {2, 3}, [4.0, 11.4, 5.0, 4.0])]
+
+    buf = io.BytesIO()
+    SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=1.5 * cm, rightMargin=1.5 * cm, topMargin=1.2 * cm,
+                      bottomMargin=1.2 * cm, title=f"Statutory Reports {MONTH_NAMES[month]} {year}").build(story)
+    buf.seek(0)
+    return Response(buf.getvalue(), mimetype="application/pdf", headers={
+        "Content-Disposition": f"attachment; filename=Statutory_Reports_{MONTH_NAMES[month]}_{year}.pdf"})
 
 
 def _kwsp_ic_format(ic):

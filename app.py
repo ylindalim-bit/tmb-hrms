@@ -27,7 +27,7 @@ from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfgen import canvas as pdfcanvas
-from reportlab.platypus import Image as RLImage, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Image as RLImage, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from PIL import Image as PILImage
 
 # Built-in CJK CID font (no font file to bundle/deploy) - needed so a
@@ -4546,14 +4546,10 @@ def _bank_group_name(raw):
     return _BANK_GROUP_ALIASES.get(raw.upper(), raw)
 
 
-@app.route("/payroll/<int:year>/<int:month>/payment-list")
-def payroll_payment_list(year, month):
-    """Salary payment list for Finance: one sheet with who to pay, bank, account
-    number and the NET pay only (no salary breakdown), grouped by bank with a
-    subtotal per bank, a grand total, and Prepared / Checked / Approved lines.
-    Staff with RM0 net pay are left off the list and named in a footnote;
-    anyone with missing bank details is flagged in red."""
-    db = get_db()
+def _payment_list_data(db, year, month):
+    """Staff to pay this month (net pay above zero) grouped by bank, the RM0 net
+    pay staff left out, the payment date and the grand total - shared by the
+    Excel and PDF versions of the Finance payment list so they always agree."""
     emps = employed_this_month(db, year, month)
     results = [payroll_calc.get_payroll_result(db, r["emp_id"], year, month) for r in emps]
     bank_info = {
@@ -4571,11 +4567,97 @@ def payroll_payment_list(year, month):
     for r in paid:
         groups.setdefault(r["bank"].upper() or "~NO BANK DETAILS", []).append(r)
     ordered = sorted(groups.items(), key=lambda kv: (kv[0].startswith("~"), -len(kv[1]), kv[0]))
+    grand = round(sum(r["net_pay"] for r in paid), 2)
+    return ordered, paid, zero, grand, payment_date_for(year, month)
+
+
+@app.route("/payroll/<int:year>/<int:month>/payment-list.pdf")
+def payroll_payment_list_pdf(year, month):
+    """PDF version of the Finance salary payment list (same data as the Excel):
+    A4 portrait, net pay by bank with subtotals, grand total and sign-off lines."""
+    db = get_db()
+    ordered, paid, zero, grand, pay_date = _payment_list_data(db, year, month)
+    styles = getSampleStyleSheet()
+    small = ParagraphStyle("small", parent=styles["Normal"], fontSize=8, leading=10)
+    title = ParagraphStyle("t", parent=styles["Title"], fontSize=15, spaceAfter=2, alignment=0)
+    sub = ParagraphStyle("s", parent=styles["Normal"], fontSize=11, leading=14)
+    note = ParagraphStyle("n", parent=small, textColor=colors.HexColor("#92400E"))
+
+    def money(v):
+        return f"{v:,.2f}"
+
+    data = [["No.", "Emp ID", "Name", "Bank", "Account No.", "Net Pay (RM)", "Paid"]]
+    style_cmds = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1D4ED8")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+        ("ALIGN", (0, 0), (1, -1), "CENTER"),
+        ("ALIGN", (5, 0), (5, -1), "RIGHT"),
+        ("ALIGN", (6, 0), (6, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LINEBELOW", (0, 1), (-1, -1), 0.25, colors.HexColor("#BFBFBF")),
+        ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ]
+    n = 0
+    for bank, members in ordered:
+        sub_total = 0.0
+        for r in sorted(members, key=lambda x: x["emp_id"]):
+            n += 1
+            sub_total += r["net_pay"]
+            if not r["bank"] or not r["acct"]:
+                style_cmds.append(("TEXTCOLOR", (4, len(data)), (4, len(data)), colors.HexColor("#B91C1C")))
+            data.append([str(n), r["emp_id"], r["full_name"][:38], r["bank"] or "-", r["acct"] or "NO ACCOUNT NO.",
+                         money(r["net_pay"]), "[   ]"])
+        label = "NO BANK DETAILS" if bank.startswith("~") else bank
+        row_no = len(data)
+        data.append(["", "", f"Subtotal - {label} ({len(members)})", "", "", money(sub_total), ""])
+        style_cmds += [("BACKGROUND", (0, row_no), (-1, row_no), colors.HexColor("#E8EEF9")),
+                       ("FONTNAME", (0, row_no), (-1, row_no), "Helvetica-Bold")]
+    row_no = len(data)
+    data.append(["", "", f"TOTAL TO PAY ({len(paid)} staff)", "", "", money(grand), ""])
+    style_cmds += [("FONTNAME", (0, row_no), (-1, row_no), "Helvetica-Bold"), ("FONTSIZE", (0, row_no), (-1, row_no), 10),
+                   ("LINEABOVE", (0, row_no), (-1, row_no), 1.2, colors.black),
+                   ("LINEBELOW", (0, row_no), (-1, row_no), 1.2, colors.black)]
+
+    table = Table(data, colWidths=[1.0 * cm, 1.5 * cm, 6.2 * cm, 2.4 * cm, 3.4 * cm, 2.6 * cm, 1.2 * cm], repeatRows=1)
+    table.setStyle(TableStyle(style_cmds))
+
+    sign = Table([["Prepared by:", "Checked by:", "Approved by:"],
+                  ["", "", ""], ["_____________________", "_____________________", "_____________________"],
+                  ["Date:", "Date:", "Date:"]], colWidths=[6.1 * cm] * 3)
+    sign.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 9),
+                              ("TOPPADDING", (0, 0), (-1, -1), 4)]))
+
+    story = [Paragraph("TIANMA PRECISION SDN BHD", title),
+             Paragraph(f"<b>Salary Payment List - {MONTH_NAMES[month]} {year}</b>", sub),
+             Paragraph(f"Payment date: {pay_date.strftime('%d %B %Y')}", sub), Spacer(1, 8), table, Spacer(1, 8)]
+    if zero:
+        story.append(Paragraph("Not paid this month (net pay RM0.00): " + xml_escape(", ".join(
+            f"{r['emp_id']} {r['full_name']}" for r in zero)), note))
+    story += [Spacer(1, 14), KeepTogether([sign])]
+
+    buf = io.BytesIO()
+    SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.5 * cm, rightMargin=1.5 * cm, topMargin=1.2 * cm,
+                      bottomMargin=1.2 * cm, title=f"Salary Payment List {MONTH_NAMES[month]} {year}").build(story)
+    buf.seek(0)
+    return Response(buf.getvalue(), mimetype="application/pdf", headers={
+        "Content-Disposition": f"attachment; filename=Salary_Payment_List_{MONTH_NAMES[month]}_{year}.pdf"})
+
+
+@app.route("/payroll/<int:year>/<int:month>/payment-list")
+def payroll_payment_list(year, month):
+    """Salary payment list for Finance: one sheet with who to pay, bank, account
+    number and the NET pay only (no salary breakdown), grouped by bank with a
+    subtotal per bank, a grand total, and Prepared / Checked / Approved lines.
+    Staff with RM0 net pay are left off the list and named in a footnote;
+    anyone with missing bank details is flagged in red."""
+    db = get_db()
+    ordered, paid, zero, grand, pay_date = _payment_list_data(db, year, month)
 
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = f"{MONTH_NAMES[month]} {year} Payment"[:31]
-    pay_date = payment_date_for(year, month)
     ncols = 7
     ws.cell(row=1, column=1, value="TIANMA PRECISION SDN BHD").font = Font(bold=True, size=16)
     ws.cell(row=2, column=1, value=f"Salary Payment List - {MONTH_NAMES[month]} {year}").font = Font(bold=True, size=13)
@@ -4592,7 +4674,7 @@ def payroll_payment_list(year, month):
 
     thin = Side(style="thin", color="BFBFBF")
     row_idx, n = 6, 0
-    grand = 0.0
+    grand_check = 0.0
     sub_fill = PatternFill("solid", fgColor="E8EEF9")
     for bank, members in ordered:
         sub = 0.0
@@ -4614,7 +4696,7 @@ def payroll_payment_list(year, month):
                     cell.number_format = "@"
                     cell.alignment = Alignment(horizontal="left")
             row_idx += 1
-        grand += sub
+        grand_check += sub
         label = "NO BANK DETAILS" if bank.startswith("~") else bank
         ws.cell(row=row_idx, column=3, value=f"Subtotal - {label} ({len(members)})").font = Font(bold=True)
         tcell = ws.cell(row=row_idx, column=6, value=round(sub, 2))

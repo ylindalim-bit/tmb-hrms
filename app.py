@@ -235,6 +235,23 @@ def _add_wage_base_composition_block(ws, start_row, results):
     return box_last_row + 1
 
 
+def _add_cewi_remark(ws, start_row, db):
+    """Remarks block explaining the CEWI column (name, daily rate, how it is
+    counted), so anyone reading the exported sheet knows what it is. The rate
+    shown is whatever is set on the employees who have CEWI switched on."""
+    rates = sorted({round(r["cewi_rate"] or 0, 2) for r in db.execute(
+        "SELECT cewi_rate FROM employees WHERE cewi_flag='Y' AND (status IS NULL OR status != 'Inactive')"
+    ).fetchall() if (r["cewi_rate"] or 0) > 0})
+    rate_text = " / ".join(f"RM{x:g}" for x in rates) if rates else "the rate set per employee"
+    ws.cell(row=start_row, column=1, value="Remarks:").font = Font(bold=True)
+    ws.cell(row=start_row + 1, column=1, value=(
+        f"CEWI = Challenging Environment Workplace Incentive: {rate_text} per eligible day (days ticked CEWI on the "
+        "daily attendance sheet; a half-day leave counts as 0.5 day). Only for employees with CEWI switched on. "
+        "Included in gross pay, so it counts for EPF, SOCSO/SKBBK/EIS and PCB."
+    )).font = Font(italic=True, color="595959")
+    return start_row + 1
+
+
 def _add_zero_pay_notes(ws, start_row, notes):
     """Writes each zero-pay explanation on its own row starting at
     start_row, in a highlighted amber font. Returns the last row used (or
@@ -3609,6 +3626,7 @@ def payroll_export(year, month):
 
     last_row = _add_headcount_block(ws, row_idx + 2, totals, len(results), len(paid_results))
     last_row = _add_wage_base_composition_block(ws, last_row + 2, results)
+    _add_cewi_remark(ws, last_row + 2, db)
 
     ws.freeze_panes = "C4"
     ws.column_dimensions["A"].width = 10
@@ -3765,7 +3783,8 @@ def payroll_summary_export(year, month):
 
     last_row = _add_headcount_block(ws, row_idx + 2, totals, len(results), len(paid_results))
     last_row = _add_wage_base_composition_block(ws, last_row + 2, results)
-    _add_zero_pay_notes(ws, last_row + 2, _zero_pay_notes(results))
+    notes_last_row = _add_zero_pay_notes(ws, last_row + 2, _zero_pay_notes(results))
+    _add_cewi_remark(ws, max(notes_last_row, last_row) + 2, db)
 
     if not totals_only:
         ws.column_dimensions["A"].width = 10

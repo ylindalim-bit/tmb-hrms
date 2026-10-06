@@ -84,7 +84,32 @@
 </table>
 </div>
 {% set paid_n = results|rejectattr("zero_pay")|list|length %}
-<p><strong>Total Headcount: {{ results|length }} employees{% if paid_n != results|length %} ({{ paid_n }} with payment, {{ results|length - paid_n }} net pay zero){% endif %}</strong></p>
+<style>
+  .stat-box { border:1px solid #1F7A3D; border-collapse:collapse; margin:10px 0; font-size:13px; }
+  .stat-box td { padding:2px 10px; }
+  .stat-box td.num { text-align:right; }
+  .stat-box .lbl { color:#1D4ED8; }
+  .stat-box .brace { font-size:34px; line-height:1; text-align:center; padding:0 14px; color:#444; font-weight:300; }
+  .stat-box .brace.small { font-size:26px; }
+  .stat-side { border:none !important; }
+</style>
+<table class="stat-box" style="width:auto;">
+  <tr><td colspan="4"><strong>Head count</strong> &nbsp; {{ results|length }} employees{% if paid_n != results|length %} ({{ paid_n }} with payment, {{ results|length - paid_n }} net pay zero){% endif %}</td></tr>
+  <tr><td></td><td class="num"><strong>E'yee</strong></td><td class="num"><strong>E'yer</strong></td><td class="num"><strong>Total</strong></td></tr>
+  <tr>
+    <td class="lbl">SOCSO</td><td class="num">{{ "%.2f"|format(totals.socso_employee) }}</td><td class="num">{{ "%.2f"|format(totals.socso_employer) }}</td><td class="num">{{ "%.2f"|format(totals.socso_employee + totals.socso_employer) }}</td>
+    <td class="stat-side brace small" rowspan="2">}</td>
+    <td class="stat-side" rowspan="2"><strong>{{ "%.2f"|format(totals.socso_employee + totals.socso_employer + totals.skbbk_employee) }}</strong></td>
+    <td class="stat-side brace" rowspan="3">}</td>
+    <td class="stat-side" rowspan="3"><strong>{{ "%.2f"|format(totals.socso_employee + totals.socso_employer + totals.skbbk_employee + totals.eis_employee + totals.eis_employer) }}</strong></td>
+  </tr>
+  <tr><td class="lbl">SKBBK</td><td class="num">{{ "%.2f"|format(totals.skbbk_employee) }}</td><td class="num">0.00</td><td class="num">{{ "%.2f"|format(totals.skbbk_employee) }}</td></tr>
+  <tr><td class="lbl">EIS</td><td class="num">{{ "%.2f"|format(totals.eis_employee) }}</td><td class="num">{{ "%.2f"|format(totals.eis_employer) }}</td><td class="num">{{ "%.2f"|format(totals.eis_employee + totals.eis_employer) }}</td></tr>
+  <tr><td colspan="4">&nbsp;</td></tr>
+  <tr><td class="lbl">EPF</td><td class="num">{{ "%.2f"|format(totals.epf_employee) }}</td><td class="num">{{ "%.2f"|format(totals.epf_employer) }}</td><td class="num">{{ "%.2f"|format(totals.epf_employee + totals.epf_employer) }}</td></tr>
+  <tr><td class="lbl">PCB</td><td class="num">{{ "%.2f"|format(totals.pcb) }}</td><td class="num">0.00</td><td class="num">{{ "%.2f"|format(totals.pcb) }}</td></tr>
+  <tr><td class="lbl">HRDCORP</td><td class="num">0.00</td><td class="num">{{ "%.2f"|format(totals.hrd_levy_employer) }}</td><td class="num">{{ "%.2f"|format(totals.hrd_levy_employer) }}</td></tr>
+</table>
 {% if zero_pay_notes %}
 <div style="background:#fef3c7; color:#92400e; padding:10px 14px; border-radius:6px; font-size:13px; margin-top:8px;">
   <strong>Note:</strong>

@@ -4913,7 +4913,6 @@ def payroll_statutory_report(year, month):
         f"RM{soc_ee + soc_er + skb_ee:,.2f}; with EIS RM{soc_ee + soc_er + skb_ee + eis_ee + eis_er:,.2f}.",
         "PCB is the amount deducted from employees (LHDN CP39); it is paid in full to LHDN.",
         "HRD Corp levy is an employer-only cost, not deducted from employees.",
-        "Red \"MISSING\" / \"NOT SET\" on the sheets = a number that must be added before you submit.",
     ]
     for i, n_ in enumerate(notes):
         ws.cell(row=ri + 4 + i, column=1, value="- " + n_).font = Font(italic=True, color="595959")

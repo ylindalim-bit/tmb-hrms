@@ -4586,15 +4586,14 @@ def payroll_payment_list_pdf(year, month):
     def money(v):
         return f"{v:,.2f}"
 
-    data = [["No.", "Emp ID", "Name", "Bank", "Account No.", "Net Pay (RM)", "Paid"]]
+    data = [["No.", "Emp ID", "Name", "Bank", "Account No.", "Net Pay (RM)"]]
     style_cmds = [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1D4ED8")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
         ("ALIGN", (0, 0), (1, -1), "CENTER"),
         ("ALIGN", (5, 0), (5, -1), "RIGHT"),
-        ("ALIGN", (6, 0), (6, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("LINEBELOW", (0, 1), (-1, -1), 0.25, colors.HexColor("#BFBFBF")),
         ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
@@ -4607,20 +4606,20 @@ def payroll_payment_list_pdf(year, month):
             sub_total += r["net_pay"]
             if not r["bank"] or not r["acct"]:
                 style_cmds.append(("TEXTCOLOR", (4, len(data)), (4, len(data)), colors.HexColor("#B91C1C")))
-            data.append([str(n), r["emp_id"], r["full_name"][:38], r["bank"] or "-", r["acct"] or "NO ACCOUNT NO.",
-                         money(r["net_pay"]), "[   ]"])
+            data.append([str(n), r["emp_id"], r["full_name"], r["bank"] or "-", r["acct"] or "NO ACCOUNT NO.",
+                         money(r["net_pay"])])
         label = "NO BANK DETAILS" if bank.startswith("~") else bank
         row_no = len(data)
-        data.append(["", "", f"Subtotal - {label} ({len(members)})", "", "", money(sub_total), ""])
+        data.append(["", "", f"Subtotal - {label} ({len(members)})", "", "", money(sub_total)])
         style_cmds += [("BACKGROUND", (0, row_no), (-1, row_no), colors.HexColor("#E8EEF9")),
                        ("FONTNAME", (0, row_no), (-1, row_no), "Helvetica-Bold")]
     row_no = len(data)
-    data.append(["", "", f"TOTAL TO PAY ({len(paid)} staff)", "", "", money(grand), ""])
+    data.append(["", "", f"TOTAL TO PAY ({len(paid)} staff)", "", "", money(grand)])
     style_cmds += [("FONTNAME", (0, row_no), (-1, row_no), "Helvetica-Bold"), ("FONTSIZE", (0, row_no), (-1, row_no), 10),
                    ("LINEABOVE", (0, row_no), (-1, row_no), 1.2, colors.black),
                    ("LINEBELOW", (0, row_no), (-1, row_no), 1.2, colors.black)]
 
-    table = Table(data, colWidths=[1.0 * cm, 1.5 * cm, 6.2 * cm, 2.4 * cm, 3.4 * cm, 2.6 * cm, 1.2 * cm], repeatRows=1)
+    table = Table(data, colWidths=[0.9 * cm, 1.4 * cm, 7.4 * cm, 2.4 * cm, 3.2 * cm, 2.7 * cm], repeatRows=1)
     table.setStyle(TableStyle(style_cmds))
 
     sign = Table([["Prepared by:", "Checked by:", "Approved by:"],
@@ -4658,7 +4657,7 @@ def payroll_payment_list(year, month):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = f"{MONTH_NAMES[month]} {year} Payment"[:31]
-    ncols = 7
+    ncols = 6
     ws.cell(row=1, column=1, value="TIANMA PRECISION SDN BHD").font = Font(bold=True, size=16)
     ws.cell(row=2, column=1, value=f"Salary Payment List - {MONTH_NAMES[month]} {year}").font = Font(bold=True, size=13)
     ws.cell(row=3, column=1, value=f"Payment date: {pay_date.strftime('%d %B %Y')}")
@@ -4666,7 +4665,7 @@ def payroll_payment_list(year, month):
         ws.merge_cells(start_row=rr, start_column=1, end_row=rr, end_column=ncols)
 
     header_fill = PatternFill("solid", fgColor="1D4ED8")
-    for col_idx, label in enumerate(["No.", "Emp ID", "Name", "Bank", "Account No.", "Net Pay (RM)", "Paid (tick)"], start=1):
+    for col_idx, label in enumerate(["No.", "Emp ID", "Name", "Bank", "Account No.", "Net Pay (RM)"], start=1):
         cell = ws.cell(row=5, column=col_idx, value=label)
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = header_fill
@@ -4682,7 +4681,7 @@ def payroll_payment_list(year, month):
             n += 1
             sub += r["net_pay"]
             missing = not r["bank"] or not r["acct"]
-            vals = [n, r["emp_id"], r["full_name"], r["bank"] or "-", r["acct"] or "NO ACCOUNT NO.", r["net_pay"], ""]
+            vals = [n, r["emp_id"], r["full_name"], r["bank"] or "-", r["acct"] or "NO ACCOUNT NO.", r["net_pay"]]
             for col_idx, v in enumerate(vals, start=1):
                 cell = ws.cell(row=row_idx, column=col_idx, value=v)
                 cell.border = Border(bottom=thin)
@@ -4690,7 +4689,7 @@ def payroll_payment_list(year, month):
                     cell.font = Font(bold=True, color="B91C1C")
                 if col_idx == 6:
                     cell.number_format = "#,##0.00"
-                if col_idx in (1, 2, 7):
+                if col_idx in (1, 2):
                     cell.alignment = Alignment(horizontal="center")
                 if col_idx == 5:
                     cell.number_format = "@"
@@ -4723,7 +4722,7 @@ def payroll_payment_list(year, month):
         ws.cell(row=row_idx + 3, column=col_idx, value="_______________________")
         ws.cell(row=row_idx + 4, column=col_idx, value="Date:")
 
-    for col, width in zip("ABCDEFG", [6, 9, 44, 14, 22, 16, 12]):
+    for col, width in zip("ABCDEF", [6, 9, 44, 14, 22, 16]):
         ws.column_dimensions[col].width = width
     ws.freeze_panes = "A6"
     _set_a4_one_page(ws)

@@ -5100,6 +5100,10 @@ def _ensure_it_tables(db):
         id INTEGER PRIMARY KEY AUTOINCREMENT, request_type TEXT NOT NULL, emp_id TEXT, person_name TEXT NOT NULL,
         department TEXT, position TEXT, effective_date TEXT NOT NULL, remarks TEXT,
         status TEXT NOT NULL DEFAULT 'Open', created_by TEXT, created_at TEXT NOT NULL, completed_at TEXT)""")
+    cols = [r[1] for r in db.execute("PRAGMA table_info(it_requests)").fetchall()]
+    for col in ("laptop_model", "laptop_serial"):
+        if col not in cols:
+            db.execute(f"ALTER TABLE it_requests ADD COLUMN {col} TEXT")
     db.execute("""CREATE TABLE IF NOT EXISTS it_request_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT, request_id INTEGER NOT NULL REFERENCES it_requests(id),
         item TEXT NOT NULL, done_at TEXT, done_by TEXT)""")
@@ -5149,12 +5153,14 @@ def it_request_new():
         else:
             cur = db.execute(
                 """INSERT INTO it_requests (request_type, emp_id, person_name, department, position, effective_date,
-                       remarks, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?)""",
+                       remarks, created_by, created_at, laptop_model, laptop_serial) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                 (req_type, emp_id, person_name,
                  (request.form.get("department") or (emp["department"] if emp else "") or "").strip() or None,
                  (request.form.get("position") or (emp["position"] if emp else "") or "").strip() or None,
                  effective, (request.form.get("remarks") or "").strip() or None, _hr_display_name(db),
-                 datetime.datetime.now().isoformat(timespec="seconds")),
+                 datetime.datetime.now().isoformat(timespec="seconds"),
+                 (request.form.get("laptop_model") or "").strip() or None,
+                 (request.form.get("laptop_serial") or "").strip() or None),
             )
             for it in chosen + extra:
                 db.execute("INSERT INTO it_request_items (request_id, item) VALUES (?,?)", (cur.lastrowid, it))
@@ -5191,6 +5197,18 @@ def it_request_item_toggle(request_id, item_id):
     db.execute("UPDATE it_requests SET status=?, completed_at=? WHERE id=?",
                ("Completed" if remaining == 0 else "Open",
                 datetime.datetime.now().isoformat(timespec="seconds") if remaining == 0 else None, request_id))
+    db.commit()
+    return redirect(url_for("it_request_detail", request_id=request_id))
+
+
+@app.route("/it-requests/<int:request_id>/equipment", methods=["POST"])
+def it_request_equipment(request_id):
+    """Saves (or corrects) the laptop brand / model and serial / asset tag on a request."""
+    db = get_db()
+    _ensure_it_tables(db)
+    db.execute("UPDATE it_requests SET laptop_model=?, laptop_serial=? WHERE id=?",
+               ((request.form.get("laptop_model") or "").strip() or None,
+                (request.form.get("laptop_serial") or "").strip() or None, request_id))
     db.commit()
     return redirect(url_for("it_request_detail", request_id=request_id))
 

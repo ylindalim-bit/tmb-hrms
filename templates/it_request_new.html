@@ -30,6 +30,11 @@
     <div><label id="date_label">Start date</label><input type="date" name="effective_date" value="{{ today }}" required></div>
   </div>
 
+  <div class="form-grid" style="margin-top:14px;">
+    <div><label id="laptop_label">Laptop brand / model</label><input type="text" name="laptop_model" placeholder="e.g. Lenovo ThinkPad E14 Gen 5"></div>
+    <div><label>Serial no. / asset tag (optional)</label><input type="text" name="laptop_serial" placeholder="e.g. PF3ABC12 / TM-LT-014"></div>
+  </div>
+
   {% for kind, list_ in items.items() %}
   <div class="items-group" data-kind="{{ kind }}" style="margin-top:14px; display:none;">
     <label style="display:block; font-size:12px; color:var(--muted); font-weight:600; margin-bottom:6px;">
@@ -62,6 +67,7 @@ function showItems() {
     g.querySelectorAll('input[type=checkbox]').forEach(function (c) { c.disabled = !on; });
   });
   document.getElementById('date_label').textContent = kind === 'Leaver' ? 'Last working day' : 'Start date';
+  document.getElementById('laptop_label').textContent = kind === 'Leaver' ? 'Laptop brand / model being returned' : 'Laptop brand / model issued';
 }
 function fillFromEmployee() {
   var o = document.getElementById('emp_id').selectedOptions[0];

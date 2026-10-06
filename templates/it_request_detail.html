@@ -14,6 +14,7 @@
     <tr><td class="text" style="border:none;"><strong>{{ 'Last working day' if req.request_type == 'Leaver' else 'Start date' }}</strong></td><td class="text" style="border:none;">{{ req.effective_date }}</td></tr>
     <tr><td class="text" style="border:none;"><strong>Raised by</strong></td><td class="text" style="border:none;">{{ req.created_by or "" }} ({{ req.created_at[:10] }})</td></tr>
     <tr><td class="text" style="border:none;"><strong>Status</strong></td><td class="text" style="border:none;"><span class="pill {% if req.status == 'Completed' %}finalized{% else %}draft{% endif %}">{{ req.status }}</span>{% if req.completed_at %} &nbsp;{{ req.completed_at[:10] }}{% endif %}</td></tr>
+    <tr><td class="text" style="border:none;"><strong>Laptop</strong></td><td class="text" style="border:none;">{{ req.laptop_model or "-" }}{% if req.laptop_serial %} &nbsp;&middot;&nbsp; S/N / tag: {{ req.laptop_serial }}{% endif %}</td></tr>
     {% if req.remarks %}<tr><td class="text" style="border:none;"><strong>Remarks</strong></td><td class="text" style="border:none;">{{ req.remarks }}</td></tr>{% endif %}
   </table>
 
@@ -34,6 +35,12 @@
       {% endfor %}
     </tbody>
   </table>
+
+  <form class="no-print" method="post" action="{{ url_for('it_request_equipment', request_id=req.id) }}" style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+    <div><label>Laptop brand / model</label><input type="text" name="laptop_model" value="{{ req.laptop_model or '' }}" style="width:280px;"></div>
+    <div><label>Serial no. / asset tag</label><input type="text" name="laptop_serial" value="{{ req.laptop_serial or '' }}" style="width:200px;"></div>
+    <button class="btn secondary" type="submit" style="padding:5px 12px;">Save laptop details</button>
+  </form>
 
   <div style="display:flex; gap:40px; margin-top:34px; font-size:13px;">
     <div>Requested by (HR):<br><br><br>____________________<br>Date:</div>

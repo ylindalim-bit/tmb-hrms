@@ -4445,6 +4445,69 @@ def socso_eis_textfile(year, month):
     )
 
 
+def _digits(value):
+    return "".join(ch for ch in str(value or "") if ch.isdigit())
+
+
+@app.route("/pcb-cp39-textfile/<int:year>/<int:month>")
+def pcb_cp39_textfile(year, month):
+    """CP39 text file for LHDN e-PCB Plus / e-Data PCB (monthly PCB statement).
+    Layout reconstructed from LHDN's e-Data PCB validation rules (header 57
+    chars, detail 126 chars, both fixed-width, amounts in sen with no decimal
+    point):
+      H  E No (HQ) 10 | E No (branch) 10 | year 4 | month 2 | total PCB 10 |
+         PCB records 5 | total CP38 10 | CP38 records 5
+      D  Tax ref no 10 | spouse code 1 | name 60 | old IC 12 | new IC 12 |
+         passport 12 | country code 2 | PCB 8 | CP38 8
+    Only staff with PCB > 0 are listed. A local employee needs his income tax
+    reference number plus his IC (LHDN rejects a record with fewer than two
+    identifiers), so the download is refused until Tax No. is on file for
+    everyone; add ?allow_missing=1 to download anyway. LHDN's own "validate"
+    step in e-PCB Plus should be run on the file before paying."""
+    db = get_db()
+    employer = get_employer_info(db)
+    e_no = _digits(employer["income_tax_employer_no"])
+    if not e_no:
+        return "Please fill in the Income Tax Employer No. (E number) under Settings first.", 400
+    rows = db.execute(
+        """SELECT pr.*, e.ic_passport_no, e.full_name, e.tax_no, t.tax_category, t.tp1_submitted
+           FROM payroll_runs pr JOIN employees e ON e.emp_id = pr.emp_id
+           LEFT JOIN tax_profile t ON t.emp_id = pr.emp_id
+           WHERE pr.year=? AND pr.month=? AND pr.pcb > 0 ORDER BY pr.emp_id""",
+        (year, month),
+    ).fetchall()
+    missing = [f"{r['emp_id']} ({r['full_name']})" for r in rows if not _digits(r["tax_no"])]
+    if missing and request.args.get("allow_missing") != "1":
+        return ("Cannot create the PCB file yet: these employees have no Tax No. (LHDN reference number) on file - "
+                "add it under Employees > Tax No., then try again: " + ", ".join(missing)), 400
+
+    total_sen = sum(int(round((r["pcb"] or 0) * 100)) for r in rows)
+    lines = [
+        "H" + e_no[-10:].rjust(10, "0") + e_no[-10:].rjust(10, "0") + f"{year:04d}{month:02d}"
+        + str(total_sen).rjust(10, "0") + str(len(rows)).rjust(5, "0")
+        + "0".rjust(10, "0") + "0".rjust(5, "0")
+    ]
+    for r in rows:
+        ic = _digits(r["ic_passport_no"])
+        is_local_ic = len(ic) == 12 and ic == str(r["ic_passport_no"] or "").replace("-", "").strip()
+        spouse = "1" if (r["tax_category"] == "Married" and r["tp1_submitted"] == "Y") else "0"
+        name = "".join(ch for ch in str(r["full_name"] or "").upper() if not ch.isdigit()).strip()
+        lines.append(
+            "D" + _digits(r["tax_no"])[-10:].rjust(10, "0") + spouse + name[:60].ljust(60)
+            + " " * 12                                           # old IC (not tracked)
+            + (ic.ljust(12) if is_local_ic else " " * 12)         # new IC
+            + (" " * 12 if is_local_ic else str(r["ic_passport_no"] or "").strip()[:12].ljust(12))  # passport
+            + "  "                                              # country code (foreigners only)
+            + str(int(round((r["pcb"] or 0) * 100))).rjust(8, "0")
+            + "0".rjust(8, "0")                                  # CP38
+        )
+    content = "\r\n".join(lines) + "\r\n"
+    return Response(
+        content, mimetype="text/plain",
+        headers={"Content-Disposition": f"attachment; filename=CP39_{e_no}_{year:04d}{month:02d}.txt"},
+    )
+
+
 def _kwsp_ic_format(ic):
     """12-digit New IC as ######-##-#### (the layout KWSP's e-Caruman CSV
     guide asks for); a passport number is left as it is."""

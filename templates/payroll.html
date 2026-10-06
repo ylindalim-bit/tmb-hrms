@@ -11,6 +11,7 @@
   <a class="btn secondary" href="{{ url_for('payroll_export', year=year, month=month) }}">Export to Excel</a>
   <a class="btn secondary" href="{{ url_for('socso_eis_textfile', year=year, month=month) }}">Download SOCSO+EIS Text File</a>
   <a class="btn secondary" href="{{ url_for('epf_ecaruman_csv', year=year, month=month) }}">Download EPF File (i-Akaun)</a>
+  <a class="btn secondary" href="{{ url_for('pcb_cp39_textfile', year=year, month=month) }}">Download PCB File (e-PCB)</a>
   <a class="btn secondary" href="{{ url_for('ocbc_payment_file', year=year, month=month) }}">Generate OCBC Payment File</a>
   <a class="btn secondary" href="{{ url_for('ocbc_kwsp_file', year=year, month=month) }}">Generate OCBC KWSP File</a>
   <a class="btn secondary" href="{{ url_for('ocbc_socso_file', year=year, month=month) }}">Generate OCBC SOCSO/EIS File</a>

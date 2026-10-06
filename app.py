@@ -101,25 +101,29 @@ def _add_headcount_block(ws, start_row, totals, employee_count, paid_count=None)
         r_idx += 1
     perkeso_last_row = r_idx - 1
 
-    # SOCSO + SKBBK subtotal (the combined contribution PERKESO collects as one
-    # amount), in column F beside the SKBBK row; EIS is then added on top in
-    # the combined total below.
+    # SOCSO + SKBBK: a small brace (column F) over those two rows, pointing to
+    # their subtotal (column G) - the combined contribution PERKESO collects
+    # as one amount. Then a second brace (column H) over SOCSO/SKBBK/EIS
+    # pointing to the grand PERKESO total (column I); EIS is added there.
     socso_row, skbbk_row = perkeso_first_row, perkeso_first_row + 1
-    sub_cell = ws.cell(row=skbbk_row, column=6, value=f"=E{socso_row}+E{skbbk_row}")
-    sub_cell.number_format = "#,##0.00"
-    sub_cell.font = Font(bold=True)
 
-    # Brace (column G) + combined PERKESO total (column H), vertically
-    # centered across the SOCSO/SKBBK/EIS rows.
-    brace_cell = ws.cell(row=perkeso_first_row, column=7, value="}")
-    brace_cell.font = Font(size=28)
-    brace_cell.alignment = Alignment(horizontal="center", vertical="center")
-    ws.merge_cells(start_row=perkeso_first_row, start_column=7, end_row=perkeso_last_row, end_column=7)
-    total_cell = ws.cell(row=perkeso_first_row, column=8, value=round(perkeso_total, 2))
-    total_cell.font = Font(bold=True)
-    total_cell.number_format = "#,##0.00"
-    total_cell.alignment = Alignment(horizontal="left", vertical="center")
-    ws.merge_cells(start_row=perkeso_first_row, start_column=8, end_row=perkeso_last_row, end_column=8)
+    def _brace(col, first_row, last_row, size):
+        cell = ws.cell(row=first_row, column=col, value="}")
+        cell.font = Font(size=size)
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws.merge_cells(start_row=first_row, start_column=col, end_row=last_row, end_column=col)
+
+    def _total(col, first_row, last_row, value):
+        cell = ws.cell(row=first_row, column=col, value=value)
+        cell.font = Font(bold=True)
+        cell.number_format = "#,##0.00"
+        cell.alignment = Alignment(horizontal="left", vertical="center")
+        ws.merge_cells(start_row=first_row, start_column=col, end_row=last_row, end_column=col)
+
+    _brace(6, socso_row, skbbk_row, 20)
+    _total(7, socso_row, skbbk_row, f"=E{socso_row}+E{skbbk_row}")
+    _brace(8, perkeso_first_row, perkeso_last_row, 28)
+    _total(9, perkeso_first_row, perkeso_last_row, round(perkeso_total, 2))
 
     r_idx += 1  # blank row between groups
     for label, eyee, eyer in other_rows:

@@ -530,7 +530,8 @@ def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: i
         "month": month,
         "basic_salary": round(basic_after_unpaid, 2),
         "fixed_allowance": round(fixed_allowance_prorated * factor, 2),
-        "variable_allowance": round(variable_allowance, 2),
+        # Only counts (in gross, and so shown on the payslip) when the month's flag is Y.
+        "variable_allowance": round(variable_allowance if variable_allowance_flag == "Y" else 0.0, 2),
         "working_days_in_month": working_days_in_month,
         "paid_leave_days": paid_leave_days,
         "unpaid_days": unpaid_days,

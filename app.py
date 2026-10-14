@@ -803,6 +803,13 @@ def _portal_delete_own_pending(db, table, record_id, emp_id):
         ).fetchone()
         if owns_it:
             db.execute("DELETE FROM leave_request_documents WHERE leave_request_id=?", (record_id,))
+    elif table == "business_trips":
+        _ensure_business_trip_documents_table(db)
+        db.execute(
+            """DELETE FROM business_trip_documents WHERE business_trip_id IN
+               (SELECT id FROM business_trips WHERE id=? AND emp_id=? AND status='Pending')""",
+            (record_id, emp_id),
+        )
     db.execute(f"DELETE FROM {table} WHERE id=? AND emp_id=? AND status='Pending'", (record_id, emp_id))
     db.commit()
 
@@ -7371,6 +7378,61 @@ def portal_business_trip_document(trip_id):
     )
 
 
+@app.route("/portal/business-trip/document/<int:doc_id>")
+@portal_login_required
+def portal_business_trip_extra_document(doc_id):
+    db = get_db()
+    emp = current_portal_employee(db)
+    _ensure_business_trip_documents_table(db)
+    doc = db.execute(
+        """SELECT btd.* FROM business_trip_documents btd
+           JOIN business_trips bt ON bt.id = btd.business_trip_id
+           WHERE btd.id=? AND bt.emp_id=?""",
+        (doc_id, emp["emp_id"]),
+    ).fetchone()
+    if doc is None:
+        abort(404)
+    return send_from_directory(
+        os.path.join(UPLOAD_DIR, emp["emp_id"]), doc["stored_name"],
+        as_attachment=False, download_name=doc["original_name"],
+    )
+
+
+@app.route("/portal/business-trip/<int:trip_id>/document/add", methods=["POST"])
+@portal_login_required
+def portal_business_trip_document_add(trip_id):
+    """Lets an employee attach further supporting document(s) to their own
+    Movement Notice after submitting it - same rule as
+    portal_leave_document_add: only while it's still Pending."""
+    db = get_db()
+    emp = current_portal_employee(db)
+    trip = db.execute(
+        "SELECT * FROM business_trips WHERE id=? AND emp_id=? AND status='Pending'",
+        (trip_id, emp["emp_id"]),
+    ).fetchone()
+    if trip is None:
+        abort(404)
+    files = [f for f in request.files.getlist("supporting_doc") if f.filename]
+    if files:
+        _ensure_business_trip_documents_table(db)
+    for f in files:
+        original_name = secure_filename(f.filename)
+        ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+        if ext not in ALLOWED_DOC_EXTENSIONS:
+            continue
+        emp_dir = os.path.join(UPLOAD_DIR, emp["emp_id"])
+        os.makedirs(emp_dir, exist_ok=True)
+        stored_name = f"{uuid.uuid4().hex}_{original_name}"
+        f.save(os.path.join(emp_dir, stored_name))
+        db.execute(
+            """INSERT INTO business_trip_documents (business_trip_id, original_name, stored_name, uploaded_at)
+               VALUES (?,?,?,?)""",
+            (trip_id, original_name, stored_name, datetime.datetime.now().isoformat(timespec="seconds")),
+        )
+    db.commit()
+    return redirect(url_for("portal_business_trip"))
+
+
 @app.route("/portal/business-trip", methods=["GET", "POST"])
 @portal_login_required
 def portal_business_trip():
@@ -7385,8 +7447,8 @@ def portal_business_trip():
         start_date = request.form.get("start_date", "")
         end_date = request.form.get("end_date", "")
         purpose = request.form.get("purpose", "").strip() or None
-        file = request.files.get("supporting_doc")
-        has_file = file is not None and file.filename != ""
+        files = [f for f in request.files.getlist("supporting_doc") if f.filename]
+        has_file = bool(files)
         original_name = stored_name = None
         if not destination or not start_date or not end_date:
             error = "Destination, start date, and end date are required."
@@ -7395,17 +7457,26 @@ def portal_business_trip():
         elif notice_type in DOC_REQUIRED_NOTICE_TYPES and not has_file:
             error = f"Please attach a supporting document for {notice_type}."
         elif has_file:
-            original_name = secure_filename(file.filename)
-            ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
-            if ext not in ALLOWED_DOC_EXTENSIONS:
-                error = "Supporting document must be a PDF, Word file, or an image (JPG/PNG)."
+            for f in files:
+                name = secure_filename(f.filename)
+                ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+                if ext not in ALLOWED_DOC_EXTENSIONS:
+                    error = "Supporting document must be a PDF, Word file, or an image (JPG/PNG)."
+                    break
         if error is None:
+            # First file is the notice's main document (business_trips columns);
+            # any further ones go to business_trip_documents.
+            saved = []
             if has_file:
                 emp_dir = os.path.join(UPLOAD_DIR, emp["emp_id"])
                 os.makedirs(emp_dir, exist_ok=True)
-                stored_name = f"{uuid.uuid4().hex}_{original_name}"
-                file.save(os.path.join(emp_dir, stored_name))
-            db.execute(
+                for f in files:
+                    name = secure_filename(f.filename)
+                    stored = f"{uuid.uuid4().hex}_{name}"
+                    f.save(os.path.join(emp_dir, stored))
+                    saved.append((name, stored))
+                original_name, stored_name = saved[0]
+            cur = db.execute(
                 """INSERT INTO business_trips (
                        emp_id, notice_type, destination, start_date, end_date, purpose,
                        supporting_doc_original, supporting_doc_stored, status, submitted_at
@@ -7414,6 +7485,14 @@ def portal_business_trip():
                  original_name, stored_name,
                  datetime.datetime.now().isoformat(timespec="seconds")),
             )
+            if len(saved) > 1:
+                _ensure_business_trip_documents_table(db)
+                for name, stored in saved[1:]:
+                    db.execute(
+                        """INSERT INTO business_trip_documents (business_trip_id, original_name, stored_name, uploaded_at)
+                           VALUES (?,?,?,?)""",
+                        (cur.lastrowid, name, stored, datetime.datetime.now().isoformat(timespec="seconds")),
+                    )
             db.commit()
             return redirect(url_for("portal_business_trip"))
 
@@ -7421,7 +7500,7 @@ def portal_business_trip():
         "SELECT * FROM business_trips WHERE emp_id=? ORDER BY submitted_at DESC", (emp["emp_id"],)
     ).fetchall()
     return render_template("portal_business_trip.html", emp=emp, trips=my_trips, error=error,
-                            notice_types=BUSINESS_TRIP_TYPES)
+                            notice_types=BUSINESS_TRIP_TYPES, trip_docs=_business_trip_extra_docs(db))
 
 
 @app.route("/portal/ot-claim", methods=["GET", "POST"])
@@ -7927,7 +8006,7 @@ def leave_requests_admin():
 
     return render_template("leave_requests_admin.html", pending=pending, reviewed=reviewed,
                             year=year, month=month, documents_by_request=documents_by_request,
-                            error=request.args.get("error"))
+                            trip_docs=_business_trip_extra_docs(db), error=request.args.get("error"))
 
 
 @app.route("/leave-requests/add", methods=["GET", "POST"])
@@ -8369,7 +8448,8 @@ def business_trips_admin():
            WHERE bt.status!='Pending' {scope_clause} ORDER BY bt.reviewed_at DESC LIMIT 50""",
         params,
     ).fetchall()
-    return render_template("business_trips_admin.html", pending=pending, reviewed=reviewed)
+    return render_template("business_trips_admin.html", pending=pending, reviewed=reviewed,
+                            trip_docs=_business_trip_extra_docs(db))
 
 
 @app.route("/business-trips/<int:trip_id>/document")
@@ -8382,6 +8462,85 @@ def business_trip_document(trip_id):
         os.path.join(UPLOAD_DIR, trip["emp_id"]), trip["supporting_doc_stored"],
         as_attachment=False, download_name=trip["supporting_doc_original"],
     )
+
+
+def _ensure_business_trip_documents_table(db):
+    """Further supporting documents for a Movement Notice, on top of the
+    single one the employee attaches when submitting (which stays in
+    business_trips.supporting_doc_stored). Created on demand rather than
+    only via hr_migrate_schema so the live deploy picks it up without a
+    separate migrate call - CREATE TABLE IF NOT EXISTS is a no-op after."""
+    db.execute("""CREATE TABLE IF NOT EXISTS business_trip_documents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, business_trip_id INTEGER NOT NULL REFERENCES business_trips(id),
+        original_name TEXT NOT NULL, stored_name TEXT NOT NULL, uploaded_at TEXT NOT NULL)""")
+
+
+def _business_trip_extra_docs(db):
+    """{business_trip_id: [doc rows]} for every Movement Notice's extra documents."""
+    _ensure_business_trip_documents_table(db)
+    docs = {}
+    for doc in db.execute("SELECT * FROM business_trip_documents ORDER BY uploaded_at").fetchall():
+        docs.setdefault(doc["business_trip_id"], []).append(doc)
+    return docs
+
+
+@app.route("/business-trips/document/<int:doc_id>")
+def business_trip_extra_document(doc_id):
+    db = get_db()
+    _ensure_business_trip_documents_table(db)
+    doc = db.execute(
+        """SELECT btd.*, bt.emp_id, e.leave_approver_username FROM business_trip_documents btd
+           JOIN business_trips bt ON bt.id = btd.business_trip_id
+           JOIN employees e ON e.emp_id = bt.emp_id WHERE btd.id=?""",
+        (doc_id,),
+    ).fetchone()
+    if doc is None:
+        abort(404)
+    if session.get("hr_role") == "approver" and doc["leave_approver_username"] != session["hr_username"]:
+        abort(403)
+    return send_from_directory(
+        os.path.join(UPLOAD_DIR, doc["emp_id"]), doc["stored_name"],
+        as_attachment=False, download_name=doc["original_name"],
+    )
+
+
+@app.route("/business-trips/<int:trip_id>/document/add", methods=["POST"])
+def business_trip_document_add(trip_id):
+    """Movement Notice equivalent of leave_request_document_add - lets
+    HR/the approver attach more supporting documents (e.g. flight tickets,
+    a second page) to a still-Pending notice. Returns to whichever page
+    the upload came from (Leave Requests or Business Trips)."""
+    db = get_db()
+    trip = db.execute(
+        """SELECT bt.*, e.leave_approver_username FROM business_trips bt
+           JOIN employees e ON e.emp_id = bt.emp_id WHERE bt.id=? AND bt.status='Pending'""",
+        (trip_id,),
+    ).fetchone()
+    if trip is None:
+        abort(404)
+    if session.get("hr_role") == "approver" and trip["leave_approver_username"] != session["hr_username"]:
+        abort(403)
+    back = url_for("business_trips_admin") if request.form.get("back") == "business_trips" else url_for("leave_requests_admin")
+    files = [f for f in request.files.getlist("supporting_doc") if f.filename]
+    if not files:
+        return redirect(back)
+    _ensure_business_trip_documents_table(db)
+    for f in files:
+        original_name = secure_filename(f.filename)
+        ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+        if ext not in ALLOWED_DOC_EXTENSIONS:
+            continue
+        emp_dir = os.path.join(UPLOAD_DIR, trip["emp_id"])
+        os.makedirs(emp_dir, exist_ok=True)
+        stored_name = f"{uuid.uuid4().hex}_{original_name}"
+        f.save(os.path.join(emp_dir, stored_name))
+        db.execute(
+            """INSERT INTO business_trip_documents (business_trip_id, original_name, stored_name, uploaded_at)
+               VALUES (?,?,?,?)""",
+            (trip_id, original_name, stored_name, datetime.datetime.now().isoformat(timespec="seconds")),
+        )
+    db.commit()
+    return redirect(back)
 
 
 @app.route("/business-trips/<int:trip_id>/review", methods=["POST"])
@@ -8526,6 +8685,8 @@ def delete_business_trip(trip_id):
     trip = db.execute("SELECT * FROM business_trips WHERE id=?", (trip_id,)).fetchone()
     if trip is None:
         return "Notice not found", 404
+    _ensure_business_trip_documents_table(db)
+    db.execute("DELETE FROM business_trip_documents WHERE business_trip_id=?", (trip_id,))
     db.execute("DELETE FROM business_trips WHERE id=?", (trip_id,))
     if trip["status"] == "Approved" and trip["notice_type"] in PAID_TRIP_NOTICE_TYPES:
         months = set()

@@ -25,8 +25,19 @@
         <td class="text">
           {% if t.supporting_doc_stored %}
           <a href="{{ url_for('business_trip_document', trip_id=t.id) }}" target="_blank" rel="noopener">View</a>
-          {% elif t.notice_type in ('Unrecorded Leave', 'Home Leave (Malaysia)') %}<span style="color:var(--danger);">Missing</span>
+          {% endif %}
+          {% for doc in trip_docs.get(t.id, []) %}
+          {% if t.supporting_doc_stored or not loop.first %}<br>{% endif %}<a href="{{ url_for('business_trip_extra_document', doc_id=doc.id) }}" target="_blank" rel="noopener">{{ doc.original_name }}</a>
+          {% endfor %}
+          {% if not t.supporting_doc_stored and not trip_docs.get(t.id) %}
+          {% if t.notice_type in ('Unrecorded Leave', 'Home Leave (Malaysia)') %}<span style="color:var(--danger);">Missing</span>
           {% else %}<span style="color:var(--muted);">-</span>{% endif %}
+          {% endif %}
+          <form method="post" action="{{ url_for('business_trip_document_add', trip_id=t.id) }}" enctype="multipart/form-data" style="margin-top:6px; display:flex; gap:4px; align-items:center;">
+            <input type="hidden" name="back" value="business_trips">
+            <input type="file" name="supporting_doc" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple style="font-size:11px; width:140px;">
+            <button class="btn secondary" type="submit" style="padding:2px 8px; font-size:11px;">+ Add</button>
+          </form>
         </td>
         <td class="text">{{ t.submitted_at }}</td>
         <td class="text" style="white-space:nowrap;">
@@ -62,7 +73,11 @@
         <td class="text">
           {% if t.supporting_doc_stored %}
           <a href="{{ url_for('business_trip_document', trip_id=t.id) }}" target="_blank" rel="noopener">View</a>
-          {% else %}<span style="color:var(--muted);">-</span>{% endif %}
+          {% endif %}
+          {% for doc in trip_docs.get(t.id, []) %}
+          {% if t.supporting_doc_stored or not loop.first %}<br>{% endif %}<a href="{{ url_for('business_trip_extra_document', doc_id=doc.id) }}" target="_blank" rel="noopener">{{ doc.original_name }}</a>
+          {% endfor %}
+          {% if not t.supporting_doc_stored and not trip_docs.get(t.id) %}<span style="color:var(--muted);">-</span>{% endif %}
         </td>
         <td class="text">
           <span class="pill {% if t.status == 'Approved' %}finalized{% else %}rejected{% endif %}">{{ t.status }}</span>

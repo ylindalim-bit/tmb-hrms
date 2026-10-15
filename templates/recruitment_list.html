@@ -34,12 +34,20 @@
 {% endif %}
 
 <div class="card">
-  <div style="margin-bottom:10px;">
-    <a href="{{ url_for('recruitment_list') }}" class="btn {{ 'secondary' if status_filter }}" style="padding:4px 10px;">All</a>
-    {% for s in ["New", "Reviewed", "Shortlisted", "Not Suitable", "Hired"] %}
-    <a href="{{ url_for('recruitment_list', status=s) }}" class="btn {{ 'secondary' if status_filter != s }}" style="padding:4px 10px;">{{ s }}</a>
+  <div style="margin-bottom:10px; display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+    {% set active_n = counts.get("New", 0) + counts.get("Reviewed", 0) + counts.get("Shortlisted", 0) %}
+    {% set all_n = counts.values()|sum %}
+    <a href="{{ url_for('recruitment_list') }}" class="btn {{ 'secondary' if status_filter }}" style="padding:4px 10px;">Active ({{ active_n }})</a>
+    <span style="color:var(--muted);">|</span>
+    {% for s in ["New", "Reviewed", "Shortlisted", "Hired", "Not Suitable"] %}
+    <a href="{{ url_for('recruitment_list', status=s) }}" class="btn {{ 'secondary' if status_filter != s }}" style="padding:4px 10px;">{{ s }} ({{ counts.get(s, 0) }})</a>
     {% endfor %}
+    <span style="color:var(--muted);">|</span>
+    <a href="{{ url_for('recruitment_list', status='all') }}" class="btn {{ 'secondary' if status_filter != 'all' }}" style="padding:4px 10px;">All ({{ all_n }})</a>
   </div>
+  {% if not status_filter %}
+  <p style="color:var(--muted); font-size:12px; margin:0 0 8px;">Showing active candidates (New, Reviewed, Shortlisted) in order of progress. Hired and Not Suitable are hidden &mdash; use the buttons above to see them.</p>
+  {% endif %}
   <div class="table-wrap frozen-header">
   <table>
     <thead>

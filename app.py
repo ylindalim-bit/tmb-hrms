@@ -5839,25 +5839,37 @@ def recruitment_photo_upload(app_id):
 @app.route("/hr/recruitment")
 def recruitment_list():
     db = get_db()
+    # Default view = "active": New / Reviewed / Shortlisted, so Hired and Not Suitable
+    # candidates are out of the way (still one click away via their own filter or "all").
     status_filter = request.args.get("status", "")
-    query = "SELECT * FROM job_applications"
-    where = []
-    params = []
+    scope_where, scope_params = [], []
     if session.get("hr_role") == "approver":
-        where.append("assigned_reviewer_username=?")
-        params.append(session["hr_username"])
-    if status_filter:
+        scope_where.append("assigned_reviewer_username=?")
+        scope_params.append(session["hr_username"])
+    where, params = list(scope_where), list(scope_params)
+    if status_filter == "all":
+        pass
+    elif status_filter:
         where.append("status=?")
         params.append(status_filter)
+    else:
+        where.append("status IN ('New', 'Reviewed', 'Shortlisted')")
+    query = "SELECT * FROM job_applications"
     if where:
         query += " WHERE " + " AND ".join(where)
-    query += " ORDER BY submitted_at DESC"
+    # Pipeline order (New -> Reviewed -> Shortlisted -> Hired -> Not Suitable), newest first within each stage.
+    query += (" ORDER BY CASE status WHEN 'New' THEN 1 WHEN 'Reviewed' THEN 2 WHEN 'Shortlisted' THEN 3 "
+              "WHEN 'Hired' THEN 4 WHEN 'Not Suitable' THEN 5 ELSE 6 END, submitted_at DESC")
     applications = db.execute(query, params).fetchall()
+    count_query = "SELECT status, COUNT(*) AS n FROM job_applications"
+    if scope_where:
+        count_query += " WHERE " + " AND ".join(scope_where)
+    counts = {r["status"]: r["n"] for r in db.execute(count_query + " GROUP BY status", scope_params).fetchall()}
     reviewers = db.execute(
         "SELECT username, full_name FROM hr_users WHERE role='approver' AND can_review_recruitment='Y' ORDER BY full_name"
     ).fetchall()
     return render_template(
-        "recruitment_list.html", applications=applications, status_filter=status_filter,
+        "recruitment_list.html", applications=applications, status_filter=status_filter, counts=counts,
         apply_url=url_for("careers_apply", _external=True), reviewers=reviewers,
     )
 

@@ -7976,11 +7976,11 @@ def leave_requests_admin():
            WHERE bt.status='Pending' {scope_clause}"""
     try:
         pending = db.execute(
-            pending_sql + change_union + " ORDER BY submitted_at", params + params + params
+            pending_sql + change_union + " ORDER BY full_name, start_date, submitted_at", params + params + params
         ).fetchall()
     except sqlite3.OperationalError:
         # leave_change_requests not migrated in yet on this deploy.
-        pending = db.execute(pending_sql + " ORDER BY submitted_at", params + params).fetchall()
+        pending = db.execute(pending_sql + " ORDER BY full_name, start_date, submitted_at", params + params).fetchall()
 
     # Reviewed (historical) list is filtered to one month at a time - by the
     # leave's own start_date - defaulting to the current month, rather than
@@ -8005,8 +8005,8 @@ def leave_requests_admin():
                    bt.status, bt.reviewed_by, bt.reviewed_at, NULL AS half_day
            FROM business_trips bt JOIN employees e ON e.emp_id = bt.emp_id
            WHERE bt.status!='Pending' AND bt.start_date LIKE ? {scope_clause}
-           ORDER BY 7, 3""",
-        # 7, 3 above = start_date, emp_id - SQLite needs ordinal position, not name, to ORDER BY a UNION
+           ORDER BY 4, 7""",
+        # 4, 7 above = full_name, start_date - SQLite needs ordinal position, not name, to ORDER BY a UNION
         [month_prefix] + params + [month_prefix] + params,
     ).fetchall()
 

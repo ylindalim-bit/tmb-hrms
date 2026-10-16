@@ -2587,6 +2587,161 @@ def attendance_daily(emp_id, year, month):
                             cewi_incentive=cewi_incentive)
 
 
+def _bulk_fill_plan(db, emp_ids, date_from, date_to):
+    """Works out, per employee, what filling a standard Time In/Out over a date range would do -
+    without writing anything. A day is only filled if it's a normal working day for that
+    employee's work pattern (not a rest/off day or public holiday), they'd already joined and
+    hadn't left, and there is no leave or movement notice (Pending or Approved) on it. Days with
+    leave/notices come back as alerts. A day that already has times is left alone; a WORKED day
+    missing only Time In or Time Out gets just the missing one."""
+    plans = []
+    d0, d1 = datetime.date.fromisoformat(date_from), datetime.date.fromisoformat(date_to)
+    for emp_id in emp_ids:
+        emp = db.execute("SELECT * FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+        if emp is None:
+            continue
+        holidays = {
+            r["date"] for r in db.execute(
+                "SELECT date FROM public_holidays WHERE date BETWEEN ? AND ? AND state=?",
+                (date_from, date_to, emp["base"] or "MY"),
+            ).fetchall()
+        }
+        leaves = db.execute(
+            """SELECT leave_type, start_date, end_date, status, half_day FROM leave_requests
+               WHERE emp_id=? AND status IN ('Pending','Approved') AND start_date<=? AND end_date>=?""",
+            (emp_id, date_to, date_from),
+        ).fetchall()
+        trips = db.execute(
+            """SELECT notice_type, start_date, end_date, status FROM business_trips
+               WHERE emp_id=? AND status IN ('Pending','Approved') AND start_date<=? AND end_date>=?""",
+            (emp_id, date_to, date_from),
+        ).fetchall()
+        saved = {
+            r["date"]: r for r in db.execute(
+                "SELECT * FROM attendance_daily WHERE emp_id=? AND date BETWEEN ? AND ?",
+                (emp_id, date_from, date_to),
+            ).fetchall()
+        }
+        # Meal/CEWI flags: same as this employee's most recent worked day before the range.
+        last = db.execute(
+            """SELECT meal_allowance_flag, cewi_flag FROM attendance_daily
+               WHERE emp_id=? AND day_type='WORKED' AND time_in IS NOT NULL AND date<?
+               ORDER BY date DESC LIMIT 1""",
+            (emp_id, date_from),
+        ).fetchone()
+        meal_flag = last["meal_allowance_flag"] if last else "N"
+        cewi_flag = last["cewi_flag"] if last else "N"
+        items, skipped_rest, skipped_other = [], 0, 0
+        d = d0
+        while d <= d1:
+            iso = d.isoformat()
+            wd = d.strftime("%a")
+            if emp["date_joined"] and iso < emp["date_joined"]:
+                skipped_other += 1
+            elif emp["last_working_day"] and iso > emp["last_working_day"]:
+                skipped_other += 1
+            elif _default_day_type_for_pattern(emp["work_pattern"], d.weekday(), is_holiday=iso in holidays) != "WORKED":
+                skipped_rest += 1
+            else:
+                lv = next((x for x in leaves if x["start_date"] <= iso <= x["end_date"]), None)
+                tr = next((x for x in trips if x["start_date"] <= iso <= x["end_date"]), None)
+                row = saved.get(iso)
+                if lv is not None:
+                    half = f" ({lv['half_day']} half)" if "half_day" in lv.keys() and lv["half_day"] else ""
+                    items.append({"date": iso, "weekday": wd, "action": "alert",
+                                  "note": f"{lv['leave_type']}{half} - {lv['status']} leave request"})
+                elif tr is not None:
+                    items.append({"date": iso, "weekday": wd, "action": "alert",
+                                  "note": f"{tr['notice_type']} - {tr['status']} movement notice"})
+                elif row is None:
+                    items.append({"date": iso, "weekday": wd, "action": "add", "note": ""})
+                elif row["day_type"] != "WORKED":
+                    items.append({"date": iso, "weekday": wd, "action": "skip", "note": f"already marked {row['day_type']}"})
+                elif row["time_in"] and row["time_out"]:
+                    items.append({"date": iso, "weekday": wd, "action": "skip",
+                                  "note": f"already has {row['time_in']} - {row['time_out']}"})
+                else:
+                    missing = "Time Out" if row["time_in"] else ("Time In" if row["time_out"] else "Time In and Time Out")
+                    items.append({"date": iso, "weekday": wd, "action": "fill",
+                                  "note": f"keeps existing {row['time_in'] or row['time_out']}; fills {missing}" if (row["time_in"] or row["time_out"]) else "row exists with no times"})
+            d += datetime.timedelta(days=1)
+        plans.append({"emp": emp, "items": items, "skipped_rest": skipped_rest, "skipped_other": skipped_other,
+                      "meal_flag": meal_flag, "cewi_flag": cewi_flag})
+    return plans
+
+
+def _bulk_fill_apply(db, plans, time_in, time_out):
+    months = set()
+    written = 0
+    for p in plans:
+        emp_id = p["emp"]["emp_id"]
+        for it in p["items"]:
+            if it["action"] == "add":
+                db.execute(
+                    """INSERT INTO attendance_daily (emp_id, date, day_type, time_in, time_out, meal_allowance_flag,
+                           cewi_flag, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0)
+                       VALUES (?,?,'WORKED',?,?,?,?,0,0,0)""",
+                    (emp_id, it["date"], time_in, time_out, p["meal_flag"], p["cewi_flag"]),
+                )
+            elif it["action"] == "fill":
+                db.execute(
+                    """UPDATE attendance_daily SET time_in=COALESCE(time_in,?), time_out=COALESCE(time_out,?)
+                       WHERE emp_id=? AND date=?""",
+                    (time_in, time_out, emp_id, it["date"]),
+                )
+            else:
+                continue
+            written += 1
+            months.add((emp_id, int(it["date"][:4]), int(it["date"][5:7])))
+    for emp_id, y, m in sorted(months):
+        _sync_daily_to_monthly(db, emp_id, y, m)
+    return written
+
+
+@app.route("/attendance-bulk-fill", methods=["GET", "POST"])
+def attendance_bulk_fill():
+    """Fills the same Time In/Out on every normal working day in a date range for the staff
+    ticked - for people who don't punch. Shows a preview first; leave / movement-notice days are
+    skipped and listed as alerts."""
+    db = get_db()
+    today_iso = datetime.datetime.now(MYT).date().isoformat()
+    employees = db.execute(
+        "SELECT emp_id, full_name, standard_start, standard_end FROM employees WHERE status='Active' ORDER BY emp_id"
+    ).fetchall()
+    src = request.form if request.method == "POST" else request.args
+    form = {
+        "emp_ids": src.getlist("emp_ids") or [e for e in (src.get("emps") or "").split(",") if e],
+        "date_from": src.get("date_from") or today_iso[:8] + "01",
+        "date_to": src.get("date_to") or today_iso,
+        "time_in": src.get("time_in") or "08:30",
+        "time_out": src.get("time_out") or "17:30",
+    }
+    plans, error, written = None, None, None
+    if request.method == "POST":
+        in_min, out_min = _hhmm_to_minutes(form["time_in"]), _hhmm_to_minutes(form["time_out"])
+        try:
+            d0 = datetime.date.fromisoformat(form["date_from"])
+            d1 = datetime.date.fromisoformat(form["date_to"])
+        except ValueError:
+            d0 = d1 = None
+        if not form["emp_ids"]:
+            error = "Tick at least one employee."
+        elif d0 is None or d1 < d0:
+            error = "Choose a valid From and To date (To must not be before From)."
+        elif form["date_to"] > today_iso:
+            error = "To date can't be in the future."
+        elif in_min is None or out_min is None or out_min <= in_min:
+            error = "Time In and Time Out must both be filled in, and Time Out must be later."
+        else:
+            plans = _bulk_fill_plan(db, form["emp_ids"], form["date_from"], form["date_to"])
+            if request.form.get("action") == "apply":
+                written = _bulk_fill_apply(db, plans, form["time_in"], form["time_out"])
+                db.commit()
+                plans = _bulk_fill_plan(db, form["emp_ids"], form["date_from"], form["date_to"])
+    return render_template("attendance_bulk_fill.html", employees=employees, form=form, plans=plans,
+                           error=error, written=written)
+
+
 LATE_EARLY_GRACE_MINUTES = 5
 
 

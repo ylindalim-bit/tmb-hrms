@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Fill Standard Time In/Out - TMB Payroll{% endblock %}
+{% block content %}
+<h1>Fill Standard Time In/Out</h1>
+<p style="color:var(--muted); font-size:13px; margin-top:-8px;">
+  For staff who don't punch: fills the same Time In/Out on every normal working day in the date range. Rest days,
+  off days and public holidays are skipped. Days with a Pending or Approved leave request or movement notice are
+  <strong>not</strong> filled &mdash; they're listed below as alerts. A day that already has times is left alone.
+  Meal/CEWI flags are copied from each person's last worked day before the range.
+</p>
+{% if error %}
+<div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger); font-weight:600;">{{ error }}</div>
+{% endif %}
+{% if written is not none %}
+<div class="card" style="background:#dcfce7; border-color:#16a34a; font-weight:600;">Saved: {{ written }} day(s) filled and the monthly attendance totals updated.</div>
+{% endif %}
+
+<div class="card">
+<form method="post">
+  <div class="form-grid">
+    <div><label>From</label><input type="date" name="date_from" value="{{ form.date_from }}" required></div>
+    <div><label>To</label><input type="date" name="date_to" value="{{ form.date_to }}" required></div>
+    <div><label>Time In</label><input type="time" name="time_in" value="{{ form.time_in }}" required></div>
+    <div><label>Time Out</label><input type="time" name="time_out" value="{{ form.time_out }}" required></div>
+  </div>
+  <label style="display:block; font-size:12px; color:var(--muted); font-weight:600; margin:14px 0 6px;">Employees</label>
+  <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:4px 18px;">
+    {% for e in employees %}
+    <label style="display:flex; gap:8px; align-items:center; font-weight:400;">
+      <input type="checkbox" name="emp_ids" value="{{ e.emp_id }}" style="width:auto;" {% if e.emp_id in form.emp_ids %}checked{% endif %}>
+      {{ e.emp_id }} &mdash; {{ e.full_name }} <span style="color:var(--muted); font-size:11px;">({{ e.standard_start or '-' }}&ndash;{{ e.standard_end or '-' }})</span>
+    </label>
+    {% endfor %}
+  </div>
+  <div class="form-actions">
+    <button class="btn" type="submit" name="action" value="preview">Preview</button>
+  </div>
+</form>
+</div>
+
+{% if plans is not none %}
+<div class="card">
+  <h2 style="margin-top:0;">{% if written is not none %}Result{% else %}Preview &mdash; nothing saved yet{% endif %}</h2>
+  {% set ns = namespace(adds=0, alerts=0) %}
+  {% for p in plans %}
+  {% set adds = p['items'] | selectattr('action', 'in', ['add', 'fill']) | list %}
+  {% set alerts = p['items'] | selectattr('action', 'equalto', 'alert') | list %}
+  {% set skips = p['items'] | selectattr('action', 'equalto', 'skip') | list %}
+  {% set ns.adds = ns.adds + adds|length %}{% set ns.alerts = ns.alerts + alerts|length %}
+  <div style="margin-bottom:16px;">
+    <strong>{{ p.emp.emp_id }} &mdash; {{ p.emp.full_name }}</strong>
+    <span style="color:var(--muted); font-size:12px;">
+      &middot; {{ adds|length }} day(s) {% if written is not none %}now have{% else %}to fill with{% endif %} {{ form.time_in }}&ndash;{{ form.time_out }}
+      &middot; {{ p.skipped_rest }} rest/off/holiday day(s) skipped
+      {% if p.emp.standard_start and p.emp.standard_start != form.time_in %}
+      &middot; <span style="color:var(--danger);">usual hours are {{ p.emp.standard_start }}&ndash;{{ p.emp.standard_end }}, so these will show as late/early</span>
+      {% endif %}
+    </span>
+    {% if alerts %}
+    <div style="background:#fef3c7; border:1px solid #f59e0b; border-radius:6px; padding:6px 10px; margin-top:6px; font-size:13px;">
+      <strong>Leave / notice &mdash; not filled:</strong>
+      {% for a in alerts %}<div>{{ a.date }} ({{ a.weekday }}) &mdash; {{ a.note }}</div>{% endfor %}
+    </div>
+    {% endif %}
+    {% if skips %}
+    <div style="font-size:12px; color:var(--muted); margin-top:4px;">
+      Left alone: {% for a in skips %}{{ a.date[5:] }} ({{ a.note }}){% if not loop.last %}; {% endif %}{% endfor %}
+    </div>
+    {% endif %}
+    {% set fills = p['items'] | selectattr('action', 'equalto', 'fill') | list %}
+    {% if fills %}
+    <div style="font-size:12px; color:var(--muted); margin-top:4px;">
+      Partly filled: {% for a in fills %}{{ a.date[5:] }} ({{ a.note }}){% if not loop.last %}; {% endif %}{% endfor %}
+    </div>
+    {% endif %}
+    <div style="font-size:12px; margin-top:4px;">
+      Days: {% for a in adds %}{{ a.date[8:] }}{% if not loop.last %}, {% endif %}{% else %}none{% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+  {% if written is none and ns.adds %}
+  <form method="post">
+    <input type="hidden" name="date_from" value="{{ form.date_from }}">
+    <input type="hidden" name="date_to" value="{{ form.date_to }}">
+    <input type="hidden" name="time_in" value="{{ form.time_in }}">
+    <input type="hidden" name="time_out" value="{{ form.time_out }}">
+    {% for e in form.emp_ids %}<input type="hidden" name="emp_ids" value="{{ e }}">{% endfor %}
+    <div class="form-actions"><button class="btn" type="submit" name="action" value="apply">Confirm &amp; Save {{ ns.adds }} day(s)</button></div>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

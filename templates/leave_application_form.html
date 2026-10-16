@@ -106,7 +106,7 @@
   </tr>
   <tr>
     <td class="label">Date of Application</td>
-    <td class="fill">{{ today.strftime('%d %B %Y') }}</td>
+    <td class="fill">{{ lr.submitted_at[:10] if lr else today.strftime('%d %B %Y') }}</td>
     <td class="label"></td>
     <td class="fill"></td>
   </tr>
@@ -123,21 +123,21 @@
 
 <div class="section-title">TYPE OF LEAVE</div>
 <div class="checkbox-row">
-  <div class="opt"><span class="box"></span> Annual Leave</div>
-  <div class="opt"><span class="box"></span> Medical Leave</div>
-  <div class="opt"><span class="box"></span> Hospitalisation Leave</div>
-  <div class="opt"><span class="box"></span> Unpaid Leave</div>
-  <div class="opt"><span class="box"></span> Other: ____________________</div>
+  {% set std = ["Annual Leave", "Medical Leave", "Hospitalisation Leave", "Unpaid Leave"] %}
+  {% for name in std %}
+  <div class="opt"><span class="box {% if lr and lr.leave_type == name %}checked{% endif %}"></span> {{ name }}</div>
+  {% endfor %}
+  <div class="opt"><span class="box {% if lr and lr.leave_type not in std %}checked{% endif %}"></span> Other: {% if lr and lr.leave_type not in std %}<u>{{ lr.leave_type }}</u>{% else %}____________________{% endif %}</div>
 </div>
 
 <table class="fields">
   <tr>
     <td class="label">From (date)</td>
-    <td class="fill" style="width:26%;"></td>
+    <td class="fill" style="width:26%;">{{ lr.start_date if lr else "" }}</td>
     <td class="label">To (date)</td>
-    <td class="fill" style="width:26%;"></td>
+    <td class="fill" style="width:26%;">{{ lr.end_date if lr else "" }}</td>
     <td class="label">No. of Days</td>
-    <td class="fill" style="width:18%;"></td>
+    <td class="fill" style="width:18%;">{% if lr %}{{ "%g"|format(lr.days) }}{% if lr.half_day %} ({{ "morning off" if lr.half_day == "AM" else "afternoon off" }}){% endif %}{% endif %}</td>
   </tr>
   <tr>
     <td class="label">Contact No. during Leave</td>
@@ -146,7 +146,7 @@
 </table>
 
 <div class="section-title">REASON FOR LEAVE</div>
-<div class="reason-box">&nbsp;</div>
+<div class="reason-box">{% if lr and lr.reason %}{{ lr.reason }}{% else %}&nbsp;{% endif %}</div>
 
 <p style="font-size:12px; color:#444;">
   Note: Medical Leave and Hospitalisation Leave applications must be accompanied by a valid medical
@@ -161,8 +161,8 @@
 <div class="approval-section">
   <div class="approval-title">FOR HR USE ONLY</div>
   <div class="checkbox-row" style="margin-bottom:18px;">
-    <div class="opt"><span class="box"></span> Approved</div>
-    <div class="opt"><span class="box"></span> Rejected</div>
+    <div class="opt"><span class="box {% if lr and lr.status == 'Approved' %}checked{% endif %}"></span> Approved</div>
+    <div class="opt"><span class="box {% if lr and lr.status == 'Rejected' %}checked{% endif %}"></span> Rejected</div>
   </div>
   <table class="fields">
     <tr>
@@ -172,10 +172,10 @@
       <td class="fill" style="width:22%;"></td>
     </tr>
   </table>
-  <p style="font-size:12px; color:#444; margin-bottom:18px;">Remarks: ____________________________________________________________</p>
+  <p style="font-size:12px; color:#444; margin-bottom:18px;">Remarks: {% if lr and lr.review_notes %}<u>{{ lr.review_notes }}</u>{% else %}____________________________________________________________{% endif %}</p>
   <div class="sign-grid">
-    <div class="block">Reviewed By (Name &amp; Signature)</div>
-    <div class="block">Date</div>
+    <div class="block">Reviewed By (Name &amp; Signature){% if lr and lr.reviewed_by %}: <strong>{{ lr.reviewed_by }}</strong>{% endif %}</div>
+    <div class="block">Date{% if lr and lr.reviewed_at %}: <strong>{{ lr.reviewed_at[:10] }}</strong>{% endif %}</div>
   </div>
 </div>
 

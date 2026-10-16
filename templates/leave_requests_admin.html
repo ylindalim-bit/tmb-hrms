@@ -79,6 +79,7 @@
             <button class="btn" type="submit" name="decision" value="Approved" style="padding:4px 10px;">Approve</button>
             <button class="btn secondary" type="submit" name="decision" value="Rejected" style="padding:4px 10px;">Reject</button>
           </form>
+          {% if lr.source == "leave" %}<a href="{{ url_for('leave_application_form', request_id=lr.id) }}" target="_blank" style="font-size:12px; font-weight:600;">Print form</a>{% endif %}
           {% endif %}
         </td>
       </tr>
@@ -139,8 +140,9 @@
         <td class="text">{{ lr.reviewed_by or "" }}</td>
         <td class="text">{{ lr.reviewed_at }}</td>
         {% if hr_role == "admin" %}
-        <td class="text">
+        <td class="text" style="white-space:nowrap;">
           {% if lr.source == "leave" %}
+          <a href="{{ url_for('leave_application_form', request_id=lr.id) }}" target="_blank" style="font-size:12px; font-weight:600;">Print form</a>
           <form method="post" action="{{ url_for('delete_leave_request', request_id=lr.id) }}" onsubmit="return confirm('Delete this leave request record permanently?');">
             <button type="submit" class="btn secondary" style="padding:3px 8px; font-size:11px; color:var(--danger);">Delete</button>
           </form>

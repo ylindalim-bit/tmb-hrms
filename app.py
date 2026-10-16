@@ -3409,8 +3409,18 @@ def leave_application_form():
     db = get_db()
     emp = None
     emp_id = request.args.get("emp_id")
+    # ?request_id=N fills the whole form from that leave request (type, dates, days, reason,
+    # and the approval result if it has been decided) so it can be printed and signed.
+    leave_req = None
+    if request.args.get("request_id", type=int):
+        leave_req = db.execute("SELECT * FROM leave_requests WHERE id=?", (request.args.get("request_id", type=int),)).fetchone()
+        if leave_req is not None:
+            emp_id = leave_req["emp_id"]
     if emp_id:
         emp = db.execute("SELECT * FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+    # Approvers only see forms for the employees assigned to them.
+    if emp is not None and session.get("hr_role") == "approver" and emp["leave_approver_username"] != session.get("hr_username"):
+        abort(403)
 
     employees = db.execute(
         "SELECT emp_id, full_name FROM employees WHERE status != 'Inactive' ORDER BY emp_id"
@@ -3435,7 +3445,7 @@ def leave_application_form():
 
     return render_template(
         "leave_application_form.html", emp=emp, employees=employees, balances=balances,
-        today=datetime.date.today(),
+        today=datetime.date.today(), lr=leave_req,
     )
 
 

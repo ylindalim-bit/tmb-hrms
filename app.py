@@ -307,6 +307,9 @@ try:
         _existing = [_r[1] for _r in _ensure_conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _existing and _col not in _existing:
             _ensure_conn.execute(f"ALTER TABLE {_tbl} ADD COLUMN {_col} " + ("INTEGER DEFAULT 0" if _tbl == "tax_profile" else "TEXT"))
+    _ensure_conn.execute("""CREATE TABLE IF NOT EXISTS al_adjustment_documents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, adjustment_id INTEGER NOT NULL,
+        original_name TEXT NOT NULL, stored_name TEXT NOT NULL, uploaded_at TEXT NOT NULL)""")
     _ensure_conn.commit()
     _ensure_conn.close()
 except sqlite3.Error:
@@ -1323,6 +1326,12 @@ def edit_employee(emp_id):
         "SELECT * FROM al_adjustments WHERE emp_id=? ORDER BY adj_date DESC, created_at DESC",
         (emp_id,),
     ).fetchall()
+    al_adjustment_docs = {}
+    for d in db.execute(
+        """SELECT d.* FROM al_adjustment_documents d JOIN al_adjustments a ON a.id = d.adjustment_id
+           WHERE a.emp_id=? ORDER BY d.uploaded_at""", (emp_id,),
+    ).fetchall():
+        al_adjustment_docs.setdefault(d["adjustment_id"], []).append(d)
     overseas_assignments = []
     performance_evaluations = []
     try:
@@ -1382,7 +1391,7 @@ def edit_employee(emp_id):
     return render_template("employee_edit.html", emp=emp, is_new=False, extensions=extensions,
                             schedule_log=schedule_log, salary_history=salary_history, eis_applies=eis_applies,
                             documents=documents, document_types=DOCUMENT_TYPES,
-                            company_payments=company_payments, al_adjustments=al_adjustments,
+                            company_payments=company_payments, al_adjustments=al_adjustments, al_adjustment_docs=al_adjustment_docs,
                             al_note=al_note, al_year=al_year, al_entitlement_effective=al_entitlement_effective,
                             al_used=al_used, al_balance=al_balance, al_bf=al_bf, al_total_available=al_total_available,
                             race_options=RACE_OPTIONS, religion_options=RELIGION_OPTIONS,
@@ -1597,6 +1606,67 @@ def delete_company_payment(emp_id, payment_id):
     return redirect(url_for("edit_employee", emp_id=emp_id))
 
 
+def _save_al_adjustment_docs(db, emp_id, adj_id):
+    """Stores any files posted as 'supporting_doc' against an AL Adjustment Log row (e.g. the
+    approved replacement-day form or the notice for working a rest day / public holiday)."""
+    for f in request.files.getlist("supporting_doc"):
+        if not f.filename:
+            continue
+        original_name = secure_filename(f.filename)
+        ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+        if ext not in ALLOWED_DOC_EXTENSIONS:
+            continue
+        emp_dir = os.path.join(UPLOAD_DIR, emp_id)
+        os.makedirs(emp_dir, exist_ok=True)
+        stored_name = f"{uuid.uuid4().hex}_{original_name}"
+        f.save(os.path.join(emp_dir, stored_name))
+        db.execute(
+            """INSERT INTO al_adjustment_documents (adjustment_id, original_name, stored_name, uploaded_at)
+               VALUES (?,?,?,?)""",
+            (adj_id, original_name, stored_name, datetime.datetime.now().isoformat(timespec="seconds")),
+        )
+
+
+@app.route("/employees/<emp_id>/al-adjustments/<int:adj_id>/document/add", methods=["POST"])
+def add_al_adjustment_document(emp_id, adj_id):
+    db = get_db()
+    if db.execute("SELECT 1 FROM al_adjustments WHERE id=? AND emp_id=?", (adj_id, emp_id)).fetchone():
+        _save_al_adjustment_docs(db, emp_id, adj_id)
+        db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id) + "#al-adjustment-log")
+
+
+@app.route("/al-adjustment-documents/<int:doc_id>")
+def al_adjustment_document(doc_id):
+    db = get_db()
+    doc = db.execute(
+        """SELECT d.*, a.emp_id FROM al_adjustment_documents d
+           JOIN al_adjustments a ON a.id = d.adjustment_id WHERE d.id=?""", (doc_id,),
+    ).fetchone()
+    if doc is None:
+        abort(404)
+    return send_from_directory(os.path.join(UPLOAD_DIR, doc["emp_id"]), doc["stored_name"],
+                               as_attachment=False, download_name=doc["original_name"])
+
+
+@app.route("/al-adjustment-documents/<int:doc_id>/delete", methods=["POST"])
+def delete_al_adjustment_document(doc_id):
+    db = get_db()
+    doc = db.execute(
+        """SELECT d.*, a.emp_id FROM al_adjustment_documents d
+           JOIN al_adjustments a ON a.id = d.adjustment_id WHERE d.id=?""", (doc_id,),
+    ).fetchone()
+    if doc is None:
+        abort(404)
+    db.execute("DELETE FROM al_adjustment_documents WHERE id=?", (doc_id,))
+    db.commit()
+    try:
+        os.remove(os.path.join(UPLOAD_DIR, doc["emp_id"], doc["stored_name"]))
+    except OSError:
+        pass
+    return redirect(url_for("edit_employee", emp_id=doc["emp_id"]) + "#al-adjustment-log")
+
+
 @app.route("/employees/<emp_id>/al-adjustments/add", methods=["POST"])
 def add_al_adjustment(emp_id):
     """Records a specific date as the reason for an AL credit (e.g. a
@@ -1613,17 +1683,18 @@ def add_al_adjustment(emp_id):
     if not adj_date or not days_raw:
         return redirect(url_for("edit_employee", emp_id=emp_id))
     days = float(days_raw)
-    db.execute(
+    cur = db.execute(
         """INSERT INTO al_adjustments (emp_id, adj_date, days, reason, created_at, created_by)
            VALUES (?,?,?,?,?,?)""",
         (emp_id, adj_date, days, reason, datetime.datetime.now().isoformat(timespec="seconds"),
          session.get("hr_username")),
     )
+    _save_al_adjustment_docs(db, emp_id, cur.lastrowid)
     db.execute(
         "UPDATE employees SET al_adjustment_days = COALESCE(al_adjustment_days,0) + ? WHERE emp_id=?", (days, emp_id),
     )
     db.commit()
-    return redirect(url_for("edit_employee", emp_id=emp_id))
+    return redirect(url_for("edit_employee", emp_id=emp_id) + "#al-adjustment-log")
 
 
 @app.route("/employees/<emp_id>/al-adjustments/<int:adj_id>/update", methods=["POST"])
@@ -1664,6 +1735,12 @@ def delete_al_adjustment(emp_id, adj_id):
     ).fetchone()
     if row is None:
         return redirect(url_for("edit_employee", emp_id=emp_id))
+    for d in db.execute("SELECT stored_name FROM al_adjustment_documents WHERE adjustment_id=?", (adj_id,)).fetchall():
+        try:
+            os.remove(os.path.join(UPLOAD_DIR, emp_id, d["stored_name"]))
+        except OSError:
+            pass
+    db.execute("DELETE FROM al_adjustment_documents WHERE adjustment_id=?", (adj_id,))
     db.execute("DELETE FROM al_adjustments WHERE id=? AND emp_id=?", (adj_id, emp_id))
     db.execute(
         "UPDATE employees SET al_adjustment_days = COALESCE(al_adjustment_days,0) - ? WHERE emp_id=?", (row["days"], emp_id),
@@ -9546,6 +9623,12 @@ def hr_migrate_schema():
             adj_date TEXT NOT NULL, days REAL NOT NULL, reason TEXT,
             created_at TEXT NOT NULL, created_by TEXT)""")
         applied.append("table: al_adjustments")
+
+    if "al_adjustment_documents" not in existing_tables:
+        db.execute("""CREATE TABLE al_adjustment_documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, adjustment_id INTEGER NOT NULL REFERENCES al_adjustments(id),
+            original_name TEXT NOT NULL, stored_name TEXT NOT NULL, uploaded_at TEXT NOT NULL)""")
+        applied.append("table: al_adjustment_documents")
 
     daily_cols = [r[1] for r in db.execute("PRAGMA table_info(attendance_daily)").fetchall()]
     if "late_early_remark" not in daily_cols:

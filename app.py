@@ -5232,6 +5232,93 @@ def it_request_delete(request_id):
     return redirect(url_for("it_requests_list"))
 
 
+@app.route("/leave-requests/pdf")
+def leave_requests_pdf():
+    """PDF of leave requests and Movement Notices, one row each, grouped by employee name
+    (same order as the Leave Requests page). ?scope=pending (default) or ?scope=reviewed
+    with ?year=&month= (by start date); ?emp_id= limits it to one employee. Pending
+    PDFs get a blank Decision column for signing by hand."""
+    db = get_db()
+    scope = "reviewed" if request.args.get("scope") == "reviewed" else "pending"
+    emp_id = (request.args.get("emp_id") or "").strip()
+    today = datetime.date.today()
+    year = request.args.get("year", type=int) or today.year
+    month = request.args.get("month", type=int) or today.month
+    scope_clause, params_extra = "", []
+    if session.get("hr_role") == "approver":
+        scope_clause += " AND e.leave_approver_username=?"
+        params_extra.append(session["hr_username"])
+    if emp_id:
+        scope_clause += " AND e.emp_id=?"
+        params_extra.append(emp_id)
+    status_sql = "= 'Pending'" if scope == "pending" else "!= 'Pending'"
+    month_sql, month_params = "", []
+    if scope == "reviewed":
+        month_sql = " AND {t}.start_date LIKE ?"
+        month_params = [f"{year:04d}-{month:02d}%"]
+    try:
+        half_col = "lr.half_day" if "half_day" in [r[1] for r in db.execute("PRAGMA table_info(leave_requests)").fetchall()] else "NULL"
+    except sqlite3.OperationalError:
+        half_col = "NULL"
+    rows = db.execute(
+        f"""SELECT e.emp_id, e.full_name, lr.leave_type AS type_label, '' AS destination, lr.start_date, lr.end_date,
+                   lr.days, lr.reason, lr.status, lr.reviewed_by, lr.reviewed_at, {half_col} AS half_day
+            FROM leave_requests lr JOIN employees e ON e.emp_id = lr.emp_id
+            WHERE lr.status {status_sql} {scope_clause} {month_sql.format(t='lr')}
+            UNION ALL
+            SELECT e.emp_id, e.full_name, bt.notice_type, bt.destination, bt.start_date, bt.end_date,
+                   CAST(julianday(bt.end_date) - julianday(bt.start_date) + 1 AS INTEGER), bt.purpose, bt.status,
+                   bt.reviewed_by, bt.reviewed_at, NULL
+            FROM business_trips bt JOIN employees e ON e.emp_id = bt.emp_id
+            WHERE bt.status {status_sql} {scope_clause} {month_sql.format(t='bt')}
+            ORDER BY 2, 5""",
+        params_extra + month_params + params_extra + month_params,
+    ).fetchall()
+
+    styles = getSampleStyleSheet()
+    small = ParagraphStyle("lsm", parent=styles["Normal"], fontSize=8, leading=9.5)
+    title = ParagraphStyle("ltt", parent=styles["Title"], fontSize=15, spaceAfter=2, alignment=0)
+    sub = ParagraphStyle("lsb", parent=styles["Normal"], fontSize=11, leading=14)
+    heading_text = ("Pending Leave Requests" if scope == "pending"
+                    else f"Leave Requests Reviewed - {MONTH_NAMES[month]} {year}")
+    headers = ["Employee", "Type", "Destination", "Dates", "Days", "Reason", "Status" if scope == "reviewed" else "Decision"]
+    data = [headers]
+    for r in rows:
+        dates = r["start_date"] if (r["half_day"] or r["start_date"] == r["end_date"]) else f"{r['start_date']} - {r['end_date']}"
+        if r["half_day"]:
+            dates += " (half day - " + ("morning off" if r["half_day"] == "AM" else "afternoon off") + ")"
+        status = ""
+        if scope == "reviewed":
+            status = f"{r['status']}" + (f" by {r['reviewed_by']}" if r["reviewed_by"] else "")
+        data.append([
+            Paragraph(xml_escape(f"{r['emp_id']} - {r['full_name']}"), small),
+            Paragraph(xml_escape(r["type_label"] or ""), small), Paragraph(xml_escape(r["destination"] or "-"), small),
+            Paragraph(xml_escape(dates), small), f"{r['days']:g}", Paragraph(xml_escape(r["reason"] or ""), small),
+            Paragraph(xml_escape(status), small) if scope == "reviewed" else "",
+        ])
+    if len(data) == 1:
+        data.append(["No requests.", "", "", "", "", "", ""])
+    table = Table(data, colWidths=[6.0 * cm, 3.4 * cm, 2.6 * cm, 5.2 * cm, 1.2 * cm, 4.3 * cm, 3.8 * cm], repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1D4ED8")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, 0), 8.5),
+        ("FONTSIZE", (0, 1), (-1, -1), 8), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (4, 0), (4, -1), "RIGHT"),
+        ("LINEBELOW", (0, 1), (-1, -1), 0.25, colors.HexColor("#BFBFBF")),
+        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story = [Paragraph("TIANMA PRECISION SDN BHD", title), Paragraph(f"<b>{xml_escape(heading_text)}</b>", sub),
+             Paragraph(f"Printed {today.strftime('%d %B %Y')}", small), Spacer(1, 8), table]
+    buf = io.BytesIO()
+    SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=1.5 * cm, rightMargin=1.5 * cm, topMargin=1.2 * cm,
+                      bottomMargin=1.2 * cm, title=heading_text).build(story)
+    buf.seek(0)
+    name = "Leave_Requests_Pending" if scope == "pending" else f"Leave_Requests_{MONTH_NAMES[month]}_{year}"
+    if emp_id:
+        name += f"_{emp_id}"
+    return Response(buf.getvalue(), mimetype="application/pdf",
+                    headers={"Content-Disposition": f"attachment; filename={name}.pdf"})
+
+
 def _kwsp_ic_format(ic):
     """12-digit New IC as ######-##-#### (the layout KWSP's e-Caruman CSV
     guide asks for); a passport number is left as it is."""

@@ -2357,20 +2357,41 @@ def _half_leave_type(row):
     return row["half_leave_type"]
 
 
+HALF_SATURDAY_PATTERN_PREFIX = "5.5-day"
+
+
+def _no_meal_day(work_pattern, date_iso, half_type=None):
+    """Meal allowance is for full working days only: a half-day leave day (AM/PM) and the half-day
+    Saturday of a 5.5-day work pattern never earn it."""
+    if half_type:
+        return True
+    return bool(work_pattern and work_pattern.startswith(HALF_SATURDAY_PATTERN_PREFIX)
+                and datetime.date.fromisoformat(date_iso).weekday() == 5)
+
+
 def _auto_tick_meal(db, emp_id, year, month):
     """Meal allowance is automatic: for an employee who is entitled to it (Meal Allowance switched
     on with a rate), every WORKED day that has both a Time In and a Time Out gets the Meal tick.
     A day HR deliberately unticked on the Daily Attendance page carries meal_override='N' and is
     left alone."""
-    emp = db.execute("SELECT meal_allowance_flag, meal_allowance_rate FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
-    if emp is None or emp["meal_allowance_flag"] != "Y" or not (emp["meal_allowance_rate"] or 0):
+    emp = db.execute(
+        "SELECT meal_allowance_flag, meal_allowance_rate, work_pattern FROM employees WHERE emp_id=?", (emp_id,)
+    ).fetchone()
+    if emp is None:
         return
-    db.execute(
-        """UPDATE attendance_daily SET meal_allowance_flag='Y'
-           WHERE emp_id=? AND date LIKE ? AND day_type='WORKED' AND meal_allowance_flag!='Y'
-             AND COALESCE(time_in,'')!='' AND COALESCE(time_out,'')!='' AND COALESCE(meal_override,'')!='N'""",
+    rows = db.execute(
+        "SELECT * FROM attendance_daily WHERE emp_id=? AND date LIKE ? AND day_type='WORKED'",
         (emp_id, f"{year:04d}-{month:02d}-%"),
-    )
+    ).fetchall()
+    entitled = emp["meal_allowance_flag"] == "Y" and (emp["meal_allowance_rate"] or 0)
+    for r in rows:
+        no_meal = _no_meal_day(emp["work_pattern"], r["date"], _half_leave_type(r))
+        if no_meal:
+            if r["meal_allowance_flag"] == "Y":
+                db.execute("UPDATE attendance_daily SET meal_allowance_flag='N' WHERE id=?", (r["id"],))
+        elif (entitled and r["meal_allowance_flag"] != "Y" and r["time_in"] and r["time_out"]
+              and (r["meal_override"] if "meal_override" in r.keys() else None) != "N"):
+            db.execute("UPDATE attendance_daily SET meal_allowance_flag='Y' WHERE id=?", (r["id"],))
 
 
 def _sync_daily_to_monthly(db, emp_id, year, month):
@@ -2386,19 +2407,19 @@ def _sync_daily_to_monthly(db, emp_id, year, month):
     counts = {t: 0 for t in DAY_TYPES}
     meal_days = 0.0
     cewi_days = 0.0
+    _wp = db.execute("SELECT work_pattern FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+    work_pattern = _wp["work_pattern"] if _wp else None
     for r in rows:
         counts[r["day_type"]] = counts.get(r["day_type"], 0) + 1
-        # A half-day leave day is half worked, half leave. Meal allowance is
-        # paid at half rate for it; CEWI is for full working days only, so a
-        # half-day earns none.
-        weight = 1.0
+        # A half-day leave day is half worked, half leave. Meal allowance and
+        # CEWI are for full working days only, so a half-day earns neither
+        # (nor does the half-day Saturday of a 5.5-day work pattern).
         half_type = _half_leave_type(r)
         if half_type:
             counts["WORKED"] -= 0.5
             counts[half_type] = counts.get(half_type, 0) + 0.5
-            weight = 0.5
-        if r["meal_allowance_flag"] == "Y":
-            meal_days += weight
+        if r["meal_allowance_flag"] == "Y" and not _no_meal_day(work_pattern, r["date"], half_type):
+            meal_days += 1
         if r["cewi_flag"] == "Y" and not half_type:
             cewi_days += 1
     ot_1_5 = sum(r["ot_hours_1_5"] or 0 for r in rows)
@@ -2548,12 +2569,13 @@ def attendance_daily(emp_id, year, month):
     days_in_month = calendar.monthrange(year, month)[1]
 
     if request.method == "POST":
-        existing_dates = {
-            r["date"] for r in db.execute(
-                "SELECT date FROM attendance_daily WHERE emp_id=? AND date LIKE ?",
+        existing_rows = {
+            r["date"]: r for r in db.execute(
+                "SELECT * FROM attendance_daily WHERE emp_id=? AND date LIKE ?",
                 (emp_id, f"{year:04d}-{month:02d}-%"),
             ).fetchall()
         }
+        existing_dates = set(existing_rows)
         for day in range(1, days_in_month + 1):
             date_str = f"{year:04d}-{month:02d}-{day:02d}"
             day_type = request.form.get(f"day_type__{day}") or "WORKED"
@@ -2576,6 +2598,8 @@ def attendance_daily(emp_id, year, month):
             meal_override = "N" if (
                 meal_flag == "N" and day_type == "WORKED" and time_in and time_out
                 and emp["meal_allowance_flag"] == "Y"
+                and not _no_meal_day(emp["work_pattern"], date_str,
+                                     _half_leave_type(existing_rows[date_str]) if date_str in existing_rows else None)
             ) else None
             cewi_flag = "Y" if request.form.get(f"cewi__{day}") else "N"
             ot_1_5 = float(request.form.get(f"ot_1_5__{day}", 0) or 0)
@@ -8707,11 +8731,12 @@ def _sync_days_to_attendance_monthly(db, emp_id, start_date, end_date, column, w
             ).fetchone()[0]
         except sqlite3.OperationalError:
             half_n = 0
+        # Meal allowance is full days only too, same as CEWI.
         cewi_days = max(recomputed_days - 0.5 * half_n, 0)
         db.execute(
             """UPDATE attendance_monthly SET days_worked=?, meal_eligible_days=?, cewi_eligible_days=?
                WHERE emp_id=? AND year=? AND month=?""",
-            (recomputed_days, recomputed_days, cewi_days, emp_id, year, month),
+            (recomputed_days, cewi_days, cewi_days, emp_id, year, month),
         )
 
 
@@ -12596,13 +12621,13 @@ def _unsync_deleted_leave_request(db, leave_request):
                 )
         d = datetime.date.fromisoformat(date_str)
         _resync_leave_days_from_daily(db, leave_request["emp_id"], d.year, d.month)
-        # Approving took half a day off Days Worked / Meal eligible days and the
-        # whole day off CEWI days (CEWI is for full days only); give them back
+        # Approving took half a day off Days Worked and the whole day off Meal and
+        # CEWI days (both are for full days only); give them back
         # (never above the month's working days).
         db.execute(
             """UPDATE attendance_monthly SET
                    days_worked = MIN(COALESCE(days_worked, 0) + 0.5, COALESCE(working_days_in_month, 0)),
-                   meal_eligible_days = MIN(COALESCE(meal_eligible_days, 0) + 0.5, COALESCE(working_days_in_month, 0)),
+                   meal_eligible_days = MIN(COALESCE(meal_eligible_days, 0) + 1, COALESCE(working_days_in_month, 0)),
                    cewi_eligible_days = MIN(COALESCE(cewi_eligible_days, 0) + 1, COALESCE(working_days_in_month, 0))
                WHERE emp_id=? AND year=? AND month=?""",
             (leave_request["emp_id"], d.year, d.month),

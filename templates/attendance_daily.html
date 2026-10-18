@@ -73,7 +73,8 @@
     </select>
     <input type="text" name="late_early_remark__{{ d.day }}" value="{{ r.late_early_remark if r and r.late_early_remark else '' }}" placeholder="reason, e.g. Out duty" style="width:150px;">
   </td>
-  <td><input type="checkbox" class="meal-input" name="meal__{{ d.day }}" {% if r and r.meal_allowance_flag == 'Y' %}checked{% endif %} onchange="updateAttendanceTotals()"></td>
+  {% set no_meal = d.half_leave or (emp.work_pattern and emp.work_pattern.startswith('5.5-day') and d.weekday == 'Sat') %}
+  <td><input type="checkbox" class="meal-input" name="meal__{{ d.day }}" {% if r and r.meal_allowance_flag == 'Y' and not no_meal %}checked{% endif %} {% if no_meal %}disabled title="No meal allowance for a half day"{% endif %} onchange="updateAttendanceTotals()"></td>
   <td><input type="checkbox" class="cewi-input" name="cewi__{{ d.day }}" {% if r and r.cewi_flag == 'Y' and emp.cewi_flag == 'Y' %}checked{% endif %} {% if emp.cewi_flag != 'Y' %}disabled title="Not CEWI eligible (see Employee Edit > Allowances)"{% endif %} onchange="updateAttendanceTotals()"></td>
   <td><input type="number" step="0.5" class="ot15-input" name="ot_1_5__{{ d.day }}" value="{{ r.ot_hours_1_5 if r else 0 }}" style="width:64px;" {% if emp.ot_approval_required == "Y" %}readonly{% endif %} oninput="updateAttendanceTotals()"></td>
   <td><input type="number" step="0.5" class="ot20-input" name="ot_2_0__{{ d.day }}" value="{{ r.ot_hours_2_0 if r else 0 }}" style="width:64px;" {% if emp.ot_approval_required == "Y" %}readonly{% endif %} oninput="updateAttendanceTotals()"></td>
@@ -152,7 +153,7 @@ document.querySelectorAll('input[name^="time_in__"], input[name^="time_out__"], 
     var tout = document.querySelector('input[name="time_out__' + day + '"]');
     var status = document.querySelector('select[name="day_type__' + day + '"]');
     var meal = document.querySelector('input[name="meal__' + day + '"]');
-    if (meal && tin && tout && tin.value && tout.value && (!status || status.value === 'WORKED')) {
+    if (meal && !meal.disabled && tin && tout && tin.value && tout.value && (!status || status.value === 'WORKED')) {
       meal.checked = true;
       updateAttendanceTotals();
     }

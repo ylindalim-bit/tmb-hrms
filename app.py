@@ -2685,9 +2685,11 @@ def _bulk_fill_apply(db, plans, time_in, time_out):
                 )
             elif it["action"] == "fill":
                 db.execute(
-                    """UPDATE attendance_daily SET time_in=COALESCE(time_in,?), time_out=COALESCE(time_out,?)
+                    """UPDATE attendance_daily SET time_in=COALESCE(time_in,?), time_out=COALESCE(time_out,?),
+                           meal_allowance_flag=CASE WHEN meal_allowance_flag='Y' THEN 'Y' ELSE ? END,
+                           cewi_flag=CASE WHEN cewi_flag='Y' THEN 'Y' ELSE ? END
                        WHERE emp_id=? AND date=?""",
-                    (time_in, time_out, emp_id, it["date"]),
+                    (time_in, time_out, p["meal_flag"], p["cewi_flag"], emp_id, it["date"]),
                 )
             else:
                 continue

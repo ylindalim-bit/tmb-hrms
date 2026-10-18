@@ -303,7 +303,8 @@ try:
     _ensure_conn = sqlite3.connect(DB_PATH)
     for _tbl, _col in (("leave_requests", "half_day"), ("attendance_daily", "half_leave_type"),
                        ("attendance_daily", "half_leave_session"),
-                       ("tax_profile", "children_study_full"), ("tax_profile", "children_study_half")):
+                       ("tax_profile", "children_study_full"), ("tax_profile", "children_study_half"),
+                       ("attendance_daily", "meal_override")):
         _existing = [_r[1] for _r in _ensure_conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _existing and _col not in _existing:
             _ensure_conn.execute(f"ALTER TABLE {_tbl} ADD COLUMN {_col} " + ("INTEGER DEFAULT 0" if _tbl == "tax_profile" else "TEXT"))
@@ -2356,11 +2357,28 @@ def _half_leave_type(row):
     return row["half_leave_type"]
 
 
+def _auto_tick_meal(db, emp_id, year, month):
+    """Meal allowance is automatic: for an employee who is entitled to it (Meal Allowance switched
+    on with a rate), every WORKED day that has both a Time In and a Time Out gets the Meal tick.
+    A day HR deliberately unticked on the Daily Attendance page carries meal_override='N' and is
+    left alone."""
+    emp = db.execute("SELECT meal_allowance_flag, meal_allowance_rate FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+    if emp is None or emp["meal_allowance_flag"] != "Y" or not (emp["meal_allowance_rate"] or 0):
+        return
+    db.execute(
+        """UPDATE attendance_daily SET meal_allowance_flag='Y'
+           WHERE emp_id=? AND date LIKE ? AND day_type='WORKED' AND meal_allowance_flag!='Y'
+             AND COALESCE(time_in,'')!='' AND COALESCE(time_out,'')!='' AND COALESCE(meal_override,'')!='N'""",
+        (emp_id, f"{year:04d}-{month:02d}-%"),
+    )
+
+
 def _sync_daily_to_monthly(db, emp_id, year, month):
     """Recomputes attendance_monthly's aggregate columns from this
     employee/month's attendance_daily rows and upserts them - the same
     row payroll already reads, so a daily-entered month feeds payroll
     exactly like a directly-typed monthly total would."""
+    _auto_tick_meal(db, emp_id, year, month)
     rows = db.execute(
         "SELECT * FROM attendance_daily WHERE emp_id=? AND date LIKE ?",
         (emp_id, f"{year:04d}-{month:02d}-%"),
@@ -2553,6 +2571,12 @@ def attendance_daily(emp_id, year, month):
             if date_str not in existing_dates and day_type == "WORKED" and not time_in and not time_out:
                 continue
             meal_flag = "Y" if request.form.get(f"meal__{day}") else "N"
+            # The page ticks Meal by itself once both times are in, so an unticked Meal on a
+            # complete WORKED day of an entitled employee is HR's deliberate "no meal" - keep it.
+            meal_override = "N" if (
+                meal_flag == "N" and day_type == "WORKED" and time_in and time_out
+                and emp["meal_allowance_flag"] == "Y"
+            ) else None
             cewi_flag = "Y" if request.form.get(f"cewi__{day}") else "N"
             ot_1_5 = float(request.form.get(f"ot_1_5__{day}", 0) or 0)
             ot_2_0 = float(request.form.get(f"ot_2_0__{day}", 0) or 0)
@@ -2565,16 +2589,18 @@ def attendance_daily(emp_id, year, month):
             db.execute(
                 """INSERT INTO attendance_daily (
                        emp_id, date, day_type, time_in, time_out, meal_allowance_flag, cewi_flag,
-                       ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, ot_reason, late_early_remark, late_early_type
-                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                       ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, ot_reason, late_early_remark, late_early_type,
+                       meal_override
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(emp_id, date) DO UPDATE SET
                      day_type=excluded.day_type, time_in=excluded.time_in, time_out=excluded.time_out,
                      meal_allowance_flag=excluded.meal_allowance_flag, cewi_flag=excluded.cewi_flag,
+                     meal_override=excluded.meal_override,
                      ot_hours_1_5=excluded.ot_hours_1_5, ot_hours_2_0=excluded.ot_hours_2_0,
                      ot_hours_3_0=excluded.ot_hours_3_0, ot_reason=excluded.ot_reason,
                      late_early_remark=excluded.late_early_remark, late_early_type=excluded.late_early_type""",
                 (emp_id, date_str, day_type, time_in, time_out, meal_flag, cewi_flag,
-                 ot_1_5, ot_2_0, ot_3_0, ot_reason, late_early_remark, late_early_type),
+                 ot_1_5, ot_2_0, ot_3_0, ot_reason, late_early_remark, late_early_type, meal_override),
             )
         _sync_daily_to_monthly(db, emp_id, year, month)
         db.commit()

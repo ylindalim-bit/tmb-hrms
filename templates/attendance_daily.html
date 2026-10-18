@@ -142,6 +142,23 @@ function updateAttendanceTotals() {
   document.getElementById('ot20_total').textContent = sum('.ot20-input').toFixed(1);
   document.getElementById('ot30_total').textContent = sum('.ot30-input').toFixed(1);
 }
+{% if emp.meal_allowance_flag == 'Y' %}
+// Entitled to meal allowance: tick Meal automatically once a WORKED day has both Time In and Time Out.
+// (Untick it yourself for a day that shouldn't get it - that choice is kept when you save.)
+document.querySelectorAll('input[name^="time_in__"], input[name^="time_out__"], select[name^="day_type__"]').forEach(function (el) {
+  el.addEventListener('change', function () {
+    var day = el.name.split('__')[1];
+    var tin = document.querySelector('input[name="time_in__' + day + '"]');
+    var tout = document.querySelector('input[name="time_out__' + day + '"]');
+    var status = document.querySelector('select[name="day_type__' + day + '"]');
+    var meal = document.querySelector('input[name="meal__' + day + '"]');
+    if (meal && tin && tout && tin.value && tout.value && (!status || status.value === 'WORKED')) {
+      meal.checked = true;
+      updateAttendanceTotals();
+    }
+  });
+});
+{% endif %}
 updateAttendanceTotals();
 </script>
 {% endblock %}

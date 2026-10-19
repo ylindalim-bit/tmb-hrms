@@ -305,7 +305,8 @@ try:
                        ("attendance_daily", "half_leave_session"),
                        ("tax_profile", "children_study_full"), ("tax_profile", "children_study_half"),
                        ("attendance_daily", "meal_override"), ("job_applications", "interview_date"),
-                       ("job_applications", "interview_time"), ("job_applications", "interview_notes")):
+                       ("job_applications", "interview_time"), ("job_applications", "interview_notes"),
+                       ("job_applications", "interview_interviewer")):
         _existing = [_r[1] for _r in _ensure_conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _existing and _col not in _existing:
             _ensure_conn.execute(f"ALTER TABLE {_tbl} ADD COLUMN {_col} " + ("INTEGER DEFAULT 0" if _tbl == "tax_profile" else "TEXT"))
@@ -6923,19 +6924,20 @@ def recruitment_update(app_id):
         db.execute(
             """UPDATE job_applications SET status=?, decision=?, comments=?, appointment_department=?,
                official_use_date=?, reviewed_by=?, reviewed_at=?,
-               interview_date=?, interview_time=?, interview_notes=? WHERE id=?""",
+               interview_date=?, interview_time=?, interview_notes=?, interview_interviewer=? WHERE id=?""",
             (request.form.get("status"), request.form.get("decision"), request.form.get("comments"),
              request.form.get("appointment_department"), request.form.get("official_use_date"),
              session.get("hr_username"), datetime.datetime.now(MYT).isoformat(timespec="seconds"),
              request.form.get("interview_date") or None, request.form.get("interview_time") or None,
-             (request.form.get("interview_notes") or "").strip() or None, app_id),
+             (request.form.get("interview_notes") or "").strip() or None,
+             (request.form.get("interview_interviewer") or "").strip() or None, app_id),
         )
     else:
         db.execute(
             """UPDATE job_applications SET status=?, decision=?, comments=?, appointment_department=?,
                official_use_date=?, reviewed_by=?, reviewed_at=?, assigned_reviewer_username=?,
                position_applied=?, bank_name=?, bank_account_no=?, epf_no=?, tax_no=?,
-               interview_date=?, interview_time=?, interview_notes=? WHERE id=?""",
+               interview_date=?, interview_time=?, interview_notes=?, interview_interviewer=? WHERE id=?""",
             (request.form.get("status"), request.form.get("decision"), request.form.get("comments"),
              request.form.get("appointment_department"), request.form.get("official_use_date"),
              session.get("hr_username"), datetime.datetime.now(MYT).isoformat(timespec="seconds"),
@@ -6944,7 +6946,8 @@ def recruitment_update(app_id):
              request.form.get("bank_name") or None, request.form.get("bank_account_no") or None,
              request.form.get("epf_no") or None, request.form.get("tax_no") or None,
              request.form.get("interview_date") or None, request.form.get("interview_time") or None,
-             (request.form.get("interview_notes") or "").strip() or None, app_id),
+             (request.form.get("interview_notes") or "").strip() or None,
+             (request.form.get("interview_interviewer") or "").strip() or None, app_id),
         )
     db.commit()
     return redirect(url_for("recruitment_detail", app_id=app_id))

@@ -306,7 +306,8 @@ try:
                        ("tax_profile", "children_study_full"), ("tax_profile", "children_study_half"),
                        ("attendance_daily", "meal_override"), ("job_applications", "interview_date"),
                        ("job_applications", "interview_time"), ("job_applications", "interview_notes"),
-                       ("job_applications", "interview_interviewer")):
+                       ("job_applications", "interview_interviewer"),
+                       ("job_applications", "assess_expected_salary"), ("job_applications", "assess_current_salary"), ("job_applications", "assess_notice_period"), ("job_applications", "assess_available_from"), ("job_applications", "assess_rating_technical"), ("job_applications", "assess_rating_experience"), ("job_applications", "assess_rating_communication"), ("job_applications", "assess_rating_attitude"), ("job_applications", "assess_rating_teamwork"), ("job_applications", "assess_strengths"), ("job_applications", "assess_concerns"), ("job_applications", "assess_recommendation"), ("job_applications", "assess_notes"), ("job_applications", "assess_by"), ("job_applications", "assess_at")):
         _existing = [_r[1] for _r in _ensure_conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _existing and _col not in _existing:
             _ensure_conn.execute(f"ALTER TABLE {_tbl} ADD COLUMN {_col} " + ("INTEGER DEFAULT 0" if _tbl == "tax_profile" else "TEXT"))
@@ -6333,12 +6334,72 @@ def recruitment_detail(app_id):
     ).fetchall()
     return render_template(
         "recruitment_detail.html", a=application, documents=documents, reviewers=reviewers,
+        rating_fields=INTERVIEW_RATING_FIELDS, recommendations=INTERVIEW_RECOMMENDATIONS,
         family=json.loads(application["family_particulars_json"] or "[]"),
         education=json.loads(application["education_json"] or "[]"),
         other_quals=json.loads(application["other_qualifications_json"] or "[]"),
         languages=json.loads(application["languages_json"] or "[]"),
         employment=json.loads(application["employment_history_json"] or "[]"),
     )
+
+
+INTERVIEW_RATING_FIELDS = [
+    ("assess_rating_technical", "Technical skill"), ("assess_rating_experience", "Experience"),
+    ("assess_rating_communication", "Communication"), ("assess_rating_attitude", "Attitude"),
+    ("assess_rating_teamwork", "Teamwork"),
+]
+INTERVIEW_RECOMMENDATIONS = ["Proceed to offer", "Second interview", "Keep in view", "Reject"]
+
+
+@app.route("/hr/recruitment/<int:app_id>/assessment", methods=["POST"])
+def recruitment_assessment_save(app_id):
+    """Saves the interviewer's assessment (salary expectation, availability, 1-5 ratings, strengths/
+    concerns, recommendation, notes) for one candidate. Same access rule as the rest of the
+    candidate page: full HR, or the reviewer the candidate was assigned to."""
+    db = get_db()
+    application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
+    if application is None:
+        abort(404)
+    if not _can_review_application(application):
+        abort(403)
+    f = request.form
+
+    def rating(name):
+        v = f.get(name, "")
+        return v if v in ("1", "2", "3", "4", "5") else None
+
+    rec = f.get("assess_recommendation")
+    db.execute(
+        """UPDATE job_applications SET assess_expected_salary=?, assess_current_salary=?, assess_notice_period=?,
+               assess_available_from=?, assess_rating_technical=?, assess_rating_experience=?,
+               assess_rating_communication=?, assess_rating_attitude=?, assess_rating_teamwork=?,
+               assess_strengths=?, assess_concerns=?, assess_recommendation=?, assess_notes=?,
+               assess_by=?, assess_at=? WHERE id=?""",
+        ((f.get("assess_expected_salary") or "").strip() or None, (f.get("assess_current_salary") or "").strip() or None,
+         (f.get("assess_notice_period") or "").strip() or None, f.get("assess_available_from") or None,
+         rating("assess_rating_technical"), rating("assess_rating_experience"), rating("assess_rating_communication"),
+         rating("assess_rating_attitude"), rating("assess_rating_teamwork"),
+         (f.get("assess_strengths") or "").strip() or None, (f.get("assess_concerns") or "").strip() or None,
+         rec if rec in INTERVIEW_RECOMMENDATIONS else None, (f.get("assess_notes") or "").strip() or None,
+         session.get("hr_username"), datetime.datetime.now(MYT).isoformat(timespec="seconds"), app_id),
+    )
+    db.commit()
+    return redirect(url_for("recruitment_detail", app_id=app_id) + "#interview-assessment")
+
+
+@app.route("/hr/recruitment/<int:app_id>/interview-sheet")
+def recruitment_interview_sheet(app_id):
+    """One-page printable interview sheet: candidate and interview details with whatever has been
+    assessed so far filled in, and blank lines/boxes for the rest, so the interviewer can write on
+    it during the interview."""
+    db = get_db()
+    application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
+    if application is None:
+        abort(404)
+    if not _can_review_application(application):
+        abort(403)
+    return render_template("recruitment_interview_sheet.html", a=application,
+                           rating_fields=INTERVIEW_RATING_FIELDS, recommendations=INTERVIEW_RECOMMENDATIONS)
 
 
 @app.route("/hr/recruitment/<int:app_id>/create-employee")

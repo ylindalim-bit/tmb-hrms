@@ -154,6 +154,50 @@
   {% endif %}
 </div>
 
+<div class="card no-print" id="interview-assessment" style="max-width:520px;">
+  <h2 style="margin-top:0;">Interview Assessment</h2>
+  <p style="color:var(--muted); font-size:12px; margin-top:-4px;">
+    Fill in during or after the interview.
+    <a href="{{ url_for('recruitment_interview_sheet', app_id=a.id) }}" target="_blank">Print interview sheet &rarr;</a>
+  </p>
+  <form method="post" action="{{ url_for('recruitment_assessment_save', app_id=a.id) }}">
+    <div class="form-grid">
+      <div><label>Expected salary (RM)</label><input type="text" name="assess_expected_salary" value="{{ a.assess_expected_salary or '' }}"></div>
+      <div><label>Current / last salary (RM)</label><input type="text" name="assess_current_salary" value="{{ a.assess_current_salary or '' }}"></div>
+      <div><label>Notice period</label><input type="text" name="assess_notice_period" value="{{ a.assess_notice_period or '' }}" placeholder="e.g. 1 month"></div>
+      <div><label>Available to start</label><input type="date" name="assess_available_from" value="{{ a.assess_available_from or '' }}"></div>
+    </div>
+    <label style="display:block; margin:12px 0 4px;">Ratings (1 = poor, 5 = excellent)</label>
+    <table style="width:auto;">
+      {% for field, label in rating_fields %}
+      <tr>
+        <td class="text" style="padding-right:14px;">{{ label }}</td>
+        <td class="text">
+          {% for n in ["1", "2", "3", "4", "5"] %}
+          <label style="display:inline-flex; gap:3px; align-items:center; margin-right:8px; font-weight:400;">
+            <input type="radio" name="{{ field }}" value="{{ n }}" style="width:auto;" {% if a[field] == n %}checked{% endif %}> {{ n }}
+          </label>
+          {% endfor %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    <div style="margin-top:12px;"><label>Strengths</label>
+      <textarea name="assess_strengths" rows="2" style="width:100%; font:inherit; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--card); color:var(--text); box-sizing:border-box;">{{ a.assess_strengths or "" }}</textarea></div>
+    <div style="margin-top:8px;"><label>Concerns</label>
+      <textarea name="assess_concerns" rows="2" style="width:100%; font:inherit; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--card); color:var(--text); box-sizing:border-box;">{{ a.assess_concerns or "" }}</textarea></div>
+    <div style="margin-top:8px;"><label>Recommendation</label>
+      <select name="assess_recommendation">
+        <option value=""></option>
+        {% for r in recommendations %}<option value="{{ r }}" {{ "selected" if a.assess_recommendation == r }}>{{ r }}</option>{% endfor %}
+      </select></div>
+    <div style="margin-top:8px;"><label>Interview notes</label>
+      <textarea name="assess_notes" rows="5" style="width:100%; font:inherit; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--card); color:var(--text); box-sizing:border-box;">{{ a.assess_notes or "" }}</textarea></div>
+    <div class="form-actions"><button type="submit" class="btn">Save Assessment</button></div>
+    {% if a.assess_by %}<p style="font-size:12px; color:var(--muted);">Last saved by {{ a.assess_by }} at {{ a.assess_at }}</p>{% endif %}
+  </form>
+</div>
+
 {% if a.photo_stored_name or hr_role != "approver" %}
 <div class="card no-print" style="max-width:200px;">
   {% if a.photo_stored_name %}

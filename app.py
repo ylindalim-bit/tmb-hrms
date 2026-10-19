@@ -7499,6 +7499,15 @@ def portal_leave():
     al_balance = round(al_entitlement + _al_bf_for_year(emp, cur_year) - al_used, 2)
     mc_balance = (emp["mc_entitlement"] or 0) - mc_used
     hl_balance = (emp["hospitalisation_leave_entitlement"] or 0) - hl_used
+    # What HR has credited/deducted on the AL Adjustment Log (e.g. a replacement day for working a
+    # rest day / public holiday), so staff can see where their balance came from.
+    try:
+        al_adjustments = db.execute(
+            "SELECT adj_date, days, reason FROM al_adjustments WHERE emp_id=? ORDER BY adj_date DESC, created_at DESC",
+            (emp["emp_id"],),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        al_adjustments = []
 
     # Latest change/cancellation request per leave request, so the template
     # can show "Change requested" (Pending), the outcome (Rejected, with
@@ -7517,7 +7526,9 @@ def portal_leave():
     return render_template("portal_leave.html", emp=emp, requests=my_requests, error=error,
                             al_balance=al_balance, mc_balance=mc_balance, hl_balance=hl_balance,
                             al_used=al_used, mc_used=mc_used, ul_used=ul_used, change_by_leave_id=change_by_leave_id,
-                            documents_by_request=documents_by_request, leave_types=LEAVE_TYPES)
+                            documents_by_request=documents_by_request, leave_types=LEAVE_TYPES,
+                            al_entitlement=al_entitlement, al_bf=(emp["al_bf_days"] or 0),
+                            al_adjustments=al_adjustments, cur_year=cur_year)
 
 
 @app.route("/portal/leave/<int:request_id>/delete", methods=["POST"])

@@ -304,7 +304,8 @@ try:
     for _tbl, _col in (("leave_requests", "half_day"), ("attendance_daily", "half_leave_type"),
                        ("attendance_daily", "half_leave_session"),
                        ("tax_profile", "children_study_full"), ("tax_profile", "children_study_half"),
-                       ("attendance_daily", "meal_override")):
+                       ("attendance_daily", "meal_override"), ("job_applications", "interview_date"),
+                       ("job_applications", "interview_time"), ("job_applications", "interview_notes")):
         _existing = [_r[1] for _r in _ensure_conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _existing and _col not in _existing:
             _ensure_conn.execute(f"ALTER TABLE {_tbl} ADD COLUMN {_col} " + ("INTEGER DEFAULT 0" if _tbl == "tax_profile" else "TEXT"))
@@ -6230,6 +6231,10 @@ def recruitment_list():
     where, params = list(scope_where), list(scope_params)
     if status_filter == "all":
         pass
+    elif status_filter == "interview":
+        # Candidates with an interview date from today on, soonest first (see ORDER BY below).
+        where.append("interview_date IS NOT NULL AND interview_date >= ? AND status NOT IN ('Hired', 'Not Suitable')")
+        params.append(datetime.datetime.now(MYT).date().isoformat())
     elif status_filter:
         where.append("status=?")
         params.append(status_filter)
@@ -6239,8 +6244,11 @@ def recruitment_list():
     if where:
         query += " WHERE " + " AND ".join(where)
     # Pipeline order (New -> Reviewed -> Shortlisted -> Hired -> Not Suitable), newest first within each stage.
-    query += (" ORDER BY CASE status WHEN 'New' THEN 1 WHEN 'Reviewed' THEN 2 WHEN 'Shortlisted' THEN 3 "
-              "WHEN 'Hired' THEN 4 WHEN 'Not Suitable' THEN 5 ELSE 6 END, submitted_at DESC")
+    if status_filter == "interview":
+        query += " ORDER BY interview_date, COALESCE(interview_time, '')"
+    else:
+        query += (" ORDER BY CASE status WHEN 'New' THEN 1 WHEN 'Reviewed' THEN 2 WHEN 'Shortlisted' THEN 3 "
+                  "WHEN 'Hired' THEN 4 WHEN 'Not Suitable' THEN 5 ELSE 6 END, submitted_at DESC")
     applications = db.execute(query, params).fetchall()
     count_query = "SELECT status, COUNT(*) AS n FROM job_applications"
     if scope_where:
@@ -6249,8 +6257,17 @@ def recruitment_list():
     reviewers = db.execute(
         "SELECT username, full_name FROM hr_users WHERE role='approver' AND can_review_recruitment='Y' ORDER BY full_name"
     ).fetchall()
+    interview_where = " AND ".join(scope_where + ["interview_date IS NOT NULL AND interview_date >= ? AND status NOT IN ('Hired', 'Not Suitable')"])
+    try:
+        interview_n = db.execute(
+            "SELECT COUNT(*) FROM job_applications WHERE " + interview_where,
+            scope_params + [datetime.datetime.now(MYT).date().isoformat()],
+        ).fetchone()[0]
+    except sqlite3.OperationalError:
+        interview_n = 0
     return render_template(
         "recruitment_list.html", applications=applications, status_filter=status_filter, counts=counts,
+        interview_n=interview_n, today_iso=datetime.datetime.now(MYT).date().isoformat(),
         apply_url=url_for("careers_apply", _external=True), reviewers=reviewers,
     )
 
@@ -6905,23 +6922,29 @@ def recruitment_update(app_id):
         # reassigns who the application is handed to.
         db.execute(
             """UPDATE job_applications SET status=?, decision=?, comments=?, appointment_department=?,
-               official_use_date=?, reviewed_by=?, reviewed_at=? WHERE id=?""",
+               official_use_date=?, reviewed_by=?, reviewed_at=?,
+               interview_date=?, interview_time=?, interview_notes=? WHERE id=?""",
             (request.form.get("status"), request.form.get("decision"), request.form.get("comments"),
              request.form.get("appointment_department"), request.form.get("official_use_date"),
-             session.get("hr_username"), datetime.datetime.now(MYT).isoformat(timespec="seconds"), app_id),
+             session.get("hr_username"), datetime.datetime.now(MYT).isoformat(timespec="seconds"),
+             request.form.get("interview_date") or None, request.form.get("interview_time") or None,
+             (request.form.get("interview_notes") or "").strip() or None, app_id),
         )
     else:
         db.execute(
             """UPDATE job_applications SET status=?, decision=?, comments=?, appointment_department=?,
                official_use_date=?, reviewed_by=?, reviewed_at=?, assigned_reviewer_username=?,
-               position_applied=?, bank_name=?, bank_account_no=?, epf_no=?, tax_no=? WHERE id=?""",
+               position_applied=?, bank_name=?, bank_account_no=?, epf_no=?, tax_no=?,
+               interview_date=?, interview_time=?, interview_notes=? WHERE id=?""",
             (request.form.get("status"), request.form.get("decision"), request.form.get("comments"),
              request.form.get("appointment_department"), request.form.get("official_use_date"),
              session.get("hr_username"), datetime.datetime.now(MYT).isoformat(timespec="seconds"),
              request.form.get("assigned_reviewer_username") or None,
              request.form.get("position_applied") or None,
              request.form.get("bank_name") or None, request.form.get("bank_account_no") or None,
-             request.form.get("epf_no") or None, request.form.get("tax_no") or None, app_id),
+             request.form.get("epf_no") or None, request.form.get("tax_no") or None,
+             request.form.get("interview_date") or None, request.form.get("interview_time") or None,
+             (request.form.get("interview_notes") or "").strip() or None, app_id),
         )
     db.commit()
     return redirect(url_for("recruitment_detail", app_id=app_id))

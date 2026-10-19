@@ -96,6 +96,12 @@
           {% endfor %}
         </select>
       </div>
+      <div><label>Interview Date</label>
+        <input type="date" name="interview_date" value="{{ a.interview_date or '' }}"></div>
+      <div><label>Interview Time</label>
+        <input type="time" name="interview_time" value="{{ a.interview_time or '' }}"></div>
+      <div style="grid-column:1 / -1;"><label>Interview Details (venue / who will interview / what to bring)</label>
+        <input type="text" name="interview_notes" value="{{ a.interview_notes or '' }}" style="width:100%;" placeholder="e.g. TMB office, Pasir Gudang - meet Mr Yang; bring IC and certificates"></div>
       <div><label>Appointment / Department</label>
         <input type="text" name="appointment_department" value="{{ a.appointment_department or '' }}"></div>
       <div><label>Date</label>

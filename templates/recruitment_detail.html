@@ -193,38 +193,18 @@
       </select></div>
     <div style="margin-top:8px;"><label>Interview notes</label>
       <textarea name="assess_notes" rows="5" style="width:100%; font:inherit; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--card); color:var(--text); box-sizing:border-box;">{{ a.assess_notes or "" }}</textarea></div>
+    <label style="display:block; margin:14px 0 4px;">Interviewer comments</label>
+    <datalist id="interviewer-names">{% for n in commenters %}<option value="{{ n }}">{% endfor %}</datalist>
+    {% for n in ["1", "2", "3"] %}
+    <div style="border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-bottom:8px;">
+      <input type="text" name="assess_c{{ n }}_name" list="interviewer-names" placeholder="Interviewer {{ n }} name (e.g. Mr Kee)"
+             value="{{ a['assess_c' ~ n ~ '_name'] or '' }}" style="width:100%; margin-bottom:6px;">
+      <textarea name="assess_c{{ n }}_text" rows="3" placeholder="Interviewer {{ n }}'s comment"
+                style="width:100%; font:inherit; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--card); color:var(--text); box-sizing:border-box;">{{ a['assess_c' ~ n ~ '_text'] or "" }}</textarea>
+    </div>
+    {% endfor %}
     <div class="form-actions"><button type="submit" class="btn">Save Assessment</button></div>
     {% if a.assess_by %}<p style="font-size:12px; color:var(--muted);">Last saved by {{ a.assess_by }} at {{ a.assess_at }}</p>{% endif %}
-  </form>
-</div>
-
-<div class="card no-print" id="interviewer-comments" style="max-width:520px;">
-  <h2 style="margin-top:0;">Interviewer Comments</h2>
-  <p style="color:var(--muted); font-size:12px; margin-top:-4px;">Each interviewer (e.g. Mr Kee, Linda) adds their own comment. Comments are dated and signed, and never overwrite each other.</p>
-  {% for c in comments %}
-  <div style="border-left:3px solid var(--border); padding:4px 10px; margin-bottom:10px;">
-    <div style="font-size:12px; color:var(--muted);">
-      <strong style="color:var(--text);">{{ c.author }}</strong> &middot; {{ c.created_at.replace('T', ' ')[:16] }}
-      <form method="post" action="{{ url_for('recruitment_comment_delete', comment_id=c.id) }}" style="display:inline;"
-            onsubmit="return confirm('Delete this comment?');">
-        <button type="submit" style="border:0; background:none; color:var(--danger); cursor:pointer; font-size:12px;">delete</button>
-      </form>
-    </div>
-    <div style="white-space:pre-wrap;">{{ c.comment }}</div>
-  </div>
-  {% else %}
-  <p style="color:var(--muted); font-size:13px;">No comments yet.</p>
-  {% endfor %}
-  <form method="post" action="{{ url_for('recruitment_comment_add', app_id=a.id) }}">
-    <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
-      <label style="margin:0;">Comment by</label>
-      <select name="author">
-        {% for n in commenters %}<option value="{{ n }}" {{ 'selected' if n == my_name }}>{{ n }}</option>{% endfor %}
-      </select>
-    </div>
-    <textarea name="comment" rows="3" required placeholder="Type your comment after the interview..."
-              style="width:100%; font:inherit; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--card); color:var(--text); box-sizing:border-box;"></textarea>
-    <div class="form-actions"><button type="submit" class="btn">Add Comment</button></div>
   </form>
 </div>
 

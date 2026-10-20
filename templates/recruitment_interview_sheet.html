@@ -92,11 +92,11 @@
 <div class="section">INTERVIEW NOTES</div>
 <div class="box tall">{{ a.assess_notes or "" }}</div>
 
-{% if comments %}
 <div class="section">INTERVIEWER COMMENTS</div>
-<div class="box">{% for c in comments %}{{ c.author }} ({{ c.created_at[:10] }}): {{ c.comment }}{% if not loop.last %}
-{% endif %}{% endfor %}</div>
-{% endif %}
+{% for n in ["1", "2", "3"] %}
+<div class="box" style="min-height:44px;"><strong>{{ a['assess_c' ~ n ~ '_name'] or ("Interviewer " ~ n ~ ":") }}</strong>{% if a['assess_c' ~ n ~ '_name'] %}:{% endif %} {{ a['assess_c' ~ n ~ '_text'] or "" }}</div>
+{% endfor %}
+
 <div class="section">RECOMMENDATION</div>
 <div class="opts">
   {% for r in recommendations %}<div class="opt"><span class="sq {% if a.assess_recommendation == r %}on{% endif %}"></span> {{ r }}</div>{% endfor %}

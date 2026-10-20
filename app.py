@@ -312,6 +312,12 @@ try:
         _existing = [_r[1] for _r in _ensure_conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _existing and _col not in _existing:
             _ensure_conn.execute(f"ALTER TABLE {_tbl} ADD COLUMN {_col} " + ("INTEGER DEFAULT 0" if _tbl == "tax_profile" else "TEXT"))
+    _ensure_conn.execute("""CREATE TABLE IF NOT EXISTS job_application_assessments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, application_id INTEGER NOT NULL, slot INTEGER NOT NULL,
+        interviewer TEXT, expected_salary TEXT, current_salary TEXT, notice_period TEXT, available_from TEXT,
+        r_technical TEXT, r_experience TEXT, r_communication TEXT, r_attitude TEXT, r_teamwork TEXT,
+        strengths TEXT, concerns TEXT, recommendation TEXT, notes TEXT, saved_by TEXT, saved_at TEXT,
+        UNIQUE(application_id, slot))""")
     _ensure_conn.execute("""CREATE TABLE IF NOT EXISTS al_adjustment_documents (
         id INTEGER PRIMARY KEY AUTOINCREMENT, adjustment_id INTEGER NOT NULL,
         original_name TEXT NOT NULL, stored_name TEXT NOT NULL, uploaded_at TEXT NOT NULL)""")
@@ -319,6 +325,27 @@ try:
     _ensure_conn.close()
 except sqlite3.Error:
     pass  # /hr/migrate-schema applies the same columns if this ever fails
+# The first version of the interview assessment stored one assessment on job_applications itself;
+# move any of those into the new per-interviewer table as Interviewer 1 (idempotent).
+try:
+    _mig_conn = sqlite3.connect(DB_PATH)
+    _mig_conn.execute(
+        """INSERT INTO job_application_assessments (application_id, slot, interviewer, expected_salary, current_salary,
+               notice_period, available_from, r_technical, r_experience, r_communication, r_attitude, r_teamwork,
+               strengths, concerns, recommendation, notes, saved_by, saved_at)
+           SELECT ja.id, 1, COALESCE(ja.assess_c1_name, ja.interview_interviewer), ja.assess_expected_salary,
+               ja.assess_current_salary, ja.assess_notice_period, ja.assess_available_from, ja.assess_rating_technical,
+               ja.assess_rating_experience, ja.assess_rating_communication, ja.assess_rating_attitude,
+               ja.assess_rating_teamwork, ja.assess_strengths, ja.assess_concerns, ja.assess_recommendation,
+               ja.assess_notes, ja.assess_by, ja.assess_at
+           FROM job_applications ja
+           WHERE ja.assess_by IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM job_application_assessments x WHERE x.application_id = ja.id AND x.slot = 1)"""
+    )
+    _mig_conn.commit()
+    _mig_conn.close()
+except sqlite3.Error:
+    pass
 DOCUMENT_TYPES =["Job Application Form", "IC / Passport Copy", "Letter of Employment", "Confirmation Letter",
                    "Resignation Letter", "CP22A", "e-Stamping Certificate", "TP3 (Prior Employer Income)", "Other"]
 BUSINESS_TRIP_TYPES = ["Business Trip", "Out-Duty", "Training", "Unrecorded Leave", "Home Leave (Malaysia)"]
@@ -6358,7 +6385,7 @@ def recruitment_detail(app_id):
     return render_template(
         "recruitment_detail.html", a=application, documents=documents, reviewers=reviewers,
         rating_fields=INTERVIEW_RATING_FIELDS, recommendations=INTERVIEW_RECOMMENDATIONS,
-        commenters=commenters,
+        commenters=commenters, assessments=_load_assessments(db, app_id), slots=INTERVIEW_SLOTS,
         family=json.loads(application["family_particulars_json"] or "[]"),
         education=json.loads(application["education_json"] or "[]"),
         other_quals=json.loads(application["other_qualifications_json"] or "[]"),
@@ -6368,18 +6395,29 @@ def recruitment_detail(app_id):
 
 
 INTERVIEW_RATING_FIELDS = [
-    ("assess_rating_technical", "Technical skill"), ("assess_rating_experience", "Experience"),
-    ("assess_rating_communication", "Communication"), ("assess_rating_attitude", "Attitude"),
-    ("assess_rating_teamwork", "Teamwork"),
+    ("r_technical", "Technical skill"), ("r_experience", "Experience"),
+    ("r_communication", "Communication"), ("r_attitude", "Attitude"), ("r_teamwork", "Teamwork"),
 ]
 INTERVIEW_RECOMMENDATIONS = ["Proceed to offer", "Second interview", "Keep in view", "Reject"]
+INTERVIEW_SLOTS = (1, 2, 3)
 
 
-@app.route("/hr/recruitment/<int:app_id>/assessment", methods=["POST"])
-def recruitment_assessment_save(app_id):
-    """Saves the interviewer's assessment (salary expectation, availability, 1-5 ratings, strengths/
-    concerns, recommendation, notes) for one candidate. Same access rule as the rest of the
-    candidate page: full HR, or the reviewer the candidate was assigned to."""
+def _load_assessments(db, app_id):
+    """{slot: row} for the (up to three) interviewers' assessments of one candidate."""
+    try:
+        return {r["slot"]: r for r in db.execute(
+            "SELECT * FROM job_application_assessments WHERE application_id=?", (app_id,)).fetchall()}
+    except sqlite3.OperationalError:
+        return {}
+
+
+@app.route("/hr/recruitment/<int:app_id>/assessment/<int:slot>", methods=["POST"])
+def recruitment_assessment_save(app_id, slot):
+    """Saves one interviewer's assessment (Interviewer 1, 2 or 3) for a candidate: name, salary
+    expectation, availability, 1-5 ratings, strengths/concerns, recommendation and notes. Same
+    access rule as the rest of the candidate page: full HR, or the reviewer it was assigned to."""
+    if slot not in INTERVIEW_SLOTS:
+        abort(404)
     db = get_db()
     application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
     if application is None:
@@ -6388,44 +6426,53 @@ def recruitment_assessment_save(app_id):
         abort(403)
     f = request.form
 
+    def text(name):
+        return (f.get(name) or "").strip() or None
+
     def rating(name):
         v = f.get(name, "")
         return v if v in ("1", "2", "3", "4", "5") else None
 
-    rec = f.get("assess_recommendation")
+    rec = f.get("recommendation")
     db.execute(
-        """UPDATE job_applications SET assess_expected_salary=?, assess_current_salary=?, assess_notice_period=?,
-               assess_available_from=?, assess_rating_technical=?, assess_rating_experience=?,
-               assess_rating_communication=?, assess_rating_attitude=?, assess_rating_teamwork=?,
-               assess_strengths=?, assess_concerns=?, assess_recommendation=?, assess_notes=?,
-               assess_c1_name=?, assess_c1_text=?, assess_c2_name=?, assess_c2_text=?,
-               assess_c3_name=?, assess_c3_text=?, assess_by=?, assess_at=? WHERE id=?""",
-        ((f.get("assess_expected_salary") or "").strip() or None, (f.get("assess_current_salary") or "").strip() or None,
-         (f.get("assess_notice_period") or "").strip() or None, f.get("assess_available_from") or None,
-         rating("assess_rating_technical"), rating("assess_rating_experience"), rating("assess_rating_communication"),
-         rating("assess_rating_attitude"), rating("assess_rating_teamwork"),
-         (f.get("assess_strengths") or "").strip() or None, (f.get("assess_concerns") or "").strip() or None,
-         rec if rec in INTERVIEW_RECOMMENDATIONS else None, (f.get("assess_notes") or "").strip() or None,
-         *[(f.get(c) or "").strip() or None for c in
-           ("assess_c1_name", "assess_c1_text", "assess_c2_name", "assess_c2_text", "assess_c3_name", "assess_c3_text")],
-         session.get("hr_username"), datetime.datetime.now(MYT).isoformat(timespec="seconds"), app_id),
+        """INSERT INTO job_application_assessments (application_id, slot, interviewer, expected_salary, current_salary,
+               notice_period, available_from, r_technical, r_experience, r_communication, r_attitude, r_teamwork,
+               strengths, concerns, recommendation, notes, saved_by, saved_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(application_id, slot) DO UPDATE SET
+               interviewer=excluded.interviewer, expected_salary=excluded.expected_salary,
+               current_salary=excluded.current_salary, notice_period=excluded.notice_period,
+               available_from=excluded.available_from, r_technical=excluded.r_technical,
+               r_experience=excluded.r_experience, r_communication=excluded.r_communication,
+               r_attitude=excluded.r_attitude, r_teamwork=excluded.r_teamwork, strengths=excluded.strengths,
+               concerns=excluded.concerns, recommendation=excluded.recommendation, notes=excluded.notes,
+               saved_by=excluded.saved_by, saved_at=excluded.saved_at""",
+        (app_id, slot, text("interviewer"), text("expected_salary"), text("current_salary"), text("notice_period"),
+         f.get("available_from") or None, rating("r_technical"), rating("r_experience"), rating("r_communication"),
+         rating("r_attitude"), rating("r_teamwork"), text("strengths"), text("concerns"),
+         rec if rec in INTERVIEW_RECOMMENDATIONS else None, text("notes"),
+         session.get("hr_username"), datetime.datetime.now(MYT).isoformat(timespec="seconds")),
     )
     db.commit()
-    return redirect(url_for("recruitment_detail", app_id=app_id) + "#interview-assessment")
+    return redirect(url_for("recruitment_detail", app_id=app_id) + f"#assessment-{slot}")
 
 
 @app.route("/hr/recruitment/<int:app_id>/interview-sheet")
 def recruitment_interview_sheet(app_id):
-    """One-page printable interview sheet: candidate and interview details with whatever has been
-    assessed so far filled in, and blank lines/boxes for the rest, so the interviewer can write on
-    it during the interview."""
+    """One-page printable interview sheet for one interviewer (?slot=1, 2 or 3): candidate and
+    interview details, with that interviewer's assessment filled in as far as it has been
+    entered and blank lines/boxes for the rest, so it can also be written on by hand."""
     db = get_db()
     application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
     if application is None:
         abort(404)
     if not _can_review_application(application):
         abort(403)
-    return render_template("recruitment_interview_sheet.html", a=application,
+    slot = request.args.get("slot", type=int)
+    if slot not in INTERVIEW_SLOTS:
+        slot = 1
+    assess = _load_assessments(db, app_id).get(slot)
+    return render_template("recruitment_interview_sheet.html", a=application, s=assess, slot=slot,
                            rating_fields=INTERVIEW_RATING_FIELDS, recommendations=INTERVIEW_RECOMMENDATIONS)
 
 

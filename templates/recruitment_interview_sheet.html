@@ -50,7 +50,7 @@
   <div class="sub">Plo 192, Jalan Bakau 5, Kawasan Perindustrian Tanjung Langsat, 81700 Pasir Gudang, Johor, Malaysia.</div>
   <hr>
 </div>
-<div class="title">INTERVIEW ASSESSMENT SHEET</div>
+<div class="title">INTERVIEW ASSESSMENT SHEET &mdash; INTERVIEWER {{ slot }}</div>
 
 <table class="fields">
   <tr>
@@ -62,15 +62,15 @@
   </tr>
   <tr>
     <td class="label">Interview date</td><td class="fill">{{ a.interview_date or "" }}{% if a.interview_time %} &nbsp; {{ a.interview_time }}{% endif %}</td>
-    <td class="label">Interviewer</td><td class="fill">{{ a.interview_interviewer or "" }}</td>
+    <td class="label">Interviewer</td><td class="fill">{{ s.interviewer if s and s.interviewer else (a.interview_interviewer or "") }}</td>
   </tr>
   <tr>
-    <td class="label">Expected salary (RM)</td><td class="fill">{{ a.assess_expected_salary or "" }}</td>
-    <td class="label">Current / last salary (RM)</td><td class="fill">{{ a.assess_current_salary or "" }}</td>
+    <td class="label">Expected salary (RM)</td><td class="fill">{{ (s.expected_salary if s else "") or "" }}</td>
+    <td class="label">Current / last salary (RM)</td><td class="fill">{{ (s.current_salary if s else "") or "" }}</td>
   </tr>
   <tr>
-    <td class="label">Notice period</td><td class="fill">{{ a.assess_notice_period or "" }}</td>
-    <td class="label">Available to start</td><td class="fill">{{ a.assess_available_from or "" }}</td>
+    <td class="label">Notice period</td><td class="fill">{{ (s.notice_period if s else "") or "" }}</td>
+    <td class="label">Available to start</td><td class="fill">{{ (s.available_from if s else "") or "" }}</td>
   </tr>
 </table>
 
@@ -80,26 +80,21 @@
   {% for field, label in rating_fields %}
   <tr>
     <td class="name">{{ label }}</td>
-    {% for n in ["1", "2", "3", "4", "5"] %}<td><span class="circle {% if a[field] == n %}on{% endif %}">{{ n if a[field] == n else "" }}</span></td>{% endfor %}
+    {% for n in ["1", "2", "3", "4", "5"] %}<td><span class="circle {% if s and s[field] == n %}on{% endif %}">{{ n if s and s[field] == n else "" }}</span></td>{% endfor %}
   </tr>
   {% endfor %}
 </table>
 
 <div class="section">STRENGTHS</div>
-<div class="box">{{ a.assess_strengths or "" }}</div>
+<div class="box">{{ (s.strengths if s else "") or "" }}</div>
 <div class="section">CONCERNS</div>
-<div class="box">{{ a.assess_concerns or "" }}</div>
+<div class="box">{{ (s.concerns if s else "") or "" }}</div>
 <div class="section">INTERVIEW NOTES</div>
-<div class="box tall">{{ a.assess_notes or "" }}</div>
-
-<div class="section">INTERVIEWER COMMENTS</div>
-{% for n in ["1", "2", "3"] %}
-<div class="box" style="min-height:44px;"><strong>{{ a['assess_c' ~ n ~ '_name'] or ("Interviewer " ~ n ~ ":") }}</strong>{% if a['assess_c' ~ n ~ '_name'] %}:{% endif %} {{ a['assess_c' ~ n ~ '_text'] or "" }}</div>
-{% endfor %}
+<div class="box tall">{{ (s.notes if s else "") or "" }}</div>
 
 <div class="section">RECOMMENDATION</div>
 <div class="opts">
-  {% for r in recommendations %}<div class="opt"><span class="sq {% if a.assess_recommendation == r %}on{% endif %}"></span> {{ r }}</div>{% endfor %}
+  {% for r in recommendations %}<div class="opt"><span class="sq {% if s and s.recommendation == r %}on{% endif %}"></span> {{ r }}</div>{% endfor %}
 </div>
 
 <div class="sign-grid">

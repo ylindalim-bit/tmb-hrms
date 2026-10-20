@@ -92,6 +92,11 @@
 <div class="section">INTERVIEW NOTES</div>
 <div class="box tall">{{ a.assess_notes or "" }}</div>
 
+{% if comments %}
+<div class="section">INTERVIEWER COMMENTS</div>
+<div class="box">{% for c in comments %}{{ c.author }} ({{ c.created_at[:10] }}): {{ c.comment }}{% if not loop.last %}
+{% endif %}{% endfor %}</div>
+{% endif %}
 <div class="section">RECOMMENDATION</div>
 <div class="opts">
   {% for r in recommendations %}<div class="opt"><span class="sq {% if a.assess_recommendation == r %}on{% endif %}"></span> {{ r }}</div>{% endfor %}

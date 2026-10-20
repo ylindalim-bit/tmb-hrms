@@ -311,6 +311,9 @@ try:
         _existing = [_r[1] for _r in _ensure_conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _existing and _col not in _existing:
             _ensure_conn.execute(f"ALTER TABLE {_tbl} ADD COLUMN {_col} " + ("INTEGER DEFAULT 0" if _tbl == "tax_profile" else "TEXT"))
+    _ensure_conn.execute("""CREATE TABLE IF NOT EXISTS job_application_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, application_id INTEGER NOT NULL,
+        author TEXT NOT NULL, comment TEXT NOT NULL, created_at TEXT NOT NULL)""")
     _ensure_conn.execute("""CREATE TABLE IF NOT EXISTS al_adjustment_documents (
         id INTEGER PRIMARY KEY AUTOINCREMENT, adjustment_id INTEGER NOT NULL,
         original_name TEXT NOT NULL, stored_name TEXT NOT NULL, uploaded_at TEXT NOT NULL)""")
@@ -6351,15 +6354,69 @@ def recruitment_detail(app_id):
     reviewers = db.execute(
         "SELECT username, full_name FROM hr_users WHERE role='approver' AND can_review_recruitment='Y' ORDER BY full_name"
     ).fetchall()
+    commenters = [r["full_name"] for r in db.execute(
+        "SELECT full_name FROM hr_users WHERE full_name IS NOT NULL AND full_name != '' ORDER BY full_name"
+    ).fetchall()]
+    me = db.execute("SELECT full_name FROM hr_users WHERE username=?", (session.get("hr_username"),)).fetchone()
+    my_name = me["full_name"] if me and me["full_name"] else ""
     return render_template(
         "recruitment_detail.html", a=application, documents=documents, reviewers=reviewers,
         rating_fields=INTERVIEW_RATING_FIELDS, recommendations=INTERVIEW_RECOMMENDATIONS,
+        comments=_interviewer_comments(db, app_id), commenters=commenters, my_name=my_name,
         family=json.loads(application["family_particulars_json"] or "[]"),
         education=json.loads(application["education_json"] or "[]"),
         other_quals=json.loads(application["other_qualifications_json"] or "[]"),
         languages=json.loads(application["languages_json"] or "[]"),
         employment=json.loads(application["employment_history_json"] or "[]"),
     )
+
+
+def _interviewer_comments(db, app_id):
+    try:
+        return db.execute(
+            "SELECT * FROM job_application_comments WHERE application_id=? ORDER BY created_at, id", (app_id,)
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+
+
+@app.route("/hr/recruitment/<int:app_id>/comments", methods=["POST"])
+def recruitment_comment_add(app_id):
+    """Adds one dated comment to a candidate, signed with the interviewer's name (e.g. Mr Kee and
+    Linda each leaving their own view after interviewing). Comments are never overwritten."""
+    db = get_db()
+    application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
+    if application is None:
+        abort(404)
+    if not _can_review_application(application):
+        abort(403)
+    text = (request.form.get("comment") or "").strip()
+    if text:
+        names = {r["full_name"] for r in db.execute("SELECT full_name FROM hr_users").fetchall() if r["full_name"]}
+        author = (request.form.get("author") or "").strip()
+        if author not in names:
+            me = db.execute("SELECT full_name FROM hr_users WHERE username=?", (session.get("hr_username"),)).fetchone()
+            author = (me["full_name"] if me and me["full_name"] else session.get("hr_username")) or "HR"
+        db.execute(
+            "INSERT INTO job_application_comments (application_id, author, comment, created_at) VALUES (?,?,?,?)",
+            (app_id, author, text, datetime.datetime.now(MYT).isoformat(timespec="seconds")),
+        )
+        db.commit()
+    return redirect(url_for("recruitment_detail", app_id=app_id) + "#interviewer-comments")
+
+
+@app.route("/hr/recruitment/comments/<int:comment_id>/delete", methods=["POST"])
+def recruitment_comment_delete(comment_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM job_application_comments WHERE id=?", (comment_id,)).fetchone()
+    if row is None:
+        abort(404)
+    application = db.execute("SELECT * FROM job_applications WHERE id=?", (row["application_id"],)).fetchone()
+    if application is None or not _can_review_application(application):
+        abort(403)
+    db.execute("DELETE FROM job_application_comments WHERE id=?", (comment_id,))
+    db.commit()
+    return redirect(url_for("recruitment_detail", app_id=row["application_id"]) + "#interviewer-comments")
 
 
 INTERVIEW_RATING_FIELDS = [
@@ -6418,7 +6475,8 @@ def recruitment_interview_sheet(app_id):
     if not _can_review_application(application):
         abort(403)
     return render_template("recruitment_interview_sheet.html", a=application,
-                           rating_fields=INTERVIEW_RATING_FIELDS, recommendations=INTERVIEW_RECOMMENDATIONS)
+                           rating_fields=INTERVIEW_RATING_FIELDS, recommendations=INTERVIEW_RECOMMENDATIONS,
+                           comments=_interviewer_comments(db, app_id))
 
 
 @app.route("/hr/recruitment/<int:app_id>/create-employee")

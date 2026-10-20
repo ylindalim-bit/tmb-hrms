@@ -3287,7 +3287,7 @@ def _rows_with_days_left(db, date_column, extra_cols="", exclude_if_confirmed=Fa
     )
     out = []
     for r in db.execute(
-        f"""SELECT emp_id, full_name, department, position {extra_cols}, {date_column} AS the_date
+        f"""SELECT emp_id, full_name, base, department, position {extra_cols}, {date_column} AS the_date
             FROM employees WHERE {date_column} IS NOT NULL AND {date_column} != ''
               AND (status IS NULL OR status != 'Inactive')
               {confirmed_clause}

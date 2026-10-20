@@ -2635,9 +2635,21 @@ def attendance_daily(emp_id, year, month):
 
     days, monthly, cewi_incentive = _daily_attendance_view_data(db, emp, year, month)
 
+    # Other active staff at the same base, so HR can hop between them without going back to the list.
+    base_staff = db.execute(
+        """SELECT emp_id, full_name FROM employees
+           WHERE COALESCE(base,'') = COALESCE(?, '') AND (status IS NULL OR status != 'Inactive') ORDER BY emp_id""",
+        (emp["base"],),
+    ).fetchall()
+    ids = [r["emp_id"] for r in base_staff]
+    pos = ids.index(emp_id) if emp_id in ids else -1
+    prev_staff = ids[pos - 1] if pos > 0 else None
+    next_staff = ids[pos + 1] if 0 <= pos < len(ids) - 1 else None
+
     return render_template("attendance_daily.html", emp=emp, year=year, month=month,
                             days=days, day_types=DAY_TYPES, monthly=monthly,
-                            cewi_incentive=cewi_incentive)
+                            cewi_incentive=cewi_incentive, base_staff=base_staff,
+                            prev_staff=prev_staff, next_staff=next_staff)
 
 
 def _bulk_fill_plan(db, emp_ids, date_from, date_to):

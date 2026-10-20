@@ -11,6 +11,19 @@
   <a href="{{ url_for('attendance_daily', emp_id=emp.emp_id, year=year if month<12 else year+1, month=month+1 if month<12 else 1) }}">Next &raquo;</a>
   <a href="{{ url_for('attendance', year=year, month=month) }}" style="margin-left:16px; color:var(--muted);">&larr; Back to monthly totals</a>
 </div>
+{% if base_staff|length > 1 %}
+<div class="month-nav" style="margin-top:6px;">
+  {% if prev_staff %}<a href="{{ url_for('attendance_daily', emp_id=prev_staff, year=year, month=month) }}" class="staff-switch">&laquo; Prev staff</a>{% endif %}
+  <label style="display:inline-flex; gap:6px; align-items:center; font-weight:600;">Staff at {{ emp.base or '-' }}:
+    <select id="staff_switch" style="min-width:260px;">
+      {% for s in base_staff %}
+      <option value="{{ url_for('attendance_daily', emp_id=s.emp_id, year=year, month=month) }}" {{ 'selected' if s.emp_id == emp.emp_id }}>{{ s.emp_id }} &mdash; {{ s.full_name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% if next_staff %}<a href="{{ url_for('attendance_daily', emp_id=next_staff, year=year, month=month) }}" class="staff-switch">Next staff &raquo;</a>{% endif %}
+</div>
+{% endif %}
 
 <p style="color:var(--muted); font-size:13px;">
   Enter each day's status, Time In/Out, meal allowance, CEWI, and OT hours. Saving recalculates this month's
@@ -161,5 +174,24 @@ document.querySelectorAll('input[name^="time_in__"], input[name^="time_out__"], 
 });
 {% endif %}
 updateAttendanceTotals();
+// Switching to another staff member: warn first if this page has unsaved changes.
+(function () {
+  var dirty = false;
+  document.querySelectorAll('form').forEach(function (f) {
+    f.addEventListener('input', function () { dirty = true; });
+    f.addEventListener('change', function () { dirty = true; });
+    f.addEventListener('submit', function () { dirty = false; });
+  });
+  function go(url) {
+    if (!dirty || confirm('You have unsaved changes on this page. Leave without saving?')) { window.location = url; }
+  }
+  var sel = document.getElementById('staff_switch');
+  if (sel) {
+    sel.addEventListener('change', function () { go(sel.value); });
+  }
+  document.querySelectorAll('a.staff-switch').forEach(function (a) {
+    a.addEventListener('click', function (e) { e.preventDefault(); go(a.href); });
+  });
+})();
 </script>
 {% endblock %}

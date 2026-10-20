@@ -11,8 +11,15 @@
   <a href="{{ url_for('attendance_daily', emp_id=emp.emp_id, year=year if month<12 else year+1, month=month+1 if month<12 else 1) }}">Next &raquo;</a>
   <a href="{{ url_for('attendance', year=year, month=month) }}" style="margin-left:16px; color:var(--muted);">&larr; Back to monthly totals</a>
 </div>
-{% if base_staff|length > 1 %}
+{% if base_first|length > 1 or base_staff|length > 1 %}
 <div class="month-nav" style="margin-top:6px;">
+  <label style="display:inline-flex; gap:6px; align-items:center; font-weight:600;">Base:
+    <select id="base_switch">
+      {% for b, first in base_first.items() %}
+      <option value="{{ url_for('attendance_daily', emp_id=first, year=year, month=month) }}" {{ 'selected' if b == emp.base }}>{{ b }}</option>
+      {% endfor %}
+    </select>
+  </label>
   {% if prev_staff %}<a href="{{ url_for('attendance_daily', emp_id=prev_staff, year=year, month=month) }}" class="staff-switch">&laquo; Prev staff</a>{% endif %}
   <label style="display:inline-flex; gap:6px; align-items:center; font-weight:600;">Staff at {{ emp.base or '-' }}:
     <select id="staff_switch" style="min-width:260px;">
@@ -188,6 +195,10 @@ updateAttendanceTotals();
   var sel = document.getElementById('staff_switch');
   if (sel) {
     sel.addEventListener('change', function () { go(sel.value); });
+  }
+  var baseSel = document.getElementById('base_switch');
+  if (baseSel) {
+    baseSel.addEventListener('change', function () { go(baseSel.value); });
   }
   document.querySelectorAll('a.staff-switch').forEach(function (a) {
     a.addEventListener('click', function (e) { e.preventDefault(); go(a.href); });

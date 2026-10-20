@@ -2641,6 +2641,13 @@ def attendance_daily(emp_id, year, month):
            WHERE COALESCE(base,'') = COALESCE(?, '') AND (status IS NULL OR status != 'Inactive') ORDER BY emp_id""",
         (emp["base"],),
     ).fetchall()
+    # First active person at each base, so the Base picker can jump straight to that base's staff.
+    base_first = {}
+    for r in db.execute(
+        """SELECT emp_id, base FROM employees WHERE base IS NOT NULL AND base != ''
+           AND (status IS NULL OR status != 'Inactive') ORDER BY emp_id"""
+    ).fetchall():
+        base_first.setdefault(r["base"], r["emp_id"])
     ids = [r["emp_id"] for r in base_staff]
     pos = ids.index(emp_id) if emp_id in ids else -1
     prev_staff = ids[pos - 1] if pos > 0 else None
@@ -2649,7 +2656,7 @@ def attendance_daily(emp_id, year, month):
     return render_template("attendance_daily.html", emp=emp, year=year, month=month,
                             days=days, day_types=DAY_TYPES, monthly=monthly,
                             cewi_incentive=cewi_incentive, base_staff=base_staff,
-                            prev_staff=prev_staff, next_staff=next_staff)
+                            prev_staff=prev_staff, next_staff=next_staff, base_first=base_first)
 
 
 def _bulk_fill_plan(db, emp_ids, date_from, date_to):

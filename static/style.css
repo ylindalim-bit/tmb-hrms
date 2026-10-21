@@ -175,6 +175,11 @@ tbody tr:hover td.sticky-col { background: #fafbfc; }
 .pill.status-confirmation-due { background: #fef3c7; color: #92400e; }
 .pill.status-confirmed { background: #dcfce7; color: var(--good); }
 .pill.status-inactive { background: #fee2e2; color: var(--danger); }
+/* Recruitment stages */
+.pill.stage-new { background: #fef3c7; color: #92400e; }
+.pill.stage-reviewed { background: #e5e7eb; color: #374151; }
+.pill.stage-shortlisted { background: #dbeafe; color: #1e40af; }
+.pill.stage-interviewed { background: #ede9fe; color: #5b21b6; }
 input[type=text], input[type=number], input[type=password], input[type=date], input[type=email], select {
   padding: 6px 8px;
   border: 1px solid var(--border);

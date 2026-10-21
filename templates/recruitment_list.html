@@ -54,7 +54,7 @@
   <table>
     <thead>
       <tr><th class="text">Name</th><th class="text">Position Applied For</th><th class="text">Contact</th>
-          <th class="text">Status</th><th class="text">Interview</th><th class="text">Submitted</th></tr>
+          <th class="text">Status</th><th class="text">Interview</th><th class="text">Comments</th><th class="text">Submitted</th></tr>
     </thead>
     <tbody>
       {% for a in applications %}
@@ -66,10 +66,11 @@
           <span class="pill {% if a.status == 'Hired' %}finalized{% elif a.status == 'Not Suitable' %}rejected{% else %}draft{% endif %}">{{ a.status }}</span>
         </td>
         <td class="text">{% if a.interview_date %}<span {% if a.interview_date == today_iso %}style="font-weight:700; color:var(--danger);"{% elif a.interview_date < today_iso %}style="color:var(--muted);"{% endif %}>{{ a.interview_date }}{% if a.interview_time %} {{ a.interview_time }}{% endif %}</span>{% if a.interview_interviewer %}<div style="font-size:12px; color:var(--muted);">Interviewer: {{ a.interview_interviewer }}</div>{% endif %}{% else %}<span style="color:var(--muted);">-</span>{% endif %}</td>
+        <td class="text" style="max-width:260px; font-size:13px;" {% if a.comments %}title="{{ a.comments }}"{% endif %}>{% if a.comments %}{{ a.comments if a.comments|length <= 90 else a.comments[:90] ~ '…' }}{% else %}<span style="color:var(--muted);">-</span>{% endif %}</td>
         <td class="text">{{ a.submitted_at }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="text" style="color:var(--muted);">No applications yet.</td></tr>
+      <tr><td colspan="7" class="text" style="color:var(--muted);">No applications yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

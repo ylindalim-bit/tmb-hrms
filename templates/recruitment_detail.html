@@ -83,7 +83,7 @@
       {% endif %}
       <div><label>Status</label>
         <select name="status">
-          {% for s in ["New", "Reviewed", "Shortlisted", "Not Suitable", "Hired"] %}
+          {% for s in ["New", "Reviewed", "Shortlisted", "Interviewed", "Not Suitable", "Hired"] %}
           <option value="{{ s }}" {{ "selected" if a.status == s }}>{{ s }}</option>
           {% endfor %}
         </select>

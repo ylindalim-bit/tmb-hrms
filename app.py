@@ -6288,16 +6288,16 @@ def recruitment_list():
         where.append("status=?")
         params.append(status_filter)
     else:
-        where.append("status IN ('New', 'Reviewed', 'Shortlisted')")
+        where.append("status IN ('New', 'Reviewed', 'Shortlisted', 'Interviewed')")
     query = "SELECT * FROM job_applications"
     if where:
         query += " WHERE " + " AND ".join(where)
-    # Pipeline order (New -> Reviewed -> Shortlisted -> Hired -> Not Suitable), newest first within each stage.
+    # Pipeline order (New -> Reviewed -> Shortlisted -> Interviewed -> Hired -> Not Suitable), newest first within each stage.
     if status_filter == "interview":
         query += " ORDER BY interview_date, COALESCE(interview_time, '')"
     else:
         query += (" ORDER BY CASE status WHEN 'New' THEN 1 WHEN 'Reviewed' THEN 2 WHEN 'Shortlisted' THEN 3 "
-                  "WHEN 'Hired' THEN 4 WHEN 'Not Suitable' THEN 5 ELSE 6 END, submitted_at DESC")
+                  "WHEN 'Interviewed' THEN 4 WHEN 'Hired' THEN 5 WHEN 'Not Suitable' THEN 6 ELSE 7 END, submitted_at DESC")
     applications = db.execute(query, params).fetchall()
     count_query = "SELECT status, COUNT(*) AS n FROM job_applications"
     if scope_where:

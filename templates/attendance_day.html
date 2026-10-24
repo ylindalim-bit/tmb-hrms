@@ -43,7 +43,7 @@
 
 <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
   {% for key, label in category_labels.items() %}{% if counts.get(key) %}
-  <span class="pill" style="{{ pill_style[key] }} font-size:13px; padding:4px 10px;">{{ label }}: {{ counts[key] }}</span>
+  <span class="pill status-chip" data-key="{{ key }}" style="{{ pill_style[key] }} font-size:13px; padding:4px 10px;">{{ label }}: <span class="chip-n">{{ counts[key] }}</span></span>
   {% endif %}{% endfor %}
 </div>
 
@@ -58,7 +58,7 @@
 </thead>
 <tbody>
 {% for r in rows %}
-<tr data-base="{{ r.emp.base or '' }}"{% if r.category == 'none' %} style="background:#fef3c7;"{% elif r.category == 'incomplete' %} style="background:#fee2e2;"{% endif %}>
+<tr data-base="{{ r.emp.base or '' }}" data-category="{{ r.category }}"{% if r.category == 'none' %} style="background:#fef3c7;"{% elif r.category == 'incomplete' %} style="background:#fee2e2;"{% endif %}>
   <td class="text">{{ r.emp.emp_id }}</td>
   <td class="text">{{ r.emp.full_name }}</td>
   <td class="text">{{ r.emp.base or "-" }}</td>
@@ -83,6 +83,16 @@ function filterByBase(base) {
     if (visible) shown++;
   });
   document.getElementById('shown-count').textContent = shown;
+  // The status chips (Present, On leave, ...) follow the base being shown, not the whole company.
+  var tally = {};
+  document.querySelectorAll('#day-table tbody tr').forEach(function (row) {
+    if (row.style.display !== 'none') { tally[row.dataset.category] = (tally[row.dataset.category] || 0) + 1; }
+  });
+  document.querySelectorAll('.status-chip').forEach(function (chip) {
+    var n = tally[chip.dataset.key] || 0;
+    chip.querySelector('.chip-n').textContent = n;
+    chip.style.display = n ? '' : 'none';
+  });
   document.querySelectorAll('.base-filter-btn').forEach(function (btn) {
     btn.classList.toggle('secondary', btn.dataset.base !== base);
   });

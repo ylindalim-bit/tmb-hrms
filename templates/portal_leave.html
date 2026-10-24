@@ -98,17 +98,18 @@
   </div>
   <div class="table-wrap">
   <table>
-    <thead><tr><th class="text">Type</th><th class="text">Dates</th><th>Days</th><th class="text">Status</th><th class="text">Notes</th><th class="text">Document</th><th></th></tr></thead>
+    <thead><tr><th class="text">Type</th><th class="text">Dates</th><th>Days</th><th class="text">Your Reason</th><th class="text">Status</th><th class="text">HR Notes</th><th class="text">Document</th><th></th></tr></thead>
     <tbody id="leave_requests_body">
       {% for lr in requests %}
       <tr data-leave-type="{{ lr.leave_type }}">
         <td class="text">{{ lr.leave_type }}</td>
         <td class="text">{{ lr.start_date }}{% if lr.half_day %}<div style="font-size:11px; color:var(--muted);">Half day &mdash; {{ 'morning off' if lr.half_day == 'AM' else 'afternoon off' }}</div>{% else %} &ndash; {{ lr.end_date }}{% endif %}</td>
         <td>{{ lr.days }}</td>
+        <td class="text" style="white-space:normal; min-width:130px;">{{ lr.reason or "-" }}</td>
         <td class="text">
           <span class="pill {% if lr.status == 'Approved' %}finalized{% elif lr.status == 'Pending' %}draft{% else %}rejected{% endif %}">{{ lr.status }}</span>
         </td>
-        <td class="text">{{ lr.review_notes or "" }}</td>
+        <td class="text" style="white-space:normal; min-width:110px;">{{ lr.review_notes or "-" }}</td>
         <td class="text">
           {% set docs = documents_by_request.get(lr.id, []) %}
           {% if docs %}
@@ -146,7 +147,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="7" class="text" style="color:var(--muted);">No leave requests yet.</td></tr>
+      <tr><td colspan="8" class="text" style="color:var(--muted);">No leave requests yet.</td></tr>
       {% endfor %}
     </tbody>
     {% if requests %}
@@ -155,19 +156,19 @@
         <td class="text">Subtotal (Approved, {{ cur_year }})</td>
         <td class="text">Annual Leave</td>
         <td>{{ al_used }}</td>
-        <td class="text" colspan="4"></td>
+        <td class="text" colspan="5"></td>
       </tr>
       <tr class="totals-row">
         <td class="text"></td>
         <td class="text">Medical Leave</td>
         <td>{{ mc_used }}</td>
-        <td class="text" colspan="4"></td>
+        <td class="text" colspan="5"></td>
       </tr>
       <tr class="totals-row">
         <td class="text"></td>
         <td class="text">Unpaid Leave</td>
         <td>{{ ul_used }}</td>
-        <td class="text" colspan="4"></td>
+        <td class="text" colspan="5"></td>
       </tr>
     </tfoot>
     {% endif %}

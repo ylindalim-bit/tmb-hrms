@@ -34,6 +34,26 @@
   {% endif %}
 </div>
 
+{% if excused is not none %}
+<div class="card" style="background:#dcfce7; border-color:#16a34a; font-weight:600;">Late-in waived for {{ excused }} {{ excused_base }} staff on {{ date_iso }} (marked Excused, no deduction).</div>
+{% endif %}
+{% if hr_role != "approver" and base_options %}
+<details class="card" style="margin-bottom:12px;">
+  <summary style="cursor:pointer; font-weight:600;">Waive late-in for a whole base on this day (e.g. bus came late)</summary>
+  <form method="post" action="{{ url_for('attendance_day_excuse_late', date_str=date_iso) }}" style="margin-top:10px;"
+        onsubmit="return confirm('Mark every late-in at this base on {{ date_iso }} as Excused (no deduction)?');">
+    <div class="form-grid">
+      <div><label>Base</label>
+        <select name="base" required>
+          {% for b in base_options %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
+        </select></div>
+      <div><label>Remark</label><input type="text" name="reason" value="Bus came late" style="width:100%;"></div>
+    </div>
+    <div class="form-actions"><button class="btn" type="submit">Waive late-in</button></div>
+    <p style="font-size:12px; color:var(--muted);">Only staff who are actually late are changed. Anyone already marked Excused or Personal is left as it is.</p>
+  </form>
+</details>
+{% endif %}
 <p style="color:var(--muted); font-size:13px;">
   Read-only. Listed with the ones needing attention first. <strong>No record</strong> means nothing is saved for that
   person that day - no attendance, approved leave, Movement Notice or public holiday - so it could be absent,

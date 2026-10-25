@@ -3322,7 +3322,42 @@ def attendance_day(date_str):
         next_date=(the_date + datetime.timedelta(days=1)).isoformat(), rows=rows, counts=counts,
         category_order=category_order, category_labels=category_labels,
         base_options=base_options_present,
+        excused=request.args.get("excused", type=int), excused_base=request.args.get("excused_base", ""),
     )
+
+
+@app.route("/attendance-day/<date_str>/excuse-late", methods=["POST"])
+def attendance_day_excuse_late(date_str):
+    """Waives the late-in of everyone at a base on one date (e.g. the staff bus came late): marks
+    each late-in WORKED day as Excused - so nothing is deducted - with the reason as the remark.
+    Only touches days that are actually late and don't already have an Excused/Personal decision."""
+    try:
+        datetime.date.fromisoformat(date_str)
+    except ValueError:
+        abort(404)
+    base = (request.form.get("base") or "").strip()
+    reason = (request.form.get("reason") or "").strip() or "Excused"
+    db = get_db()
+    schedule_history = _load_schedule_history(db)
+    changed = 0
+    for emp in db.execute(
+        "SELECT * FROM employees WHERE COALESCE(base,'')=? AND (status IS NULL OR status != 'Inactive')", (base,)
+    ).fetchall():
+        row = db.execute("SELECT * FROM attendance_daily WHERE emp_id=? AND date=?", (emp["emp_id"], date_str)).fetchone()
+        if row is None or row["day_type"] != "WORKED" or not row["time_in"] or row["late_early_type"]:
+            continue
+        start, _end = _hours_on(schedule_history, emp, date_str)
+        start_min, in_min = _hhmm_to_minutes(start), _hhmm_to_minutes(row["time_in"])
+        if start_min is None or in_min is None or in_min <= start_min + LATE_EARLY_GRACE_MINUTES:
+            continue
+        if _half_leave_type(row) and row["half_leave_session"] == "AM":
+            continue
+        db.execute(
+            "UPDATE attendance_daily SET late_early_type='Excused', late_early_remark=? WHERE id=?", (reason, row["id"])
+        )
+        changed += 1
+    db.commit()
+    return redirect(url_for("attendance_day", date_str=date_str, excused=changed, excused_base=base))
 
 
 # ---------------- Alerts (Confirmation / Passport / Work Permit) ----------------

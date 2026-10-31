@@ -9750,8 +9750,12 @@ def ot_claims_generate():
         ph_marked = row["day_type"] == "PH"
         if ph_marked or _is_rest_day(db, date_iso, emp["base"]):
             # Worked on a Sunday / public holiday (or a day marked PH on attendance): the whole span is OT.
-            if t_out - t_in >= min_minutes:
-                fields = {"ot_start": row["time_in"], "ot_end": row["time_out"]}
+            span_in, span_out = t_in, t_out
+            if request.form.get("clip_hours") == "1":
+                # Count only the normal working hours (e.g. 08:00-17:00), not time before/after them.
+                span_in, span_out = max(t_in, s_min), min(t_out, e_min)
+            if span_out - span_in >= min_minutes:
+                fields = {"ot_start": f"{span_in // 60:02d}:{span_in % 60:02d}", "ot_end": f"{span_out // 60:02d}:{span_out % 60:02d}"}
                 if ph_marked:
                     fields["ph_day"] = "1"
         else:

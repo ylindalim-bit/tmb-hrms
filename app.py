@@ -7755,7 +7755,7 @@ def portal_leave():
             return redirect(url_for("portal_leave"))
 
     my_requests = db.execute(
-        """SELECT * FROM leave_requests WHERE emp_id=? ORDER BY submitted_at DESC""",
+        """SELECT * FROM leave_requests WHERE emp_id=? ORDER BY start_date DESC, submitted_at DESC""",
         (emp["emp_id"],),
     ).fetchall()
     documents_by_request = {}

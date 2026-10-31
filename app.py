@@ -9548,7 +9548,7 @@ def ot_claims_admin():
     pending = db.execute(
         """SELECT oc.*, e.full_name FROM ot_claims oc
            JOIN employees e ON e.emp_id = oc.emp_id
-           WHERE oc.status='Pending' ORDER BY oc.submitted_at"""
+           WHERE oc.status='Pending' ORDER BY oc.claim_date, oc.emp_id, oc.submitted_at"""
     ).fetchall()
     reviewed = db.execute(
         """SELECT oc.*, e.full_name FROM ot_claims oc

@@ -33,17 +33,6 @@
 </div>
 {% endif %}
 
-<p style="color:var(--muted); font-size:13px;">
-  Enter each day's status, Time In/Out, meal allowance, CEWI, and OT hours. Saving recalculates this month's
-  totals (Days Worked, AL/MC/HL/UL, PH, Meal/CEWI Eligible Days, OT hours) automatically - the same figures
-  the bulk Attendance page and payroll read. Meal and CEWI are separate checkboxes - a day can be eligible
-  for one without the other. Rows shaded <span style="background:#fee2e2; padding:1px 5px;">red</span> are a
-  WORKED day missing Time In or Time Out. Rows shaded <span style="background:#fef3c7; padding:1px 5px;">amber</span> have
-  no record at all that day - no attendance, no approved leave, no Movement Notice. Rows shaded
-  <span style="background:#dbeafe; padding:1px 5px;">blue</span> clocked in later or out earlier than this
-  employee's Normal Start/End Time ({{ emp.standard_start or "-" }} &ndash; {{ emp.standard_end or "-" }}),
-  beyond a 5-minute grace period either side. For a late-in or early-out, choose <strong>Excused</strong> (a good reason, e.g. out on company duty - no deduction, shows grey) or <strong>Personal</strong> (deducted from salary per minute, shows <span style="background:#ffedd5; padding:1px 5px;">orange</span>), and type the reason. Blue means you haven't decided yet. A day covered by an approved Business Trip, Out-Duty or Training Movement Notice is excused automatically. Personal minutes are added up on the monthly Attendance page, which suggests the deduction there.
-</p>
 {% if emp.ot_approval_required == "Y" %}
 <div class="card" style="background:#fef9c3; border-color:#eab308;">
   This employee's OT needs approval before it counts in payroll, so the OT columns below are read-only.
@@ -149,6 +138,18 @@
   </div>
 </div>
 {% endif %}
+<h3 style="margin:18px 0 4px; font-size:14px;">How this page works</h3>
+<p style="color:var(--muted); font-size:13px; margin-top:18px;">
+  Enter each day's status, Time In/Out, meal allowance, CEWI, and OT hours. Saving recalculates this month's
+  totals (Days Worked, AL/MC/HL/UL, PH, Meal/CEWI Eligible Days, OT hours) automatically - the same figures
+  the bulk Attendance page and payroll read. Meal and CEWI are separate checkboxes - a day can be eligible
+  for one without the other. Rows shaded <span style="background:#fee2e2; padding:1px 5px;">red</span> are a
+  WORKED day missing Time In or Time Out. Rows shaded <span style="background:#fef3c7; padding:1px 5px;">amber</span> have
+  no record at all that day - no attendance, no approved leave, no Movement Notice. Rows shaded
+  <span style="background:#dbeafe; padding:1px 5px;">blue</span> clocked in later or out earlier than this
+  employee's Normal Start/End Time ({{ emp.standard_start or "-" }} &ndash; {{ emp.standard_end or "-" }}),
+  beyond a 5-minute grace period either side. For a late-in or early-out, choose <strong>Excused</strong> (a good reason, e.g. out on company duty - no deduction, shows grey) or <strong>Personal</strong> (deducted from salary per minute, shows <span style="background:#ffedd5; padding:1px 5px;">orange</span>), and type the reason. Blue means you haven't decided yet. A day covered by an approved Business Trip, Out-Duty or Training Movement Notice is excused automatically. Personal minutes are added up on the monthly Attendance page, which suggests the deduction there.
+</p>
 <script>
 function updateAttendanceTotals() {
   var mealCount = document.querySelectorAll('.meal-input:checked').length;

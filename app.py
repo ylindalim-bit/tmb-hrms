@@ -9629,15 +9629,46 @@ def _apply_ot_claim_to_attendance(db, emp_id, claim_date, time_in, time_out, ot_
 @app.route("/ot-claims")
 def ot_claims_admin():
     db = get_db()
+    # Optional filters: tick staff (?emp=A001&emp=M001) and/or a claim-date range (?date_from=&date_to=).
+    filter_emps = [e for e in request.args.getlist("emp") if e]
+    date_from = request.args.get("date_from", "")
+    date_to = request.args.get("date_to", "")
+    where, params = "", []
+    if filter_emps:
+        where += " AND oc.emp_id IN (%s)" % ",".join("?" * len(filter_emps))
+        params += filter_emps
+    if date_from:
+        where += " AND oc.claim_date >= ?"
+        params.append(date_from)
+    if date_to:
+        where += " AND oc.claim_date <= ?"
+        params.append(date_to)
+    filtered = bool(where)
     pending = db.execute(
-        """SELECT oc.*, e.full_name FROM ot_claims oc
+        f"""SELECT oc.*, e.full_name FROM ot_claims oc
            JOIN employees e ON e.emp_id = oc.emp_id
-           WHERE oc.status='Pending' ORDER BY oc.claim_date, oc.emp_id, oc.submitted_at"""
+           WHERE oc.status='Pending' {where} ORDER BY oc.emp_id, oc.claim_date, oc.submitted_at""", params
+    ).fetchall()
+    # Pending claims grouped by employee, with each person's totals.
+    pending_groups = []
+    for c in pending:
+        if not pending_groups or pending_groups[-1]["emp_id"] != c["emp_id"]:
+            pending_groups.append({"emp_id": c["emp_id"], "full_name": c["full_name"], "claims": [],
+                                   "h15": 0.0, "h20": 0.0, "h30": 0.0})
+        g = pending_groups[-1]
+        g["claims"].append(c)
+        g["h15"] += c["ot_hours_1_5"] or 0
+        g["h20"] += c["ot_hours_2_0"] or 0
+        g["h30"] += c["ot_hours_3_0"] or 0
+    claim_employees = db.execute(
+        """SELECT DISTINCT oc.emp_id, e.full_name FROM ot_claims oc JOIN employees e ON e.emp_id = oc.emp_id
+           ORDER BY oc.emp_id"""
     ).fetchall()
     reviewed = db.execute(
-        """SELECT oc.*, e.full_name FROM ot_claims oc
+        f"""SELECT oc.*, e.full_name FROM ot_claims oc
            JOIN employees e ON e.emp_id = oc.emp_id
-           WHERE oc.status!='Pending' ORDER BY oc.reviewed_at DESC LIMIT 50"""
+           WHERE oc.status!='Pending' {where}
+           ORDER BY {"oc.emp_id, oc.claim_date" if filtered else "oc.reviewed_at DESC"} {"" if filtered else "LIMIT 50"}""", params
     ).fetchall()
     flagged_employees = db.execute(
         """SELECT emp_id, full_name, standard_start, standard_end FROM employees
@@ -9662,6 +9693,8 @@ def ot_claims_admin():
     generator_employees = db.execute(
         "SELECT emp_id, full_name FROM employees WHERE status='Active' ORDER BY emp_id").fetchall()
     return render_template("ot_claims_admin.html", pending=pending, reviewed=reviewed, generator_employees=generator_employees,
+                            pending_groups=pending_groups, claim_employees=claim_employees, filter_emps=filter_emps,
+                            date_from=date_from, date_to=date_to, filtered=filtered,
                             flagged_employees=flagged_employees, approver_names=approver_names,
                             generated=request.args.get("generated", type=int), skipped=request.args.get("skipped", type=int),
                             gen_emp=request.args.get("gen_emp", ""), gen_error=request.args.get("gen_error"),

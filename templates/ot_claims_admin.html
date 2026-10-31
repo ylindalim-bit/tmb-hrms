@@ -92,17 +92,45 @@
 </div>
 
 <div class="card">
-  <h2 style="margin-top:0;">Pending ({{ pending|length }})</h2>
-  <p style="color:var(--muted); font-size:13px; margin-top:-8px;">Awaiting approval from {{ approver_names }}.</p>
+  <h2 style="margin-top:0;">Show claims for</h2>
+  <form method="get">
+    <div class="form-grid" style="margin-bottom:8px;">
+      <div><label>From date</label><input type="date" name="date_from" value="{{ date_from }}"></div>
+      <div><label>To date</label><input type="date" name="date_to" value="{{ date_to }}"></div>
+    </div>
+    <label style="display:block; font-size:12px; color:var(--muted); font-weight:600; margin-bottom:4px;">Staff (leave all unticked to show everyone)</label>
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:2px 16px;">
+      {% for e in claim_employees %}
+      <label style="display:flex; gap:6px; align-items:center; font-weight:400; font-size:13px;">
+        <input type="checkbox" name="emp" value="{{ e.emp_id }}" style="width:auto;" {% if e.emp_id in filter_emps %}checked{% endif %}> {{ e.emp_id }} &mdash; {{ e.full_name }}
+      </label>
+      {% endfor %}
+    </div>
+    <div class="form-actions"><button class="btn" type="submit">Show</button>
+      {% if filtered %}<a class="btn secondary" href="{{ url_for('ot_claims_admin') }}">Clear filter</a>{% endif %}</div>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;">Pending ({{ pending|length }}){% if filtered %} <span style="font-size:12px; font-weight:400; color:var(--muted);">&mdash; filtered</span>{% endif %}</h2>
+  <p style="color:var(--muted); font-size:13px; margin-top:-8px;">Awaiting approval from {{ approver_names }}. Grouped by employee, earliest date first.</p>
   <div class="table-wrap frozen-header">
   <table>
     <thead>
-      <tr><th class="text">Employee</th><th class="text">Date</th><th class="text">OT From</th><th class="text">OT To</th><th>1.5x</th><th>2.0x</th><th>3.0x</th><th class="text">Reason</th><th class="text">Submitted By</th><th class="text">Submitted</th><th>Action</th></tr>
+      <tr><th class="text">Date</th><th class="text">OT From</th><th class="text">OT To</th><th>1.5x</th><th>2.0x</th><th>3.0x</th><th class="text">Reason</th><th class="text">Submitted By</th><th class="text">Submitted</th><th>Action</th></tr>
     </thead>
     <tbody>
-      {% for c in pending %}
+      {% for g in pending_groups %}
+      <tr style="background:var(--bg);">
+        <td class="text" colspan="3"><strong>{{ g.emp_id }} &mdash; {{ g.full_name }}</strong>
+          <span style="color:var(--muted); font-size:12px;">&middot; {{ g.claims|length }} claim{{ "s" if g.claims|length != 1 }}</span></td>
+        <td><strong>{{ '%g'|format(g.h15) }}</strong></td>
+        <td><strong>{{ '%g'|format(g.h20) }}</strong></td>
+        <td><strong>{{ '%g'|format(g.h30) }}</strong></td>
+        <td class="text" colspan="4" style="color:var(--muted); font-size:12px;">Total hours for {{ g.full_name.split(' ')[0] }}</td>
+      </tr>
+      {% for c in g.claims %}
       <tr>
-        <td class="text">{{ c.emp_id }} &mdash; {{ c.full_name }}</td>
         <td class="text">{{ c.claim_date }} ({{ c.claim_date|weekday }})</td>
         {% set ot_from = c.ot_before_start or c.ot_start or c.time_in %}
         {% set ot_to = c.ot_end or c.ot_before_end or c.time_out %}
@@ -124,8 +152,9 @@
           </form>
         </td>
       </tr>
+      {% endfor %}
       {% else %}
-      <tr><td colspan="11" class="text" style="color:var(--muted);">No pending OT claims.</td></tr>
+      <tr><td colspan="10" class="text" style="color:var(--muted);">No pending OT claims{% if filtered %} for this selection{% endif %}.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -133,7 +162,7 @@
 </div>
 
 <div class="card">
-  <h2 style="margin-top:0;">Recently Reviewed</h2>
+  <h2 style="margin-top:0;">{% if filtered %}Reviewed{% else %}Recently Reviewed{% endif %}</h2>
   <div class="table-wrap frozen-header">
   <table>
     <thead>

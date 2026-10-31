@@ -10,6 +10,7 @@
   <strong>{{ month_names[month] }} {{ year }}</strong>
   <a href="{{ url_for('attendance_daily', emp_id=emp.emp_id, year=year if month<12 else year+1, month=month+1 if month<12 else 1) }}">Next &raquo;</a>
   <a href="{{ url_for('attendance', year=year, month=month) }}" style="margin-left:16px; color:var(--muted);">&larr; Back to monthly totals</a>
+  {% if request.args.get('back') == 'all' %}<a href="{{ url_for('attendance_daily_all', year=year, month=month, problems=request.args.get('problems', '0'), base=request.args.get('base', '')) }}" style="margin-left:16px; font-weight:600;">&larr; Back to All Staff</a>{% endif %}
 </div>
 {% if base_first|length > 1 or base_staff|length > 1 %}
 <div class="month-nav" style="margin-top:6px;">

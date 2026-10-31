@@ -2659,6 +2659,11 @@ def attendance_daily(emp_id, year, month):
             )
         _sync_daily_to_monthly(db, emp_id, year, month)
         db.commit()
+        if request.args.get("back") == "all":
+            # Opened from the All Staff problems view: go back there (same filters), not to this page,
+            # so HR can carry on down the list of problems.
+            return redirect(url_for("attendance_daily_all", year=year, month=month,
+                                    problems=request.args.get("problems", "0"), base=request.args.get("base", "")))
         return redirect(url_for("attendance_daily", emp_id=emp_id, year=year, month=month))
 
     days, monthly, cewi_incentive = _daily_attendance_view_data(db, emp, year, month)

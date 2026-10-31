@@ -72,7 +72,7 @@
       {% if b.late_early_count %}<span class="pill" style="margin-left:6px; background:#dbeafe; color:#1e3a8a;">{{ b.late_early_count }} late/early</span>{% endif %}
       {% if b.personal_count %}<span class="pill" style="margin-left:6px; background:#ffedd5; color:#9a3412;">{{ b.personal_count }} personal</span>{% endif %}
     </h2>
-    <a class="btn secondary" href="{{ url_for('attendance_daily', emp_id=b.emp.emp_id, year=year, month=month) }}">Edit &rarr;</a>
+    <a class="btn secondary edit-link" href="{{ url_for('attendance_daily', emp_id=b.emp.emp_id, year=year, month=month) }}">Edit &rarr;</a>
   </div>
   <div class="table-wrap frozen-header">
   <table>
@@ -115,8 +115,11 @@
 <div class="card" style="color:var(--muted);">No employees have any Daily Attendance entries for {{ month_names[month] }} {{ year }}.</div>
 {% endif %}
 <script>
-var problemsOnly = false;
-var selectedBase = '';
+// The filters live in the address (?problems=1&base=CD) so that after editing someone you come back
+// to the same filtered list instead of the unfiltered one.
+var urlParams = new URLSearchParams(window.location.search);
+var problemsOnly = urlParams.get('problems') === '1';
+var selectedBase = urlParams.get('base') || '';
 
 function toggleProblemsOnly() {
   problemsOnly = !problemsOnly;
@@ -150,6 +153,20 @@ function applyVisibility() {
   var countEl = document.getElementById('visible-employee-count');
   if (countEl) countEl.textContent = 'Showing ' + visibleCount + ' of ' + totalCount + ' employee' + (totalCount !== 1 ? 's' : '');
 }
+function syncEditLinks() {
+  document.querySelectorAll('a.edit-link').forEach(function (a) {
+    var base = a.getAttribute('href').split('?')[0];
+    a.href = base + '?back=all&problems=' + (problemsOnly ? '1' : '0') + '&base=' + encodeURIComponent(selectedBase);
+  });
+  try { history.replaceState(null, '', '?problems=' + (problemsOnly ? '1' : '0') + '&base=' + encodeURIComponent(selectedBase)); } catch (e) {}
+  var btn = document.getElementById('problems-only-btn');
+  if (btn) btn.textContent = problemsOnly ? 'Show all days' : 'Show only problem days';
+  document.querySelectorAll('.base-filter-btn').forEach(function (b) {
+    b.classList.toggle('secondary', b.dataset.base !== selectedBase);
+  });
+}
+var _applyVisibility = applyVisibility;
+applyVisibility = function () { _applyVisibility(); syncEditLinks(); };
 applyVisibility();
 </script>
 {% endblock %}

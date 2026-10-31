@@ -95,7 +95,7 @@
 <table>
 <thead>
 <tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Department</th><th class="text">Position</th>
-    <th class="text">Confirmation Date</th><th>New Salary</th><th></th></tr>
+    <th class="text">Confirmation Date</th><th>New Salary</th><th></th><th></th></tr>
 </thead>
 <tbody>
 {% for e in confirmed %}
@@ -106,11 +106,12 @@
   <td class="text">{{ e.position or "-" }}</td>
   <td class="text">{{ e.confirmation_date }}</td>
   <td>{{ "RM %.2f"|format(e.confirmed_new_salary) if e.confirmed_new_salary else "-" }}</td>
+  <td><a class="emp-link" href="{{ url_for('confirmation_appraisal', emp_id=e.emp_id, appraisal_date=e.confirmation_date) }}" target="_blank">Appraisal Form</a></td>
   <td><a class="emp-link" href="{{ url_for('confirmation_letter', emp_id=e.emp_id) }}" target="_blank">Print Letter</a></td>
 </tr>
 {% endfor %}
 {% if not confirmed %}
-<tr><td class="text" colspan="7">None yet.</td></tr>
+<tr><td class="text" colspan="8">None yet.</td></tr>
 {% endif %}
 </tbody>
 </table>

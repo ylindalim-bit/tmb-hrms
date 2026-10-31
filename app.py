@@ -7454,6 +7454,19 @@ def portal_attendance():
     )
 
 
+# A Clock Out within this many minutes of the Clock In is an accidental double tap, not the end of
+# the working day: it is ignored, and if one was already saved a later Clock Out replaces it.
+CLOCK_REPEAT_WINDOW_MINUTES = 10
+
+
+def _accidental_clock_out(row):
+    """True if this day's saved Time Out is within the repeat window of its Time In."""
+    if not row or not row["time_in"] or not row["time_out"]:
+        return False
+    t_in, t_out = _hhmm_to_minutes(row["time_in"]), _hhmm_to_minutes(row["time_out"])
+    return t_in is not None and t_out is not None and 0 <= t_out - t_in < CLOCK_REPEAT_WINDOW_MINUTES
+
+
 @app.route("/portal/clock", methods=["GET", "POST"])
 @portal_login_required
 def portal_clock():
@@ -7502,10 +7515,17 @@ def portal_clock():
         # on file for today.
         elif action == "in" and existing_today and existing_today["time_in"]:
             error = f"You already clocked in at {existing_today['time_in']} today."
-        elif action == "out" and existing_today and existing_today["time_out"]:
+        elif action == "out" and existing_today and existing_today["time_out"] and not _accidental_clock_out(existing_today):
             error = f"You already clocked out at {existing_today['time_out']} today."
         elif action == "out" and not (existing_today and existing_today["time_in"]):
             error = "You haven't clocked in yet today."
+        elif action == "out" and _hhmm_to_minutes(existing_today["time_in"]) is not None and (
+                datetime.datetime.now(MYT).hour * 60 + datetime.datetime.now(MYT).minute
+                - _hhmm_to_minutes(existing_today["time_in"])) < CLOCK_REPEAT_WINDOW_MINUTES:
+            # Tapped again right after clocking in - almost certainly a double tap, so keep the
+            # Clock In and ignore this one; the real Clock Out can still be done later.
+            error = (f"You clocked in at {existing_today['time_in']} just now - this tap was ignored. "
+                     "Please clock out when you finish work.")
         elif not lat_raw or not lng_raw:
             error = "Couldn't read your phone's location. Please allow location access and try again."
         elif not locations:
@@ -7556,7 +7576,8 @@ def portal_clock():
     today_row = db.execute(
         "SELECT * FROM attendance_daily WHERE emp_id=? AND date=?", (emp["emp_id"], today_str)
     ).fetchone()
-    return render_template("portal_clock.html", emp=emp, locations=locations, today_row=today_row, error=error)
+    return render_template("portal_clock.html", emp=emp, locations=locations, today_row=today_row, error=error,
+                           accidental_out=_accidental_clock_out(today_row))
 
 
 LEAVE_HALF_DAY_SESSIONS = ("AM", "PM")

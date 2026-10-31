@@ -8,7 +8,11 @@
 {% endif %}
 
 <div class="card" style="max-width:420px; text-align:center;">
-  {% if today_row and today_row.time_in and today_row.time_out %}
+  {% if accidental_out %}
+    <p style="font-size:15px;">Clocked in at <strong>{{ today_row.time_in }}</strong>.</p>
+    <p style="color:var(--muted); font-size:13px;">A clock-out at {{ today_row.time_out }}, right after clocking in, was recorded by mistake. Please clock out again when you finish work.</p>
+    <button class="btn" id="clock-btn" type="button" onclick="doClock('out')" style="font-size:16px; padding:14px 32px;">Clock Out</button>
+  {% elif today_row and today_row.time_in and today_row.time_out %}
     <p style="font-size:15px;">Clocked in at <strong>{{ today_row.time_in }}</strong>, clocked out at <strong>{{ today_row.time_out }}</strong>.</p>
     <p style="color:var(--muted); font-size:13px;">You're done for today.</p>
   {% elif today_row and today_row.time_in %}

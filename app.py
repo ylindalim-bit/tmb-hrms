@@ -7758,20 +7758,22 @@ def portal_leave():
         """SELECT * FROM leave_requests WHERE emp_id=? ORDER BY start_date DESC, submitted_at DESC""",
         (emp["emp_id"],),
     ).fetchall()
-    # The employee's Unrecorded Leave notices (a Movement Notice type) belong in the same record, so
-    # everything they were away is in one list. They are paid, don't touch the Annual Leave balance, and
-    # can't be changed from here, so they carry source='trip'.
+    # The employee's Movement Notices (Unrecorded Leave, Home Leave, Business Trip, Out-Duty, Training)
+    # belong in the same record, so everything they were away is in one list. They don't touch the Annual
+    # Leave balance and can't be changed from here, so they carry source='trip'.
     leave_rows = [dict(r, source="leave") for r in my_requests]
     trip_docs_all = _business_trip_extra_docs(db)
     unrecorded_used = 0.0
-    for t in db.execute(
-        """SELECT * FROM business_trips WHERE emp_id=? AND notice_type='Unrecorded Leave'""", (emp["emp_id"],)
-    ).fetchall():
+    home_leave_used = 0.0
+    for t in db.execute("""SELECT * FROM business_trips WHERE emp_id=?""", (emp["emp_id"],)).fetchall():
         days = (datetime.date.fromisoformat(t["end_date"]) - datetime.date.fromisoformat(t["start_date"])).days + 1
         if t["status"] == "Approved" and t["start_date"][:4] == str(datetime.date.today().year):
-            unrecorded_used += days
+            if t["notice_type"] == "Unrecorded Leave":
+                unrecorded_used += days
+            elif t["notice_type"] == "Home Leave (Malaysia)":
+                home_leave_used += days
         leave_rows.append({
-            "source": "trip", "id": t["id"], "leave_type": "Unrecorded Leave", "start_date": t["start_date"],
+            "source": "trip", "id": t["id"], "leave_type": t["notice_type"], "start_date": t["start_date"],
             "end_date": t["end_date"], "half_day": None, "days": days, "reason": t["purpose"],
             "status": t["status"], "review_notes": t["review_notes"], "submitted_at": t["submitted_at"],
             "main_doc": t["supporting_doc_original"] if t["supporting_doc_stored"] else None,
@@ -7828,6 +7830,7 @@ def portal_leave():
     return render_template("portal_leave.html", emp=emp, requests=my_requests, error=error,
                             al_balance=al_balance, mc_balance=mc_balance, hl_balance=hl_balance,
                             al_used=al_used, mc_used=mc_used, ul_used=ul_used, unrecorded_used=unrecorded_used,
+                            home_leave_used=home_leave_used, notice_types=BUSINESS_TRIP_TYPES,
                             change_by_leave_id=change_by_leave_id,
                             documents_by_request=documents_by_request, leave_types=LEAVE_TYPES,
                             al_entitlement=al_entitlement, al_bf=(emp["al_bf_days"] or 0),

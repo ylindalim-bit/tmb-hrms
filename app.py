@@ -9635,6 +9635,9 @@ def ot_claims_generate():
         return redirect(url_for("ot_claims_admin", gen_error=1))
     min_minutes = request.form.get("min_minutes", type=int)
     min_minutes = 15 if min_minutes is None else max(min_minutes, 0)
+    # Optional: OT before the normal start only counts from this time (e.g. 06:30) even if they clocked in earlier.
+    earliest_raw = (request.form.get("ot_earliest") or "").strip()
+    earliest_min = _hhmm_to_minutes(earliest_raw) if earliest_raw else None
     if request.form.get("replace") == "1":
         db.execute(
             "DELETE FROM ot_claims WHERE emp_id=? AND status='Pending' AND claim_date BETWEEN ? AND ?",
@@ -9662,8 +9665,10 @@ def ot_claims_generate():
             if t_out - t_in >= min_minutes:
                 fields = {"ot_start": row["time_in"], "ot_end": row["time_out"]}
         else:
-            if s_min - t_in >= min_minutes:
-                fields["ot_before_start"], fields["ot_before_end"] = row["time_in"], start
+            before_in = max(t_in, earliest_min) if earliest_min is not None else t_in
+            if s_min - before_in >= min_minutes:
+                fields["ot_before_start"] = f"{before_in // 60:02d}:{before_in % 60:02d}"
+                fields["ot_before_end"] = start
             if t_out - e_min >= min_minutes:
                 fields["ot_start"], fields["ot_end"] = end, row["time_out"]
         if not fields:

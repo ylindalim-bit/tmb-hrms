@@ -108,6 +108,9 @@
             <button class="btn" type="submit" name="decision" value="Approved" style="padding:4px 10px;">Approve</button>
             <button class="btn secondary" type="submit" name="decision" value="Rejected" style="padding:4px 10px;">Reject</button>
           </form>
+          <form method="post" action="{{ url_for('delete_ot_claim', claim_id=c.id) }}" style="margin-top:4px;" onsubmit="return confirm('Delete this Pending OT claim (as if it was never keyed in)?');">
+            <button class="btn secondary" type="submit" style="padding:2px 8px; font-size:11px; color:var(--danger);">Delete</button>
+          </form>
         </td>
       </tr>
       {% else %}

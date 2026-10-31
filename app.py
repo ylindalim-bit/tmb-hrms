@@ -3313,8 +3313,12 @@ def attendance_day(date_str):
             category, status = "future", "Not yet"
         else:
             category, status = "none", "No record"
+        flag_late, flag_early = _late_early_flags(row, e, _hours_on(schedule_history, e, date_iso))
         rows.append({"emp": e, "category": category, "status": status, "time_in": time_in,
-                     "time_out": time_out, "note": note})
+                     "time_out": time_out, "note": note,
+                     "day_type": row["day_type"] if row else (default_type if default_type in DAY_TYPES else "WORKED"),
+                     "has_row": row is not None, "flagged": bool(flag_late or flag_early),
+                     "lt": row["late_early_type"] if row else None, "lr": row["late_early_remark"] if row else None})
 
     rows.sort(key=lambda r: (category_order[r["category"]], r["emp"]["emp_id"]))
     counts = {}
@@ -3328,7 +3332,62 @@ def attendance_day(date_str):
         category_order=category_order, category_labels=category_labels,
         base_options=base_options_present,
         excused=request.args.get("excused", type=int), excused_base=request.args.get("excused_base", ""),
+        saved=request.args.get("saved", type=int), day_types=DAY_TYPES, start_base=request.args.get("base", ""),
     )
+
+
+@app.route("/attendance-day/<date_str>/save", methods=["POST"])
+def attendance_day_save(date_str):
+    """Saves the edits made in place on the one-day view: for each person whose row was changed,
+    Status, Time In/Out and the late/early decision for that date. Everything else on the day
+    (OT hours etc.) is left alone, and the month's totals are recalculated like on the person's own
+    Daily Attendance page."""
+    if session.get("hr_role") == "approver":
+        abort(403)
+    try:
+        the_date = datetime.date.fromisoformat(date_str)
+    except ValueError:
+        abort(404)
+    db = get_db()
+    f = request.form
+    months, saved = set(), 0
+    for emp_id in dict.fromkeys(f.getlist("changed")):
+        if db.execute("SELECT 1 FROM employees WHERE emp_id=?", (emp_id,)).fetchone() is None:
+            continue
+        day_type = f.get(f"day_type__{emp_id}")
+        if day_type not in DAY_TYPES:
+            continue
+
+        def clock(name):
+            v = (f.get(f"{name}__{emp_id}") or "").strip()
+            return v if _hhmm_to_minutes(v) is not None else None
+
+        time_in, time_out = clock("time_in"), clock("time_out")
+        lt = f.get(f"lt__{emp_id}")
+        lt = lt if lt in LATE_EARLY_TYPES else None
+        lr = (f.get(f"lr__{emp_id}") or "").strip() or None
+        existing = db.execute("SELECT * FROM attendance_daily WHERE emp_id=? AND date=?", (emp_id, date_str)).fetchone()
+        if existing is None:
+            db.execute(
+                """INSERT INTO attendance_daily (emp_id, date, day_type, time_in, time_out, meal_allowance_flag, cewi_flag,
+                       ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, late_early_remark, late_early_type)
+                   VALUES (?,?,?,?,?,'N','N',0,0,0,?,?)""",
+                (emp_id, date_str, day_type, time_in, time_out, lr, lt),
+            )
+        else:
+            db.execute(
+                """UPDATE attendance_daily SET day_type=?, time_in=?, time_out=?, late_early_type=?, late_early_remark=?
+                   WHERE id=?""",
+                (day_type, time_in, time_out, lt, lr, existing["id"]),
+            )
+            if day_type != "WORKED":
+                db.execute("UPDATE attendance_daily SET meal_allowance_flag='N', cewi_flag='N' WHERE id=?", (existing["id"],))
+        months.add((emp_id, the_date.year, the_date.month))
+        saved += 1
+    for emp_id, y, m in months:
+        _sync_daily_to_monthly(db, emp_id, y, m)
+    db.commit()
+    return redirect(url_for("attendance_day", date_str=date_str, saved=saved, base=f.get("base", "")))
 
 
 @app.route("/attendance-day/<date_str>/excuse-late", methods=["POST"])

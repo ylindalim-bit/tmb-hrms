@@ -34,6 +34,9 @@
   {% endif %}
 </div>
 
+{% if saved is not none %}
+<div class="card" style="background:#dcfce7; border-color:#16a34a; font-weight:600;">Saved {{ saved }} change{{ "s" if saved != 1 }} for {{ date_iso }}.</div>
+{% endif %}
 {% if excused is not none %}
 <div class="card" style="background:#dcfce7; border-color:#16a34a; font-weight:600;">Late-in waived for {{ excused }} {{ excused_base }} staff on {{ date_iso }} (marked Excused, no deduction).</div>
 {% endif %}
@@ -55,10 +58,9 @@
 </details>
 {% endif %}
 <p style="color:var(--muted); font-size:13px;">
-  Read-only. Listed with the ones needing attention first. <strong>No record</strong> means nothing is saved for that
+  {% if hr_role != "approver" %}<strong>You can fix problems right here:</strong> change a Status or type a Time In / Time Out, then click <strong>Save changes</strong>. {% else %}Read-only. {% endif %}Listed with the ones needing attention first. <strong>No record</strong> means nothing is saved for that
   person that day - no attendance, approved leave, Movement Notice or public holiday - so it could be absent,
-  a forgotten clock-in, or not entered yet; the system can't tell which. To fix a day, open the person's own Daily
-  Attendance page from the Edit link.
+  a forgotten clock-in, or not entered yet; the system can't tell which. The Edit link opens the person's whole month.
 </p>
 
 <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
@@ -67,13 +69,16 @@
   {% endif %}{% endfor %}
 </div>
 
+<form method="post" action="{{ url_for('attendance_day_save', date_str=date_iso) }}" id="day-form">
+<input type="hidden" name="base" id="day-form-base" value="{{ start_base }}">
+{% if hr_role != "approver" %}<div style="margin-bottom:8px;"><button class="btn" type="submit">Save changes</button> <span id="dirty-note" style="color:var(--muted); font-size:12px; margin-left:8px;"></span></div>{% endif %}
 <div class="card table-wrap frozen-header">
 <table id="day-table">
 <thead>
 <tr>
   <th class="text">Emp ID</th><th class="text">Name</th><th class="text">Base</th>
-  <th class="text">Status</th><th class="text">Date</th><th class="text">Time In</th><th class="text">Time Out</th>
-  <th class="text">Note</th><th class="text"></th>
+  <th class="text">Status</th><th class="text">Change to</th><th class="text">Time In</th><th class="text">Time Out</th>
+  <th class="text">Late / Early</th><th class="text">Note</th><th class="text"></th>
 </tr>
 </thead>
 <tbody>
@@ -83,9 +88,26 @@
   <td class="text">{{ r.emp.full_name }}</td>
   <td class="text">{{ r.emp.base or "-" }}</td>
   <td class="text"><span class="pill" style="{{ pill_style[r.category] }}">{{ r.status }}</span></td>
-  <td class="text">{{ date_iso }}</td>
+  {% if hr_role != "approver" %}
+  <td class="text"><select class="day-edit" name="day_type__{{ r.emp.emp_id }}" data-emp="{{ r.emp.emp_id }}" style="width:auto;">
+    {% for d in day_types %}<option value="{{ d }}" {{ "selected" if r.day_type == d }}>{{ d }}</option>{% endfor %}
+  </select></td>
+  <td class="text"><input class="day-edit" type="time" name="time_in__{{ r.emp.emp_id }}" data-emp="{{ r.emp.emp_id }}" value="{{ r.time_in or '' }}" style="width:105px;"></td>
+  <td class="text"><input class="day-edit" type="time" name="time_out__{{ r.emp.emp_id }}" data-emp="{{ r.emp.emp_id }}" value="{{ r.time_out or '' }}" style="width:105px;"></td>
+  <td class="text" style="white-space:nowrap;">{% if r.flagged or r.lt %}
+    <select class="day-edit" name="lt__{{ r.emp.emp_id }}" data-emp="{{ r.emp.emp_id }}" style="width:auto;">
+      <option value="">-</option>
+      <option value="Excused" {{ "selected" if r.lt == "Excused" }}>Excused</option>
+      <option value="Personal" {{ "selected" if r.lt == "Personal" }}>Personal</option>
+    </select>
+    <input class="day-edit" type="text" name="lr__{{ r.emp.emp_id }}" data-emp="{{ r.emp.emp_id }}" value="{{ r.lr or '' }}" placeholder="reason" style="width:120px;">
+  {% endif %}</td>
+  {% else %}
+  <td class="text">{{ r.day_type }}</td>
   <td class="text">{{ r.time_in or "-" }}</td>
   <td class="text">{{ r.time_out or "-" }}</td>
+  <td class="text"></td>
+  {% endif %}
   <td class="text" style="color:var(--muted); font-size:12px;">{{ r.note }}</td>
   <td class="text"><a class="emp-link" href="{{ url_for('attendance_daily', emp_id=r.emp.emp_id, year=the_date.year, month=the_date.month) }}">Edit</a></td>
 </tr>
@@ -93,10 +115,15 @@
 </tbody>
 </table>
 </div>
+{% if hr_role != "approver" %}<div style="margin:8px 0;"><button class="btn" type="submit">Save changes</button></div>{% endif %}
+</form>
 <p><strong>Showing <span id="shown-count">{{ rows|length }}</span> employees</strong></p>
 <script>
 function filterByBase(base) {
   var shown = 0;
+  var baseField = document.getElementById('day-form-base');
+  if (baseField) baseField.value = base;
+  try { history.replaceState(null, '', base ? '?base=' + encodeURIComponent(base) : location.pathname); } catch (e) {}
   document.querySelectorAll('#day-table tbody tr').forEach(function (row) {
     var visible = !base || row.dataset.base === base;
     row.style.display = visible ? '' : 'none';
@@ -117,5 +144,29 @@ function filterByBase(base) {
     btn.classList.toggle('secondary', btn.dataset.base !== base);
   });
 }
+// Rows you edit are sent with the form; untouched rows are not.
+(function () {
+  var form = document.getElementById('day-form');
+  if (!form) return;
+  var changed = {};
+  function mark(emp) {
+    if (changed[emp]) return;
+    var h = document.createElement('input');
+    h.type = 'hidden'; h.name = 'changed'; h.value = emp;
+    form.appendChild(h); changed[emp] = true;
+    document.querySelectorAll('#day-table tbody tr').forEach(function (tr) {
+      if (tr.querySelector('[data-emp="' + emp + '"]')) tr.style.outline = '2px solid #2563eb';
+    });
+    var n = Object.keys(changed).length;
+    var note = document.getElementById('dirty-note');
+    if (note) note.textContent = n + ' row' + (n > 1 ? 's' : '') + ' changed - click Save changes';
+  }
+  document.querySelectorAll('.day-edit').forEach(function (el) {
+    el.addEventListener('input', function () { mark(el.dataset.emp); });
+    el.addEventListener('change', function () { mark(el.dataset.emp); });
+  });
+})();
+var startBase = {{ start_base|tojson }};
+if (startBase) { filterByBase(startBase); }
 </script>
 {% endblock %}

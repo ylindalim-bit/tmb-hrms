@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Attendance - choose staff and dates - TMB Payroll{% endblock %}
+{% block content %}
+{% set pill_style = {
+  "none": "background:#fef3c7; color:#92400e;",
+  "incomplete": "background:#fee2e2; color:var(--danger);",
+  "pending": "background:#fef3c7; color:#92400e;",
+  "away": "background:#dbeafe; color:#1e3a8a;",
+  "leave": "background:#dbeafe; color:#1e3a8a;",
+  "present": "background:#dcfce7; color:var(--good);",
+  "rest": "background:var(--bg); color:var(--muted); border:1px solid var(--border);",
+  "holiday": "background:var(--bg); color:var(--muted); border:1px solid var(--border);",
+  "future": "background:var(--bg); color:var(--muted); border:1px solid var(--border);"
+} %}
+<h1>Attendance &mdash; choose staff &amp; dates</h1>
+<p style="color:var(--muted); font-size:13px; margin-top:-8px;">
+  Tick one or more staff, pick a From and To date, and click <strong>Show</strong>. Every day for those people appears in one
+  table that you can fix right here (Status, Time In / Time Out, late/early), then <strong>Save changes</strong>.
+  <a href="{{ url_for('attendance_day_today') }}">&larr; Back to the one-day view</a>
+</p>
+
+<form method="get" class="card">
+  <input type="hidden" name="show" value="1">
+  <div class="form-grid" style="margin-bottom:10px;">
+    <div><label>From</label><input type="date" name="date_from" value="{{ date_from }}" required></div>
+    <div><label>To</label><input type="date" name="date_to" value="{{ date_to }}" required></div>
+  </div>
+  <label style="display:block; font-size:12px; color:var(--muted); font-weight:600; margin-bottom:6px;">Staff</label>
+  {% for b in bases %}
+  <div style="margin-bottom:8px;">
+    <strong style="font-size:13px;">{{ b }}</strong>
+    <a href="#" onclick="tickBase('{{ b }}', true); return false;" style="font-size:12px; margin-left:8px;">all</a>
+    <a href="#" onclick="tickBase('{{ b }}', false); return false;" style="font-size:12px; margin-left:6px;">none</a>
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:2px 16px;">
+      {% for e in all_emps if e.base == b %}
+      <label style="display:flex; gap:6px; align-items:center; font-weight:400; font-size:13px;">
+        <input type="checkbox" name="emps" value="{{ e.emp_id }}" data-base="{{ b }}" style="width:auto;" {% if e.emp_id in picked %}checked{% endif %}>
+        {{ e.emp_id }} &mdash; {{ e.full_name }}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+  <div class="form-actions"><button class="btn" type="submit">Show</button></div>
+</form>
+
+{% if too_long %}<div class="card" style="background:#fef3c7; border-color:#f59e0b;">Showing the first 62 days only - choose a shorter range for the rest.</div>{% endif %}
+{% if saved is not none %}<div class="card" style="background:#dcfce7; border-color:#16a34a; font-weight:600;">Saved {{ saved }} change{{ "s" if saved != 1 }}.</div>{% endif %}
+
+{% if shown %}
+{% if not picked %}
+<div class="card" style="color:var(--muted);">Tick at least one staff member above.</div>
+{% elif not rows %}
+<div class="card" style="color:var(--muted);">Nobody in that selection was employed on those dates.</div>
+{% else %}
+<form method="post" action="{{ url_for('attendance_multi_save') }}" id="multi-form">
+  <input type="hidden" name="date_from" value="{{ date_from }}">
+  <input type="hidden" name="date_to" value="{{ date_to }}">
+  {% for e in picked %}<input type="hidden" name="emps" value="{{ e }}">{% endfor %}
+  <div style="margin-bottom:8px;"><button class="btn" type="submit">Save changes</button> <span id="dirty-note" style="color:var(--muted); font-size:12px; margin-left:8px;">{{ rows|length }} rows</span></div>
+  <div class="card table-wrap frozen-header">
+  <table id="multi-table">
+    <thead>
+      <tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Date</th><th class="text">Day</th><th class="text">Status</th><th class="text">Change to</th>
+          <th class="text">Time In</th><th class="text">Time Out</th><th class="text">Late / Early</th><th class="text">Note</th></tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      {% set key = r.emp.emp_id ~ '|' ~ r.date %}
+      <tr data-key="{{ key }}"{% if r.category == 'none' %} style="background:#fef3c7;"{% elif r.category == 'incomplete' %} style="background:#fee2e2;"{% endif %}>
+        <td class="text">{{ r.emp.emp_id }}</td>
+        <td class="text">{{ r.emp.full_name }}</td>
+        <td class="text">{{ r.date }}</td>
+        <td class="text">{{ r.weekday }}</td>
+        <td class="text"><span class="pill" style="{{ pill_style[r.category] }}">{{ r.status }}</span></td>
+        <td class="text"><select class="multi-edit" name="day_type__{{ key }}" data-key="{{ key }}" style="width:auto;">
+          {% for d in day_types %}<option value="{{ d }}" {{ "selected" if r.day_type == d }}>{{ d }}</option>{% endfor %}
+        </select></td>
+        <td class="text"><input class="multi-edit" type="time" name="time_in__{{ key }}" data-key="{{ key }}" value="{{ r.time_in or '' }}" style="width:105px;"></td>
+        <td class="text"><input class="multi-edit" type="time" name="time_out__{{ key }}" data-key="{{ key }}" value="{{ r.time_out or '' }}" style="width:105px;"></td>
+        <td class="text" style="white-space:nowrap;">{% if r.flagged or r.lt %}
+          <select class="multi-edit" name="lt__{{ key }}" data-key="{{ key }}" style="width:auto;">
+            <option value="">-</option>
+            <option value="Excused" {{ "selected" if r.lt == "Excused" }}>Excused</option>
+            <option value="Personal" {{ "selected" if r.lt == "Personal" }}>Personal</option>
+          </select>
+          <input class="multi-edit" type="text" name="lr__{{ key }}" data-key="{{ key }}" value="{{ r.lr or '' }}" placeholder="reason" style="width:120px;">
+        {% endif %}</td>
+        <td class="text" style="color:var(--muted); font-size:12px;">{{ r.note }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <div style="margin:8px 0;"><button class="btn" type="submit">Save changes</button></div>
+</form>
+{% endif %}
+{% endif %}
+<script>
+function tickBase(base, on) {
+  document.querySelectorAll('input[name="emps"][data-base="' + base + '"]').forEach(function (c) { c.checked = on; });
+}
+(function () {
+  var form = document.getElementById('multi-form');
+  if (!form) return;
+  var changed = {};
+  function mark(key) {
+    if (changed[key]) return;
+    var h = document.createElement('input');
+    h.type = 'hidden'; h.name = 'changed'; h.value = key;
+    form.appendChild(h); changed[key] = true;
+    document.querySelectorAll('#multi-table tbody tr').forEach(function (tr) {
+      if (tr.dataset.key === key) tr.style.outline = '2px solid #2563eb';
+    });
+    var n = Object.keys(changed).length;
+    document.getElementById('dirty-note').textContent = n + ' row' + (n > 1 ? 's' : '') + ' changed - click Save changes';
+  }
+  document.querySelectorAll('.multi-edit').forEach(function (el) {
+    el.addEventListener('input', function () { mark(el.dataset.key); });
+    el.addEventListener('change', function () { mark(el.dataset.key); });
+  });
+})();
+</script>
+{% endblock %}

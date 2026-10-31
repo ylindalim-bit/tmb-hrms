@@ -23,6 +23,7 @@
   </form>
   {% if not is_today %}<a href="{{ url_for('attendance_day_today') }}" style="margin-left:12px;">Today</a>{% endif %}
   <a href="{{ url_for('attendance_daily_all', year=the_date.year, month=the_date.month) }}" style="margin-left:16px; color:var(--muted);">Whole month, all staff &rarr;</a>
+  {% if hr_role != "approver" %}<a id="multi-link" href="{{ url_for('attendance_multi', date_from=date_iso, date_to=date_iso, show=1) }}" style="margin-left:16px; font-weight:600;">Choose staff &amp; dates &rarr;</a>{% endif %}
   {% if base_options %}
   <span style="margin-left:16px; display:inline-flex; align-items:center; gap:6px;">
     <label style="font-size:13px; color:var(--muted);">Base:</label>
@@ -124,6 +125,8 @@ function filterByBase(base) {
   var shown = 0;
   var baseField = document.getElementById('day-form-base');
   if (baseField) baseField.value = base;
+  var ml = document.getElementById('multi-link');
+  if (ml) { ml.href = ml.href.split('&base=')[0] + (base ? '&base=' + encodeURIComponent(base) : ''); }
   // Remember the chosen base, so the next day / next page you open stays on it (All clears it).
   try { localStorage.setItem('tmbAttendanceBase', base || ''); } catch (e) {}
   try { history.replaceState(null, '', base ? '?base=' + encodeURIComponent(base) : location.pathname); } catch (e) {}

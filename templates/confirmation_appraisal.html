@@ -103,11 +103,9 @@
 <h2 class="form-title">PERFORMANCE APPRAISAL FORM</h2>
 
 <div class="purpose-row">
-  <span><span class="box">&#10003;</span>Confirmation</span>
-  <span><span class="box"></span>Promotion</span>
-  <span><span class="box"></span>Increment</span>
-  <span><span class="box"></span>Bonus</span>
-  <span><span class="box"></span>Assessment</span>
+  {% for pname in ["Confirmation", "Promotion", "Increment", "Bonus", "Assessment"] %}
+  <span><span class="box">{% if (ap.purpose if ap else "Confirmation") == pname %}&#10003;{% endif %}</span>{{ pname }}</span>
+  {% endfor %}
 </div>
 
 <h3 class="section">Employment Information (Filled by HR &amp; Administration Department)</h3>
@@ -153,16 +151,16 @@
     {% for f in factors %}
     <tr>
       <td class="factor">{{ f|safe }}</td>
-      <td style="text-align:center;"><span class="box"></span></td>
-      <td style="text-align:center;"><span class="box"></span></td>
-      <td style="text-align:center;"><span class="box"></span></td>
-      <td style="text-align:center;"><span class="box"></span></td>
-      <td style="text-align:center;"><span class="box"></span></td>
-      <td class="score-cell">&nbsp;</td>
+      {% set fname = f|replace("&amp;", "&") %}
+      {% set sc = ratings.get(fname) %}
+      {% for n in [1, 2, 3, 4, 5] %}
+      <td style="text-align:center;"><span class="box">{% if sc == n or sc|string == n|string %}&#10003;{% endif %}</span></td>
+      {% endfor %}
+      <td class="score-cell">{{ sc if sc else "&nbsp;"|safe }}</td>
     </tr>
     {% endfor %}
     {% endfor %}
-    <tr><td colspan="6" style="text-align:right; font-weight:700;">Total Points Scored</td><td class="score-cell">&nbsp;</td></tr>
+    <tr><td colspan="6" style="text-align:right; font-weight:700;">Total Points Scored</td><td class="score-cell">{% if ap %}{{ '%g'|format(ap.total_score) }}{% else %}&nbsp;{% endif %}</td></tr>
   </tbody>
 </table>
 
@@ -171,7 +169,7 @@
 <table class="band-table">
   <tr>
     {% for label, points in [("Excellent", "86-100"), ("Good", "66-85"), ("Average", "51-65"), ("Fair", "36-50"), ("Poor", "01-35")] %}
-    <td style="text-align:center; white-space:nowrap;"><span class="box" style="display:inline-block; width:11px; height:11px; border:1px solid #333; vertical-align:-1px; margin-right:4px;"></span>{{ label }} ({{ points }})</td>
+    <td style="text-align:center; white-space:nowrap;"><span class="box" style="display:inline-block; width:11px; height:11px; border:1px solid #333; vertical-align:-1px; margin-right:4px; text-align:center; font-size:10px; line-height:11px;">{% if ap and ap.overall_band == label %}&#10003;{% endif %}</span>{{ label }} ({{ points }})</td>
     {% endfor %}
   </tr>
 </table>
@@ -180,19 +178,23 @@
 <div class="page-break"></div>
 <h3 class="section">Comments</h3>
 <p style="font-weight:600; margin:4px 0 6px;">What are your recommendation with regard to the employee's future in the organization? (Please tick &#10003;)</p>
-<div class="tick-row"><span class="box"></span>a) Employee will qualify for advancement in higher level or responsibilities.</div>
-<div class="tick-row"><span class="box"></span>b) Employee has not yet demonstrated the level of service required.</div>
-<div class="tick-row"><span class="box"></span>c) Employee is better suited for another type of work.</div>
-<div class="tick-row"><span class="box"></span>d) Training is required.</div>
+<div class="tick-row"><span class="box">{% if ap and ap.rec_advancement == "Y" %}&#10003;{% endif %}</span>a) Employee will qualify for advancement in higher level or responsibilities.</div>
+<div class="tick-row"><span class="box">{% if ap and ap.rec_not_yet_ready == "Y" %}&#10003;{% endif %}</span>b) Employee has not yet demonstrated the level of service required.</div>
+<div class="tick-row"><span class="box">{% if ap and ap.rec_better_suited == "Y" %}&#10003;{% endif %}</span>c) Employee is better suited for another type of work.</div>
+<div class="tick-row"><span class="box">{% if ap and ap.rec_training_required == "Y" %}&#10003;{% endif %}</span>d) Training is required.</div>
 
 <p style="font-weight:600; margin:14px 0 4px;">Comments By Immediate Superior:</p>
+{% if ap and ap.comments %}
+<div style="white-space:pre-wrap; border-bottom:1px solid #333; min-height:90px; padding:4px 2px;">{{ ap.comments }}</div>
+{% else %}
 <div class="comment-lines big"><div class="line"></div><div class="line"></div><div class="line"></div><div class="line"></div></div>
+{% endif %}
 
 <div class="sig-grid">
   <div class="sig-block"><div class="role">Appraised by</div>Supervisor / Section Head / Manager / Director
-    <div class="line">Name:</div>
+    <div class="line">Name: {{ ap_supervisor }}</div>
     <div class="line" style="margin-top:16px;">Position:</div>
-    <div class="line" style="margin-top:16px;">Date:</div>
+    <div class="line" style="margin-top:16px;">Date: {{ ap.appraisal_date if ap else "" }}</div>
   </div>
   <div class="sig-block"><div class="role">Reviewed by</div>Manager / Director / Managing Director
     <div class="line">Name:</div>
@@ -245,9 +247,9 @@
   <tr><th>Factors</th><th>Current Salary</th><th>Allowance</th><th>Increased Salary</th><th>New Salary</th></tr>
   {% for label in ["Confirmation", "Promotion", "Increment", "Adjustment", "Transferred", "Redesignation"] %}
   <tr><td class="factor">{{ label }}</td>
-    <td>RM <input type="number" step="0.01" class="salary-input" id="rec_cur_{{ loop.index }}" value="{{ "%.2f"|format(emp.basic_salary or 0) if label == "Confirmation" else "" }}" oninput="calcNewSalary('rec', {{ loop.index }})"></td>
+    <td>RM <input type="number" step="0.01" class="salary-input" id="rec_cur_{{ loop.index }}" value="{{ "%.2f"|format((ap.current_salary if ap and ap.current_salary else emp.basic_salary) or 0) if label == "Confirmation" else "" }}" oninput="calcNewSalary('rec', {{ loop.index }})"></td>
     <td>RM&nbsp;</td>
-    <td>RM <input type="number" step="0.01" class="salary-input" id="rec_inc_{{ loop.index }}" oninput="calcNewSalary('rec', {{ loop.index }})"></td>
+    <td>RM <input type="number" step="0.01" class="salary-input" id="rec_inc_{{ loop.index }}" value="{{ "%.2f"|format(ap.increment_amount) if ap and label == "Confirmation" and ap.increment_amount else "" }}" oninput="calcNewSalary('rec', {{ loop.index }})"></td>
     <td>RM <input type="number" step="0.01" class="salary-input" id="rec_new_{{ loop.index }}" readonly></td>
   </tr>
   {% endfor %}

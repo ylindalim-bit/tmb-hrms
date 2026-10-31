@@ -3735,9 +3735,28 @@ def confirmation_appraisal(emp_id):
         ).fetchone()
         leave_totals = dict(row)
 
+    # If the immediate superior has already submitted an appraisal online, the official form is printed
+    # with it filled in (?appraisal_id=N for a specific one, else the latest submitted Confirmation one;
+    # ?blank=1 for the empty form).
+    ap, ratings, ap_supervisor = None, {}, ""
+    if request.args.get("blank") != "1":
+        try:
+            if request.args.get("appraisal_id", type=int):
+                ap = db.execute("SELECT * FROM appraisals WHERE id=? AND emp_id=?",
+                                (request.args.get("appraisal_id", type=int), emp_id)).fetchone()
+            else:
+                ap = db.execute(
+                    """SELECT * FROM appraisals WHERE emp_id=? AND status='Submitted' AND purpose='Confirmation'
+                       ORDER BY appraisal_date DESC, id DESC LIMIT 1""", (emp_id,)).fetchone()
+        except sqlite3.OperationalError:
+            ap = None
+    if ap is not None:
+        ratings = json.loads(ap["ratings_json"] or "{}")
+        sup = db.execute("SELECT full_name FROM hr_users WHERE username=?", (ap["supervisor_username"],)).fetchone()
+        ap_supervisor = (sup["full_name"] if sup and sup["full_name"] else ap["supervisor_username"]) or ""
     return render_template(
         "confirmation_appraisal.html", emp=emp, appraisal_date=appraisal_date,
-        record_from=record_from, leave_totals=leave_totals,
+        record_from=record_from, leave_totals=leave_totals, ap=ap, ratings=ratings, ap_supervisor=ap_supervisor,
     )
 
 

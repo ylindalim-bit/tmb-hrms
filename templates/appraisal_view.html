@@ -2,7 +2,10 @@
 {% block title %}Appraisal - {{ a.emp_id }}{% endblock %}
 {% block content %}
 <h1>Appraisal &mdash; {{ a.emp_id }} &mdash; {{ a.full_name }}</h1>
-<p class="no-print"><button type="button" class="btn" onclick="window.print()">Print / Save as PDF</button></p>
+<p class="no-print">
+  <a class="btn" href="{{ url_for('confirmation_appraisal', emp_id=a.emp_id, appraisal_id=a.id, appraisal_date=a.appraisal_date) }}" target="_blank">Print on the company Appraisal Form</a>
+  <button type="button" class="btn secondary" onclick="window.print()">Print this page</button>
+</p>
 
 <div class="card">
   <div class="form-grid">

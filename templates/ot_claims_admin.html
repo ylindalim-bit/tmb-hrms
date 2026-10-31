@@ -90,13 +90,17 @@
   <div class="table-wrap frozen-header">
   <table>
     <thead>
-      <tr><th class="text">Employee</th><th class="text">Date</th><th>1.5x</th><th>2.0x</th><th>3.0x</th><th class="text">Reason</th><th class="text">Submitted By</th><th class="text">Submitted</th><th>Action</th></tr>
+      <tr><th class="text">Employee</th><th class="text">Date</th><th class="text">OT From</th><th class="text">OT To</th><th>1.5x</th><th>2.0x</th><th>3.0x</th><th class="text">Reason</th><th class="text">Submitted By</th><th class="text">Submitted</th><th>Action</th></tr>
     </thead>
     <tbody>
       {% for c in pending %}
       <tr>
         <td class="text">{{ c.emp_id }} &mdash; {{ c.full_name }}</td>
         <td class="text">{{ c.claim_date }} ({{ c.claim_date|weekday }})</td>
+        {% set ot_from = c.ot_before_start or c.ot_start or c.time_in %}
+        {% set ot_to = c.ot_end or c.ot_before_end or c.time_out %}
+        <td class="text">{{ ot_from if ot_from else "-" }}</td>
+        <td class="text">{{ ot_to if ot_to else "-" }}{% if c.ot_before_start and c.ot_start %}<div style="font-size:11px; color:var(--muted);">{{ c.ot_before_start }}&ndash;{{ c.ot_before_end }} + {{ c.ot_start }}&ndash;{{ c.ot_end }}</div>{% endif %}</td>
         <td>{{ c.ot_hours_1_5 }}</td>
         <td>{{ c.ot_hours_2_0 }}</td>
         <td>{{ c.ot_hours_3_0 }}</td>
@@ -114,7 +118,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="9" class="text" style="color:var(--muted);">No pending OT claims.</td></tr>
+      <tr><td colspan="11" class="text" style="color:var(--muted);">No pending OT claims.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -126,13 +130,17 @@
   <div class="table-wrap frozen-header">
   <table>
     <thead>
-      <tr><th class="text">Employee</th><th class="text">Date</th><th>1.5x</th><th>2.0x</th><th>3.0x</th><th class="text">Reason</th><th class="text">Status</th><th class="text">Reviewed By</th><th class="text">Reviewed</th><th>Action</th></tr>
+      <tr><th class="text">Employee</th><th class="text">Date</th><th class="text">OT From</th><th class="text">OT To</th><th>1.5x</th><th>2.0x</th><th>3.0x</th><th class="text">Reason</th><th class="text">Status</th><th class="text">Reviewed By</th><th class="text">Reviewed</th><th>Action</th></tr>
     </thead>
     <tbody>
       {% for c in reviewed %}
       <tr>
         <td class="text">{{ c.emp_id }} &mdash; {{ c.full_name }}</td>
         <td class="text">{{ c.claim_date }} ({{ c.claim_date|weekday }})</td>
+        {% set ot_from = c.ot_before_start or c.ot_start or c.time_in %}
+        {% set ot_to = c.ot_end or c.ot_before_end or c.time_out %}
+        <td class="text">{{ ot_from if ot_from else "-" }}{% if c.ot_before_start and c.ot_start %}<div style="font-size:11px; color:var(--muted);">+ {{ c.ot_start }}</div>{% endif %}</td>
+        <td class="text">{{ ot_to if ot_to else "-" }}{% if c.ot_before_end and c.ot_end %}<div style="font-size:11px; color:var(--muted);">(first: {{ c.ot_before_end }})</div>{% endif %}</td>
         <td>{{ c.ot_hours_1_5 }}</td>
         <td>{{ c.ot_hours_2_0 }}</td>
         <td>{{ c.ot_hours_3_0 }}</td>
@@ -153,7 +161,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="10" class="text" style="color:var(--muted);">None yet.</td></tr>
+      <tr><td colspan="12" class="text" style="color:var(--muted);">None yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

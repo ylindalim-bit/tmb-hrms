@@ -165,8 +165,9 @@ function rangeHours(startStr, endStr) {
   if (!startStr || !endStr) return 0;
   var s = startStr.split(':').map(Number);
   var e = endStr.split(':').map(Number);
-  var hours = ((e[0] * 60 + e[1]) - (s[0] * 60 + s[1])) / 60;
-  return hours > 0 ? hours : 0;
+  var minutes = (e[0] * 60 + e[1]) - (s[0] * 60 + s[1]);
+  // Rounded DOWN to whole 15-minute blocks, same as the server.
+  return minutes > 0 ? Math.floor(minutes / 15) * 15 / 60 : 0;
 }
 
 function updateOtAutoCalc() {
@@ -185,7 +186,8 @@ function updateOtAutoCalc() {
     return;
   }
 
-  var restHours = Math.ceil(grossHours / 5) * 0.5;
+  // Rest time comes off only when the OT is more than 4h30m: 30 min on a working day, 1 hour on a rest day / holiday.
+  var restHours = grossHours > 4.5 ? (isRestDay(dateStr) ? 1 : 0.5) : 0;
   var netHours = Math.max(grossHours - restHours, 0);
   [ot1_5, ot2_0, ot3_0].forEach(function (el) { el.readOnly = true; el.style.background = '#f3f4f6'; });
   note.style.display = 'block';

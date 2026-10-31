@@ -77,6 +77,9 @@
       <div><label>Ignore OT shorter than (minutes)</label><input type="number" name="min_minutes" value="15" min="0" step="5"></div>
       <div><label>Reason</label><input type="text" name="reason" value="Send worker" style="width:100%;"></div>
     </div>
+    <label style="display:flex; gap:8px; align-items:center; font-weight:400; margin-top:8px;">
+      <input type="checkbox" name="replace" value="1" style="width:auto;"> Replace this employee's Pending claims in the date range (re-calculates them; Approved ones are never touched)
+    </label>
     <div class="form-actions"><button class="btn" type="submit">Create OT claims</button></div>
   </form>
 </div>
@@ -161,7 +164,8 @@
 // rest break of 0.5 hour is deducted for every 5 hours worked or part
 // thereof - matches the server-side _ot_claim_hours_from_form in
 // app.py exactly, so what's previewed here is what actually gets saved.
-var HOLIDAY_DATES = {{ holiday_dates | tojson }};
+var HOLIDAYS_BY_BASE = {{ holiday_dates | tojson }};
+var EMP_BASE = {{ emp_base | tojson }};
 var STANDARD_HOURS_BY_EMP = {{ standard_hours_by_emp | tojson }};
 
 // Derives the OT Before/OT windows from Time In/Time Out against the
@@ -224,15 +228,17 @@ function isRestDay(dateStr) {
   if (!dateStr) return false;
   var parts = dateStr.split('-').map(Number);
   if (new Date(parts[0], parts[1] - 1, parts[2]).getDay() === 0) return true;
-  return HOLIDAY_DATES.indexOf(dateStr) !== -1;
+  var base = EMP_BASE[document.getElementById('emp_id').value] || 'MY';
+  return (HOLIDAYS_BY_BASE[base] || []).indexOf(dateStr) !== -1;
 }
 
 function rangeHours(startStr, endStr) {
   if (!startStr || !endStr) return 0;
   var s = startStr.split(':').map(Number);
   var e = endStr.split(':').map(Number);
-  var hours = ((e[0] * 60 + e[1]) - (s[0] * 60 + s[1])) / 60;
-  return hours > 0 ? hours : 0;
+  var minutes = (e[0] * 60 + e[1]) - (s[0] * 60 + s[1]);
+  // Rounded DOWN to whole 15-minute blocks, same as the server.
+  return minutes > 0 ? Math.floor(minutes / 15) * 15 / 60 : 0;
 }
 
 function updateOtAutoCalc() {
@@ -251,7 +257,8 @@ function updateOtAutoCalc() {
     return;
   }
 
-  var restHours = Math.ceil(grossHours / 5) * 0.5;
+  // Rest time comes off only when the OT is more than 4h30m: 30 min on a working day, 1 hour on a rest day / holiday.
+  var restHours = grossHours > 4.5 ? (isRestDay(dateStr) ? 1 : 0.5) : 0;
   var netHours = Math.max(grossHours - restHours, 0);
   [ot1_5, ot2_0, ot3_0].forEach(function (el) { el.readOnly = true; el.style.background = '#f3f4f6'; });
   note.style.display = 'block';

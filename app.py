@@ -9472,6 +9472,11 @@ def _is_rest_day(db, claim_date, base="MY"):
     ).fetchone() is not None
 
 
+def _floor_quarter_hour(hours):
+    """Rounds a number of hours DOWN to a whole number of 15-minute blocks."""
+    return math.floor(hours * 4 + 1e-9) / 4
+
+
 def _ot_claim_hours_from_form(db, f, claim_date, base="MY"):
     """Builds (ot_hours_1_5, ot_hours_2_0, ot_hours_3_0) from a claim
     submission form. If either OT window (OT Before Start/End, for OT
@@ -9485,16 +9490,21 @@ def _ot_claim_hours_from_form(db, f, claim_date, base="MY"):
     holiday - ignoring whatever was typed into the OT Hours boxes.
     Otherwise (no time windows given at all), all three tiers are taken
     exactly as typed, same as manual entry always worked."""
-    before_hours = _time_range_hours(f.get("ot_before_start"), f.get("ot_before_end"))
-    after_hours = _time_range_hours(f.get("ot_start"), f.get("ot_end"))
+    # Each OT window is rounded DOWN to whole 15-minute blocks (e.g. 2h18m -> 2h15m), the way OT has
+    # always been claimed on the paper form.
+    before_hours = _floor_quarter_hour(_time_range_hours(f.get("ot_before_start"), f.get("ot_before_end")))
+    after_hours = _floor_quarter_hour(_time_range_hours(f.get("ot_start"), f.get("ot_end")))
     gross_hours = before_hours + after_hours
     if gross_hours <= 0:
         return (f.get("ot_hours_1_5", type=float) or 0,
                 f.get("ot_hours_2_0", type=float) or 0,
                 f.get("ot_hours_3_0", type=float) or 0)
-    rest_hours = math.ceil(gross_hours / 5) * 0.5
+    # Handbook rest-time rule: only when the OT is MORE than 4h30m - 30 minutes off on a working day,
+    # 1 hour off on a rest day / weekend / public holiday. Shorter OT has no deduction.
+    rest_day = _is_rest_day(db, claim_date, base)
+    rest_hours = (1.0 if rest_day else 0.5) if gross_hours > 4.5 else 0.0
     net_hours = max(gross_hours - rest_hours, 0)
-    if _is_rest_day(db, claim_date, base):
+    if rest_day:
         # Company policy (5.5.7/5.5.8): a rest day (Sunday) is 2.0x for ALL
         # hours worked, within or beyond normal hours; a public holiday is
         # 2.0x within normal hours and 3.0x beyond them.
@@ -9554,7 +9564,11 @@ def ot_claims_admin():
         "SELECT full_name FROM hr_users WHERE can_approve_ot='Y' ORDER BY full_name"
     ).fetchall()
     approver_names = ", ".join(r["full_name"] for r in approvers) or "no one yet - see Settings"
-    holiday_dates = [r["date"] for r in db.execute("SELECT date FROM public_holidays").fetchall()]
+    holiday_dates = {}
+    for r in db.execute("SELECT date, state FROM public_holidays").fetchall():
+        holiday_dates.setdefault(r["state"], []).append(r["date"])
+    emp_base = {e["emp_id"]: (db.execute("SELECT base FROM employees WHERE emp_id=?", (e["emp_id"],)).fetchone()["base"] or "MY")
+                for e in flagged_employees}
     schedule_history = _load_schedule_history(db)
     standard_hours_by_emp = {
         e["emp_id"]: {"standard_start": e["standard_start"], "standard_end": e["standard_end"],
@@ -9565,7 +9579,7 @@ def ot_claims_admin():
                             flagged_employees=flagged_employees, approver_names=approver_names,
                             generated=request.args.get("generated", type=int), skipped=request.args.get("skipped", type=int),
                             gen_emp=request.args.get("gen_emp", ""), gen_error=request.args.get("gen_error"),
-                            holiday_dates=holiday_dates, standard_hours_by_emp=standard_hours_by_emp)
+                            holiday_dates=holiday_dates, emp_base=emp_base, standard_hours_by_emp=standard_hours_by_emp)
 
 
 @app.route("/ot-claims/new", methods=["POST"])
@@ -9621,6 +9635,11 @@ def ot_claims_generate():
         return redirect(url_for("ot_claims_admin", gen_error=1))
     min_minutes = request.form.get("min_minutes", type=int)
     min_minutes = 15 if min_minutes is None else max(min_minutes, 0)
+    if request.form.get("replace") == "1":
+        db.execute(
+            "DELETE FROM ot_claims WHERE emp_id=? AND status='Pending' AND claim_date BETWEEN ? AND ?",
+            (emp_id, d0.isoformat(), d1.isoformat()),
+        )
     schedule_history = _load_schedule_history(db)
     created, skipped = [], 0
     d = d0

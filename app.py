@@ -9584,15 +9584,16 @@ def _ot_claim_hours_from_form(db, f, claim_date, base="MY"):
                 f.get("ot_hours_3_0", type=float) or 0)
     # Handbook rest-time rule: only when the OT is MORE than 4h30m - 30 minutes off on a working day,
     # 1 hour off on a rest day / weekend / public holiday. Shorter OT has no deduction.
-    rest_day = _is_rest_day(db, claim_date, base)
+    forced_ph = f.get("ph_day") == "1"  # a day marked PH on attendance even if not in the holiday calendar
+    rest_day = forced_ph or _is_rest_day(db, claim_date, base)
     rest_hours = (1.0 if rest_day else 0.5) if gross_hours > 4.5 else 0.0
     net_hours = max(gross_hours - rest_hours, 0)
     if rest_day:
         # Company policy (5.5.7/5.5.8): a rest day (Sunday) is 2.0x for ALL
         # hours worked, within or beyond normal hours; a public holiday is
         # 2.0x within normal hours and 3.0x beyond them.
-        if db.execute("SELECT 1 FROM public_holidays WHERE date=? AND state=?",
-                      (claim_date, base or "MY")).fetchone() is None:
+        if not forced_ph and db.execute("SELECT 1 FROM public_holidays WHERE date=? AND state=?",
+                                        (claim_date, base or "MY")).fetchone() is None:
             return 0, round(net_hours, 2), 0
         ot_2_0 = round(min(net_hours, 8), 2)
         ot_3_0 = round(max(net_hours - 8, 0), 2)
@@ -9658,7 +9659,9 @@ def ot_claims_admin():
                       "schedule": [list(s) for s in schedule_history.get(e["emp_id"], [])]}
         for e in flagged_employees
     }
-    return render_template("ot_claims_admin.html", pending=pending, reviewed=reviewed,
+    generator_employees = db.execute(
+        "SELECT emp_id, full_name FROM employees WHERE status='Active' ORDER BY emp_id").fetchall()
+    return render_template("ot_claims_admin.html", pending=pending, reviewed=reviewed, generator_employees=generator_employees,
                             flagged_employees=flagged_employees, approver_names=approver_names,
                             generated=request.args.get("generated", type=int), skipped=request.args.get("skipped", type=int),
                             gen_emp=request.args.get("gen_emp", ""), gen_error=request.args.get("gen_error"),
@@ -9733,7 +9736,7 @@ def ot_claims_generate():
         date_iso = d.isoformat()
         d += datetime.timedelta(days=1)
         row = db.execute("SELECT * FROM attendance_daily WHERE emp_id=? AND date=?", (emp_id, date_iso)).fetchone()
-        if (row is None or row["day_type"] != "WORKED" or not row["time_in"] or not row["time_out"]
+        if (row is None or row["day_type"] not in ("WORKED", "PH") or not row["time_in"] or not row["time_out"]
                 or db.execute("SELECT 1 FROM ot_claims WHERE emp_id=? AND claim_date=?", (emp_id, date_iso)).fetchone()):
             skipped += 1
             continue
@@ -9744,9 +9747,13 @@ def ot_claims_generate():
             skipped += 1
             continue
         fields = {}
-        if _is_rest_day(db, date_iso, emp["base"]):
+        ph_marked = row["day_type"] == "PH"
+        if ph_marked or _is_rest_day(db, date_iso, emp["base"]):
+            # Worked on a Sunday / public holiday (or a day marked PH on attendance): the whole span is OT.
             if t_out - t_in >= min_minutes:
                 fields = {"ot_start": row["time_in"], "ot_end": row["time_out"]}
+                if ph_marked:
+                    fields["ph_day"] = "1"
         else:
             before_in = max(t_in, earliest_min) if earliest_min is not None else t_in
             if s_min - before_in >= min_minutes:
@@ -9758,6 +9765,7 @@ def ot_claims_generate():
             skipped += 1
             continue
         ot_1_5, ot_2_0, ot_3_0 = _ot_claim_hours_from_form(db, MultiDict(fields), date_iso, emp["base"])
+        fields.pop("ph_day", None)
         db.execute(
             """INSERT INTO ot_claims (emp_id, claim_date, time_in, time_out, ot_before_start, ot_before_end,
                    ot_start, ot_end, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, reason, status, submitted_by, submitted_at)

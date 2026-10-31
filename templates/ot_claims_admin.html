@@ -70,7 +70,7 @@
       <div><label>Employee</label>
         <select name="emp_id" required>
           <option value="">-- Select --</option>
-          {% for e in flagged_employees %}<option value="{{ e.emp_id }}">{{ e.emp_id }} &mdash; {{ e.full_name }}</option>{% endfor %}
+          {% for e in generator_employees %}<option value="{{ e.emp_id }}">{{ e.emp_id }} &mdash; {{ e.full_name }}</option>{% endfor %}
         </select></div>
       <div><label>From</label><input type="date" name="date_from" required></div>
       <div><label>To</label><input type="date" name="date_to" required></div>

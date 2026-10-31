@@ -119,7 +119,8 @@
 // to the same filtered list instead of the unfiltered one.
 var urlParams = new URLSearchParams(window.location.search);
 var problemsOnly = urlParams.get('problems') === '1';
-var selectedBase = urlParams.get('base') || '';
+var selectedBase = urlParams.get('base');
+if (selectedBase === null) { try { selectedBase = localStorage.getItem('tmbAttendanceBase') || ''; } catch (e) { selectedBase = ''; } }
 
 function toggleProblemsOnly() {
   problemsOnly = !problemsOnly;
@@ -129,6 +130,7 @@ function toggleProblemsOnly() {
 
 function setBaseFilter(base) {
   selectedBase = base;
+  try { localStorage.setItem('tmbAttendanceBase', base || ''); } catch (e) {}
   document.querySelectorAll('.base-filter-btn').forEach(function (btn) {
     btn.classList.toggle('secondary', btn.dataset.base !== base);
   });

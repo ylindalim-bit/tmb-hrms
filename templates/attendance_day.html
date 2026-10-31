@@ -123,6 +123,8 @@ function filterByBase(base) {
   var shown = 0;
   var baseField = document.getElementById('day-form-base');
   if (baseField) baseField.value = base;
+  // Remember the chosen base, so the next day / next page you open stays on it (All clears it).
+  try { localStorage.setItem('tmbAttendanceBase', base || ''); } catch (e) {}
   try { history.replaceState(null, '', base ? '?base=' + encodeURIComponent(base) : location.pathname); } catch (e) {}
   document.querySelectorAll('#day-table tbody tr').forEach(function (row) {
     var visible = !base || row.dataset.base === base;
@@ -167,6 +169,7 @@ function filterByBase(base) {
   });
 })();
 var startBase = {{ start_base|tojson }};
+if (!startBase) { try { startBase = localStorage.getItem('tmbAttendanceBase') || ''; } catch (e) {} }
 if (startBase) { filterByBase(startBase); }
 </script>
 {% endblock %}

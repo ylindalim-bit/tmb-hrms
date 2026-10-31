@@ -266,6 +266,7 @@ def _add_zero_pay_notes(ws, start_row, notes):
 
 
 from flask import Flask, Response, abort, g, redirect, render_template, request, send_file, send_from_directory, session, url_for
+from werkzeug.datastructures import MultiDict
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
@@ -9562,6 +9563,8 @@ def ot_claims_admin():
     }
     return render_template("ot_claims_admin.html", pending=pending, reviewed=reviewed,
                             flagged_employees=flagged_employees, approver_names=approver_names,
+                            generated=request.args.get("generated", type=int), skipped=request.args.get("skipped", type=int),
+                            gen_emp=request.args.get("gen_emp", ""), gen_error=request.args.get("gen_error"),
                             holiday_dates=holiday_dates, standard_hours_by_emp=standard_hours_by_emp)
 
 
@@ -9597,6 +9600,69 @@ def ot_claim_new():
     )
     db.commit()
     return redirect(url_for("ot_claims_admin"))
+
+
+@app.route("/ot-claims/generate", methods=["POST"])
+def ot_claims_generate():
+    """Creates Pending OT claims for one employee from their clock-in/out times on Daily Attendance, for a
+    date range: any time worked before their normal start (OT Before window) or after their normal end
+    (OT window) of at least `min_minutes`, and on a Sunday/public holiday the whole span - the same windows,
+    rest-break rule and rate tiers as keying the claim by hand. Days that already have a claim (any status),
+    aren't WORKED, or have no Time In/Out are skipped. Nothing counts in payroll until the claim is approved."""
+    db = get_db()
+    emp_id = request.form.get("emp_id", "")
+    emp = db.execute("SELECT * FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+    try:
+        d0 = datetime.date.fromisoformat(request.form.get("date_from", ""))
+        d1 = datetime.date.fromisoformat(request.form.get("date_to", ""))
+    except ValueError:
+        d0 = d1 = None
+    if emp is None or d0 is None or d1 < d0:
+        return redirect(url_for("ot_claims_admin", gen_error=1))
+    min_minutes = request.form.get("min_minutes", type=int)
+    min_minutes = 15 if min_minutes is None else max(min_minutes, 0)
+    schedule_history = _load_schedule_history(db)
+    created, skipped = [], 0
+    d = d0
+    while d <= d1:
+        date_iso = d.isoformat()
+        d += datetime.timedelta(days=1)
+        row = db.execute("SELECT * FROM attendance_daily WHERE emp_id=? AND date=?", (emp_id, date_iso)).fetchone()
+        if (row is None or row["day_type"] != "WORKED" or not row["time_in"] or not row["time_out"]
+                or db.execute("SELECT 1 FROM ot_claims WHERE emp_id=? AND claim_date=?", (emp_id, date_iso)).fetchone()):
+            skipped += 1
+            continue
+        t_in, t_out = _hhmm_to_minutes(row["time_in"]), _hhmm_to_minutes(row["time_out"])
+        start, end = _hours_on(schedule_history, emp, date_iso)
+        s_min, e_min = _hhmm_to_minutes(start), _hhmm_to_minutes(end)
+        if t_in is None or t_out is None or t_out <= t_in or s_min is None or e_min is None:
+            skipped += 1
+            continue
+        fields = {}
+        if _is_rest_day(db, date_iso, emp["base"]):
+            if t_out - t_in >= min_minutes:
+                fields = {"ot_start": row["time_in"], "ot_end": row["time_out"]}
+        else:
+            if s_min - t_in >= min_minutes:
+                fields["ot_before_start"], fields["ot_before_end"] = row["time_in"], start
+            if t_out - e_min >= min_minutes:
+                fields["ot_start"], fields["ot_end"] = end, row["time_out"]
+        if not fields:
+            skipped += 1
+            continue
+        ot_1_5, ot_2_0, ot_3_0 = _ot_claim_hours_from_form(db, MultiDict(fields), date_iso, emp["base"])
+        db.execute(
+            """INSERT INTO ot_claims (emp_id, claim_date, time_in, time_out, ot_before_start, ot_before_end,
+                   ot_start, ot_end, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, reason, status, submitted_by, submitted_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'Pending',?,?)""",
+            (emp_id, date_iso, row["time_in"], row["time_out"], fields.get("ot_before_start"), fields.get("ot_before_end"),
+             fields.get("ot_start"), fields.get("ot_end"), ot_1_5, ot_2_0, ot_3_0,
+             (request.form.get("reason") or "").strip() or "OT from attendance",
+             session.get("hr_username"), datetime.datetime.now().isoformat(timespec="seconds")),
+        )
+        created.append(date_iso)
+    db.commit()
+    return redirect(url_for("ot_claims_admin", generated=len(created), skipped=skipped, gen_emp=emp_id))
 
 
 @app.route("/ot-claims/<int:claim_id>/review", methods=["POST"])

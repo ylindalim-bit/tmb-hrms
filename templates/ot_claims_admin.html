@@ -54,6 +54,33 @@
   {% endif %}
 </div>
 
+{% if generated is not none %}
+<div class="card" style="background:#dcfce7; border-color:#16a34a; font-weight:600;">Created {{ generated }} Pending OT claim{{ "s" if generated != 1 }} for {{ gen_emp }} from attendance ({{ skipped }} day{{ "s" if skipped != 1 }} skipped: no OT, not worked, no clock times, or already claimed). Check them below, then Approve or Reject.</div>
+{% endif %}
+{% if gen_error %}<div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger);">Choose an employee and a valid From / To date.</div>{% endif %}
+<div class="card">
+  <h2 style="margin-top:0;">Create OT claims from attendance</h2>
+  <p style="color:var(--muted); font-size:12px; margin-top:-4px;">
+    Fills in the OT claims for you from the clock-in / clock-out times already on Daily Attendance: time before the normal
+    start, time after the normal end, and the whole day on a Sunday or public holiday. They are created as Pending, with the
+    same rest-break and rate rules as keying one in by hand. Days that already have a claim are skipped.
+  </p>
+  <form method="post" action="{{ url_for('ot_claims_generate') }}">
+    <div class="form-grid">
+      <div><label>Employee</label>
+        <select name="emp_id" required>
+          <option value="">-- Select --</option>
+          {% for e in flagged_employees %}<option value="{{ e.emp_id }}">{{ e.emp_id }} &mdash; {{ e.full_name }}</option>{% endfor %}
+        </select></div>
+      <div><label>From</label><input type="date" name="date_from" required></div>
+      <div><label>To</label><input type="date" name="date_to" required></div>
+      <div><label>Ignore OT shorter than (minutes)</label><input type="number" name="min_minutes" value="15" min="0" step="5"></div>
+      <div><label>Reason</label><input type="text" name="reason" value="Send worker" style="width:100%;"></div>
+    </div>
+    <div class="form-actions"><button class="btn" type="submit">Create OT claims</button></div>
+  </form>
+</div>
+
 <div class="card">
   <h2 style="margin-top:0;">Pending ({{ pending|length }})</h2>
   <p style="color:var(--muted); font-size:13px; margin-top:-8px;">Awaiting approval from {{ approver_names }}.</p>

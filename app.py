@@ -9669,7 +9669,7 @@ def ot_claims_generate():
             if s_min - before_in >= min_minutes:
                 fields["ot_before_start"] = f"{before_in // 60:02d}:{before_in % 60:02d}"
                 fields["ot_before_end"] = start
-            if t_out - e_min >= min_minutes:
+            if request.form.get("skip_after") != "1" and t_out - e_min >= min_minutes:
                 fields["ot_start"], fields["ot_end"] = end, row["time_out"]
         if not fields:
             skipped += 1

@@ -95,6 +95,7 @@
       {% for t in leave_types %}
       <option value="{{ t }}">{{ t.replace("/", " / ") }}</option>
       {% endfor %}
+      <option value="Unrecorded Leave">Unrecorded Leave</option>
     </select>
   </div>
   <div class="table-wrap">
@@ -112,13 +113,19 @@
         </td>
         <td class="text" style="white-space:normal; min-width:110px;">{{ lr.review_notes or "-" }}</td>
         <td class="text">
+          {% if lr.source == 'trip' %}
+            {% if lr.main_doc %}<a href="{{ url_for('portal_business_trip_document', trip_id=lr.id) }}" target="_blank" rel="noopener">{{ lr.main_doc }}</a>{% endif %}
+            {% for doc in lr.extra_docs %}{% if lr.main_doc or not loop.first %}<br>{% endif %}<a href="{{ url_for('portal_business_trip_extra_document', doc_id=doc.id) }}" target="_blank" rel="noopener">{{ doc.original_name }}</a>{% endfor %}
+            {% if not lr.main_doc and not lr.extra_docs %}<span style="color:var(--muted);">-</span>{% endif %}
+          {% else %}
           {% set docs = documents_by_request.get(lr.id, []) %}
           {% if docs %}
             {% for doc in docs %}
             <a href="{{ url_for('portal_leave_document', doc_id=doc.id) }}" target="_blank" rel="noopener">{{ doc.original_name }}</a>{% if not loop.last %}<br>{% endif %}
             {% endfor %}
           {% else %}<span style="color:var(--muted);">-</span>{% endif %}
-          {% if lr.status == 'Pending' %}
+          {% endif %}
+          {% if lr.source != 'trip' and lr.status == 'Pending' %}
           <form method="post" action="{{ url_for('portal_leave_document_add', request_id=lr.id) }}" enctype="multipart/form-data" style="margin-top:6px; display:flex; gap:4px; align-items:center;">
             <input type="file" name="supporting_doc" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple style="font-size:11px; width:140px;">
             <button class="btn secondary" type="submit" style="padding:2px 8px; font-size:11px;">+ Add</button>
@@ -126,7 +133,9 @@
           {% endif %}
         </td>
         <td class="text">
-          {% if lr.status == 'Pending' %}
+          {% if lr.source == 'trip' %}
+          <span style="color:var(--muted); font-size:11px;">Movement Notice</span>
+          {% elif lr.status == 'Pending' %}
           <form method="post" action="{{ url_for('portal_leave_delete', request_id=lr.id) }}" onsubmit="return confirm('Delete this leave request?');">
             <button class="btn secondary" type="submit" style="padding:4px 10px;">Delete</button>
           </form>
@@ -169,6 +178,12 @@
         <td class="text"></td>
         <td class="text">Unpaid Leave</td>
         <td>{{ ul_used }}</td>
+        <td class="text" colspan="5"></td>
+      </tr>
+      <tr class="totals-row">
+        <td class="text"></td>
+        <td class="text">Unrecorded Leave</td>
+        <td>{{ '%g'|format(unrecorded_used) }}</td>
         <td class="text" colspan="5"></td>
       </tr>
     </tfoot>

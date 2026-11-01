@@ -63,14 +63,15 @@
 <thead>
 <tr>
   <th class="text sticky-col sticky-col-1">ID</th><th class="text sticky-col sticky-col-2">Name</th>
+  <th class="sticky-col sticky-col-3 no-print"></th>
   {% for col in optional_columns %}
   <th class="{{ 'text' if col.type != 'currency' else '' }}" data-key="{{ col.key }}">{{ col.label }}</th>
   {% endfor %}
-  <th class="sticky-col sticky-col-right no-print"></th>
 </tr>
 <tr class="filter-row no-print">
   <th class="text sticky-col sticky-col-1"><input type="text" class="col-filter" data-key="emp_id" placeholder="Filter..."></th>
   <th class="text sticky-col sticky-col-2"><input type="text" class="col-filter" data-key="full_name" placeholder="Filter..."></th>
+  <th class="sticky-col sticky-col-3 no-print"><button type="button" id="clear-filters" class="btn secondary" style="padding:3px 8px; font-size:11px;">Clear</button></th>
   {% for col in optional_columns %}
   <th class="{{ 'text' if col.type != 'currency' else '' }}" data-key="{{ col.key }}">
     {% if col.type == "select" %}
@@ -90,7 +91,6 @@
     {% endif %}
   </th>
   {% endfor %}
-  <th class="sticky-col sticky-col-right no-print"><button type="button" id="clear-filters" class="btn secondary" style="padding:3px 8px; font-size:11px;">Clear</button></th>
 </tr>
 </thead>
 <tbody>
@@ -102,6 +102,10 @@
   <td class="text sticky-col sticky-col-2" data-key="full_name">
     {% if e.status == "Inactive" %}<span style="color:var(--danger); font-weight:600;">{{ e.full_name }}</span>
     {% else %}{{ e.full_name }}{% endif %}
+  </td>
+  <td class="sticky-col sticky-col-3 no-print" style="white-space:nowrap;">
+    <a class="emp-link" href="{{ url_for('edit_employee', emp_id=e.emp_id) }}">Edit</a>
+    &nbsp;<a class="emp-link" href="{{ url_for('portal_preview', emp_id=e.emp_id) }}" title="View as this employee">View</a>
   </td>
   {% for col in optional_columns %}
     {% if col.type == "eis" %}
@@ -118,10 +122,6 @@
     <td class="text" data-key="{{ col.key }}">{{ e[col.key] or "-" }}</td>
     {% endif %}
   {% endfor %}
-  <td class="sticky-col sticky-col-right no-print" style="white-space:nowrap;">
-    <a class="emp-link" href="{{ url_for('edit_employee', emp_id=e.emp_id) }}">Edit</a>
-    &nbsp;<a class="emp-link" href="{{ url_for('portal_preview', emp_id=e.emp_id) }}" title="View as this employee">View</a>
-  </td>
 </tr>
 {% endfor %}
 </tbody>

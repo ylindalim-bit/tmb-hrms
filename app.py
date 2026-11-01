@@ -707,25 +707,48 @@ def require_hr_login():
     return None
 
 
-@app.context_processor
-def inject_globals():
+def _shift_month(ym, delta):
+    """'2026-10' shifted by delta months -> '2026-09'; '' stays ''."""
+    if not ym:
+        return ""
+    y, m = (int(x) for x in ym.split("-"))
+    m += delta
+    while m < 1:
+        y, m = y - 1, m + 12
+    while m > 12:
+        y, m = y + 1, m - 12
+    return f"{y:04d}-{m:02d}"
+
+
+def _payroll_default_month(db):
+    """The month still to be run: a reopened/unlocked month if there is one, else the month after the latest
+    finalized one (never later than the current month), else the current month."""
     today = datetime.date.today()
-    # The "Run Payroll" menu opens the month that still needs running: the month after the latest finalized one
-    # (never later than the current month), instead of whatever month it happens to be today.
-    pay_year, pay_month = today.year, today.month
+    year, month = today.year, today.month
     try:
-        reopened = get_db().execute("SELECT year, month FROM payroll_reopen ORDER BY year, month LIMIT 1").fetchone()
-        last = get_db().execute(
+        reopened = db.execute("SELECT year, month FROM payroll_reopen ORDER BY year, month LIMIT 1").fetchone()
+        last = db.execute(
             "SELECT year, month FROM payroll_runs WHERE finalized_at IS NOT NULL ORDER BY year DESC, month DESC LIMIT 1"
         ).fetchone()
         if reopened:
-            pay_year, pay_month = reopened["year"], reopened["month"]  # a reopened month is the one being worked on
+            year, month = reopened["year"], reopened["month"]
         elif last:
             ny, nm = (last["year"], last["month"] + 1) if last["month"] < 12 else (last["year"] + 1, 1)
             if (ny, nm) <= (today.year, today.month):
-                pay_year, pay_month = ny, nm
+                year, month = ny, nm
     except Exception:
         pass
+    return year, month
+
+
+@app.context_processor
+def inject_globals():
+    today = datetime.date.today()
+    # The "Run Payroll" menu opens the month that still needs running, not whatever month it is today.
+    try:
+        pay_year, pay_month = _payroll_default_month(get_db())
+    except Exception:
+        pay_year, pay_month = today.year, today.month
     return {"month_names": MONTH_NAMES, "cur_year": today.year, "cur_month": today.month,
             "pay_year": pay_year, "pay_month": pay_month,
             "hr_username": session.get("hr_username"), "hr_role": session.get("hr_role"),
@@ -9784,6 +9807,20 @@ def ot_claims_admin():
     filter_emps = [e for e in request.args.getlist("emp") if e]
     date_from = request.args.get("date_from", "")
     date_to = request.args.get("date_to", "")
+    # Unless a custom date range or "All months" is chosen, show one month at a time: ?month=YYYY-MM, else the
+    # month whose payroll is being run, so the page isn't full of other months' claims.
+    show_all = request.args.get("all") == "1"
+    view_month = ""
+    if not date_from and not date_to and not show_all:
+        ym = request.args.get("month", "")
+        try:
+            vy, vm = (int(x) for x in ym.split("-")) if ym else _payroll_default_month(db)
+            datetime.date(vy, vm, 1)
+        except (ValueError, TypeError):
+            vy, vm = _payroll_default_month(db)
+        view_month = f"{vy:04d}-{vm:02d}"
+        date_from = f"{vy:04d}-{vm:02d}-01"
+        date_to = f"{vy:04d}-{vm:02d}-{calendar.monthrange(vy, vm)[1]:02d}"
     where, params = "", []
     if filter_emps:
         where += " AND oc.emp_id IN (%s)" % ",".join("?" * len(filter_emps))
@@ -9795,6 +9832,7 @@ def ot_claims_admin():
         where += " AND oc.claim_date <= ?"
         params.append(date_to)
     filtered = bool(where)
+    pending_all_count = db.execute("SELECT COUNT(*) FROM ot_claims WHERE status='Pending'").fetchone()[0]
     pending = db.execute(
         f"""SELECT oc.*, e.full_name FROM ot_claims oc
            JOIN employees e ON e.emp_id = oc.emp_id
@@ -9853,6 +9891,8 @@ def ot_claims_admin():
     return render_template("ot_claims_admin.html", pending=pending, reviewed=reviewed, generator_employees=generator_employees,
                             pending_groups=pending_groups, claim_employees=claim_employees, filter_emps=filter_emps,
                             pending_totals=pending_totals, reviewed_totals=reviewed_totals,
+                            view_month=view_month, show_all=show_all, pending_elsewhere=pending_all_count - len(pending),
+                            prev_month=_shift_month(view_month, -1), next_month=_shift_month(view_month, 1),
                             date_from=date_from, date_to=date_to, filtered=filtered,
                             flagged_employees=flagged_employees, approver_names=approver_names,
                             generated=request.args.get("generated", type=int), skipped=request.args.get("skipped", type=int),

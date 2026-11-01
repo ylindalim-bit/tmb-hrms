@@ -93,6 +93,21 @@
 
 <div class="card">
   <h2 style="margin-top:0;">Show claims for</h2>
+  <div class="month-nav" style="margin-bottom:10px;">
+    {% if view_month %}
+    <a href="{{ url_for('ot_claims_admin', month=prev_month) }}">&laquo; Prev month</a>
+    <strong>{{ month_names[view_month[5:7]|int] }} {{ view_month[:4] }}</strong>
+    <a href="{{ url_for('ot_claims_admin', month=next_month) }}">Next month &raquo;</a>
+    <a href="{{ url_for('ot_claims_admin', all=1) }}" style="margin-left:14px;">All months</a>
+    {% elif show_all %}
+    <strong>All months</strong>
+    <a href="{{ url_for('ot_claims_admin') }}" style="margin-left:14px;">Back to the payroll month</a>
+    {% else %}
+    <strong>Custom dates</strong>
+    <a href="{{ url_for('ot_claims_admin') }}" style="margin-left:14px;">Back to the payroll month</a>
+    <a href="{{ url_for('ot_claims_admin', all=1) }}" style="margin-left:10px;">All months</a>
+    {% endif %}
+  </div>
   <form method="get">
     <div class="form-grid" style="margin-bottom:8px;">
       <div><label>From date</label><input type="date" name="date_from" value="{{ date_from }}"></div>
@@ -107,13 +122,14 @@
       {% endfor %}
     </div>
     <div class="form-actions"><button class="btn" type="submit">Show</button>
-      {% if filtered %}<a class="btn secondary" href="{{ url_for('ot_claims_admin') }}">Clear filter</a>{% endif %}</div>
+      {% if filter_emps or (not view_month) %}<a class="btn secondary" href="{{ url_for('ot_claims_admin') }}">Clear filter</a>{% endif %}</div>
   </form>
 </div>
 
 <div class="card">
   <h2 style="margin-top:0;">Pending ({{ pending|length }}){% if filtered %} <span style="font-size:12px; font-weight:400; color:var(--muted);">&mdash; filtered</span>{% endif %}</h2>
   <p style="color:var(--muted); font-size:13px; margin-top:-8px;">Awaiting approval from {{ approver_names }}. Grouped by employee, earliest date first.</p>
+  {% if pending_elsewhere > 0 %}<p style="background:#fef3c7; border-radius:6px; padding:6px 10px; font-size:13px;">{{ pending_elsewhere }} more Pending claim{{ "s" if pending_elsewhere != 1 }} not shown (another month{% if filter_emps %} or staff{% endif %}). <a href="{{ url_for('ot_claims_admin', all=1) }}">Show all months</a></p>{% endif %}
   <div class="table-wrap frozen-header">
   <table>
     <thead>

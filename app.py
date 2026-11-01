@@ -9729,6 +9729,20 @@ def _is_rest_day(db, claim_date, base="MY"):
     ).fetchone() is not None
 
 
+OT_SALARY_CEILING = 4000.0
+
+
+def _ot_entitled(emp):
+    """OT pay applies to employees on a basic salary of RM4,000 or less. Someone above that is not entitled to claim
+    OT unless they are marked 'OT Needs Approval' (the executives who may claim with Director approval)."""
+    try:
+        flagged = emp["ot_approval_required"] == "Y"
+        basic = emp["basic_salary"] or 0
+    except (KeyError, IndexError):
+        return True
+    return flagged or basic <= OT_SALARY_CEILING
+
+
 def _floor_quarter_hour(hours):
     """Rounds a number of hours DOWN to a whole number of 15-minute blocks."""
     return math.floor(hours * 4 + 1e-9) / 4
@@ -9886,8 +9900,10 @@ def ot_claims_admin():
                       "schedule": [list(s) for s in schedule_history.get(e["emp_id"], [])]}
         for e in flagged_employees
     }
-    generator_employees = db.execute(
-        "SELECT emp_id, full_name FROM employees WHERE status='Active' ORDER BY emp_id").fetchall()
+    generator_employees = [
+        dict(r, entitled=_ot_entitled(r)) for r in db.execute(
+            "SELECT emp_id, full_name, basic_salary, ot_approval_required FROM employees WHERE status='Active' ORDER BY emp_id"
+        ).fetchall()]
     return render_template("ot_claims_admin.html", pending=pending, reviewed=reviewed, generator_employees=generator_employees,
                             pending_groups=pending_groups, claim_employees=claim_employees, filter_emps=filter_emps,
                             pending_totals=pending_totals, reviewed_totals=reviewed_totals,
@@ -9909,9 +9925,11 @@ def ot_claim_new():
     emp_id = request.form.get("emp_id")
     claim_date = request.form.get("claim_date", "")
     reason = request.form.get("reason", "").strip() or None
-    emp = db.execute("SELECT base FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+    emp = db.execute("SELECT base, basic_salary, ot_approval_required FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
     if emp is None or not claim_date:
         return "Employee and claim date are required", 400
+    if not _ot_entitled(emp):
+        return f"{emp_id} is on a basic salary above RM{OT_SALARY_CEILING:,.0f} and is not entitled to OT claims.", 400
     if not reason:
         return "Reason is required", 400
     time_in = request.form.get("time_in") or None
@@ -9951,6 +9969,8 @@ def ot_claims_generate():
         d0 = d1 = None
     if emp is None or d0 is None or d1 < d0:
         return redirect(url_for("ot_claims_admin", gen_error=1))
+    if not _ot_entitled(emp):
+        return redirect(url_for("ot_claims_admin", gen_error=2, gen_emp=emp_id))
     min_minutes = request.form.get("min_minutes", type=int)
     min_minutes = 15 if min_minutes is None else max(min_minutes, 0)
     # Optional: OT before the normal start only counts from this time (e.g. 06:30) even if they clocked in earlier.
@@ -10026,6 +10046,11 @@ def review_ot_claim(claim_id):
     claim = db.execute("SELECT * FROM ot_claims WHERE id=?", (claim_id,)).fetchone()
     if claim is None:
         return "OT claim not found", 404
+    if decision == "Approved":
+        claimant = db.execute("SELECT basic_salary, ot_approval_required FROM employees WHERE emp_id=?", (claim["emp_id"],)).fetchone()
+        if claimant is not None and not _ot_entitled(claimant):
+            return (f"{claim['emp_id']} is on a basic salary above RM{OT_SALARY_CEILING:,.0f} and is not entitled to OT, "
+                    "so this claim can't be approved - Reject it instead."), 400
     hr_user = db.execute("SELECT full_name FROM hr_users WHERE username=?", (session["hr_username"],)).fetchone()
     reviewer = hr_user["full_name"] if hr_user else session["hr_username"]
     db.execute(
@@ -10039,6 +10064,37 @@ def review_ot_claim(claim_id):
         )
     db.commit()
     return redirect(url_for("ot_claims_admin"))
+
+
+@app.route("/ot-claims/<int:claim_id>/reverse", methods=["POST"])
+def ot_claim_reverse(claim_id):
+    """Admin only: takes back an Approved OT claim - its hours come off that day's attendance, the month is re-totalled,
+    and the claim is marked Rejected with the reason. Refused if the month's payroll is locked (Reopen it first)."""
+    if session.get("hr_role") != "admin":
+        abort(403)
+    db = get_db()
+    claim = db.execute("SELECT * FROM ot_claims WHERE id=?", (claim_id,)).fetchone()
+    if claim is None:
+        abort(404)
+    if claim["status"] != "Approved":
+        return redirect(request.referrer or url_for("ot_claims_admin"))
+    note = (request.form.get("note") or "Approval reversed: not entitled to OT").strip()
+    year, month = int(claim["claim_date"][:4]), int(claim["claim_date"][5:7])
+    _assert_payroll_open(db, claim["emp_id"], year, month)
+    db.execute(
+        """UPDATE attendance_daily SET
+               ot_hours_1_5 = MAX(COALESCE(ot_hours_1_5,0) - ?, 0),
+               ot_hours_2_0 = MAX(COALESCE(ot_hours_2_0,0) - ?, 0),
+               ot_hours_3_0 = MAX(COALESCE(ot_hours_3_0,0) - ?, 0),
+               ot_reason = CASE WHEN ot_reason = ? THEN NULL ELSE ot_reason END
+           WHERE emp_id=? AND date=?""",
+        (claim["ot_hours_1_5"] or 0, claim["ot_hours_2_0"] or 0, claim["ot_hours_3_0"] or 0,
+         claim["reason"] or "", claim["emp_id"], claim["claim_date"]),
+    )
+    db.execute("UPDATE ot_claims SET status='Rejected', review_notes=? WHERE id=?", (note, claim_id))
+    _sync_daily_to_monthly(db, claim["emp_id"], year, month)
+    db.commit()
+    return redirect(request.referrer or url_for("ot_claims_admin"))
 
 
 @app.route("/ot-claims/<int:claim_id>/reason", methods=["POST"])

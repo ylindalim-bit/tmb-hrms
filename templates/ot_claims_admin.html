@@ -57,7 +57,8 @@
 {% if generated is not none %}
 <div class="card" style="background:#dcfce7; border-color:#16a34a; font-weight:600;">Created {{ generated }} Pending OT claim{{ "s" if generated != 1 }} for {{ gen_emp }} from attendance ({{ skipped }} day{{ "s" if skipped != 1 }} skipped: no OT, not worked, no clock times, or already claimed). Check them below, then Approve or Reject.</div>
 {% endif %}
-{% if gen_error %}<div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger);">Choose an employee and a valid From / To date.</div>{% endif %}
+{% if gen_error == "2" %}<div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger);">{{ gen_emp }} is on a basic salary above RM4,000 and is not entitled to OT claims (unless marked "OT Needs Approval"), so no claims were created.</div>
+{% elif gen_error %}<div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger);">Choose an employee and a valid From / To date.</div>{% endif %}
 <div class="card">
   <h2 style="margin-top:0;">Create OT claims from attendance</h2>
   <p style="color:var(--muted); font-size:12px; margin-top:-4px;">
@@ -70,7 +71,7 @@
       <div><label>Employee</label>
         <select name="emp_id" required>
           <option value="">-- Select --</option>
-          {% for e in generator_employees %}<option value="{{ e.emp_id }}">{{ e.emp_id }} &mdash; {{ e.full_name }}</option>{% endfor %}
+          {% for e in generator_employees %}<option value="{{ e.emp_id }}">{{ e.emp_id }} &mdash; {{ e.full_name }}{% if not e.entitled %} (above RM4,000 - not entitled){% endif %}</option>{% endfor %}
         </select></div>
       <div><label>From</label><input type="date" name="date_from" required></div>
       <div><label>To</label><input type="date" name="date_to" required></div>
@@ -226,6 +227,11 @@
           </form>
           {% elif c.review_notes %}
           <span class="pill" style="background:#dbeafe; color:#1e3a8a; white-space:normal;">{{ c.review_notes }}</span>
+          {% endif %}
+          {% if c.status == 'Approved' and hr_role == 'admin' %}
+          <form method="post" action="{{ url_for('ot_claim_reverse', claim_id=c.id) }}" style="margin-top:4px;" onsubmit="return confirm('Reverse this approval? The OT hours come off that day, and the claim is marked Rejected.');">
+            <button class="btn secondary" type="submit" style="padding:2px 8px; font-size:11px; color:var(--danger);">Reverse</button>
+          </form>
           {% endif %}
         </td>
       </tr>

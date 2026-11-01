@@ -27,7 +27,7 @@
   </div>
 
   <h2>Earnings</h2>
-  <div class="row"><span>Basic Salary</span><span>RM {{ "%.2f"|format(r.basic_salary) }}</span></div>
+  <div class="row"><span>Basic Salary</span><span>RM {{ "%.2f"|format(r.basic_salary + (r.unpaid_deduction or 0)) }}</span></div>
   <div class="row"><span>Fixed Allowance</span><span>RM {{ "%.2f"|format(r.fixed_allowance) }}</span></div>
   <div class="row"><span>Variable Allowance</span><span>RM {{ "%.2f"|format(r.variable_allowance) }}</span></div>
   <div class="row"><span>OT 1.5x ({{ r.ot_hours_1_5 }} hrs @ RM {{ "%.4f"|format(r.ot_hourly_rate * 1.5) }}/hr)</span><span>RM {{ "%.2f"|format(r.ot_pay_1_5) }}</span></div>
@@ -36,9 +36,12 @@
   <div class="row"><span>Transport Allowance</span><span>RM {{ "%.2f"|format(r.transport_allowance) }}</span></div>
   <div class="row"><span>Meal Allowance</span><span>RM {{ "%.2f"|format(r.meal_allowance) }}</span></div>
   <div class="row"><span>CEWI</span><span>RM {{ "%.2f"|format(r.cewi_allowance) }}</span></div>
-  <div class="row total"><span>Gross Pay</span><span>RM {{ "%.2f"|format(r.gross_pay) }}</span></div>
+  <div class="row total"><span>Gross Pay</span><span>RM {{ "%.2f"|format(r.gross_pay + (r.unpaid_deduction or 0)) }}</span></div>
 
   <h2>Deductions</h2>
+  {% if r.unpaid_deduction %}
+  <div class="row"><span>Unpaid Leave ({{ "%g"|format(r.unpaid_days or 0) }} day{{ "s" if (r.unpaid_days or 0) != 1 }})</span><span>RM {{ "%.2f"|format(r.unpaid_deduction) }}</span></div>
+  {% endif %}
   <div class="row"><span>EPF (Employee){% if r.additional_epf_employee %} &mdash; incl. RM {{ "%.2f"|format(r.additional_epf_employee) }} voluntary{% endif %}</span><span>RM {{ "%.2f"|format(r.epf_employee) }}</span></div>
   <div class="row"><span>SOCSO (Employee)</span><span>RM {{ "%.2f"|format(r.socso_employee) }}</span></div>
   <div class="row"><span>EIS (Employee)</span><span>RM {{ "%.2f"|format(r.eis_employee) }}</span></div>
@@ -47,7 +50,7 @@
   {% if r.other_deduction %}
   <div class="row"><span>Other Deduction{% if r.other_deduction_desc %} ({{ r.other_deduction_desc }}){% endif %}</span><span>RM {{ "%.2f"|format(r.other_deduction) }}</span></div>
   {% endif %}
-  <div class="row total"><span>Total Deductions</span><span>RM {{ "%.2f"|format(r.total_deductions) }}</span></div>
+  <div class="row total"><span>Total Deductions</span><span>RM {{ "%.2f"|format(r.total_deductions + (r.unpaid_deduction or 0)) }}</span></div>
 
   <div class="row total"><span>NET PAY</span><span class="net-good">RM {{ "%.2f"|format(r.net_pay) }}</span></div>
 

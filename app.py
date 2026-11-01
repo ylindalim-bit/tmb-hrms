@@ -9689,6 +9689,13 @@ def ot_claims_admin():
            WHERE oc.status!='Pending' {where}
            ORDER BY {"oc.emp_id, oc.claim_date" if filtered else "oc.reviewed_at DESC"} {"" if filtered else "LIMIT 50"}""", params
     ).fetchall()
+    def _ot_sum(claims):
+        return {"h15": round(sum(c["ot_hours_1_5"] or 0 for c in claims), 2),
+                "h20": round(sum(c["ot_hours_2_0"] or 0 for c in claims), 2),
+                "h30": round(sum(c["ot_hours_3_0"] or 0 for c in claims), 2)}
+    pending_totals = _ot_sum(pending)
+    # Rejected claims never count, so the reviewed total is the Approved ones only.
+    reviewed_totals = _ot_sum([c for c in reviewed if c["status"] == "Approved"])
     flagged_employees = db.execute(
         """SELECT emp_id, full_name, standard_start, standard_end FROM employees
            WHERE ot_approval_required='Y' AND (status IS NULL OR status != 'Inactive')
@@ -9713,6 +9720,7 @@ def ot_claims_admin():
         "SELECT emp_id, full_name FROM employees WHERE status='Active' ORDER BY emp_id").fetchall()
     return render_template("ot_claims_admin.html", pending=pending, reviewed=reviewed, generator_employees=generator_employees,
                             pending_groups=pending_groups, claim_employees=claim_employees, filter_emps=filter_emps,
+                            pending_totals=pending_totals, reviewed_totals=reviewed_totals,
                             date_from=date_from, date_to=date_to, filtered=filtered,
                             flagged_employees=flagged_employees, approver_names=approver_names,
                             generated=request.args.get("generated", type=int), skipped=request.args.get("skipped", type=int),

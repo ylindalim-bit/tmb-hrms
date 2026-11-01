@@ -3,6 +3,19 @@
 {% block content %}
 <h1>Settings</h1>
 
+{% if hr_role == "admin" %}
+<div class="card" style="max-width:480px;">
+  <h2 style="margin-top:0;">Backup</h2>
+  <p style="color:var(--muted); font-size:13px; margin-top:0;">
+    Download a safety copy of everything now. Keep it somewhere safe (for example <code>E:\TM-HRMS-BACKUP</code>).
+  </p>
+  <p>
+    <a class="btn" href="{{ url_for('hr_backup_now') }}">Download database backup</a>
+    <a class="btn secondary" href="{{ url_for('hr_backup_now_uploads') }}">Download uploaded documents (zip)</a>
+  </p>
+</div>
+{% endif %}
+
 <div class="card" style="max-width:480px;">
   <h2 style="margin-top:0;">Employer Information</h2>
   <p style="color:var(--muted); font-size:13px; margin-top:0;">

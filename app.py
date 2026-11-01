@@ -11229,6 +11229,49 @@ def hr_scheduled_backup():
     )
 
 
+@app.route("/hr/backup-now")
+def hr_backup_now():
+    """Admin-only, login-gated download of a consistent copy of the live database (SQLite's own online-backup
+    copy, so it is safe while the app is running). The one-click backup for a person who is signed in - the
+    token routes above are for unattended / emergency use."""
+    if session.get("hr_role") != "admin":
+        abort(403)
+    import tempfile
+    fd, tmp_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
+        src, dst = sqlite3.connect(DB_PATH), sqlite3.connect(tmp_path)
+        src.backup(dst)
+        dst.close()
+        src.close()
+        with open(tmp_path, "rb") as f:
+            data = f.read()
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+    name = f"payroll_backup_{datetime.datetime.now(MYT).strftime('%Y-%m-%d_%H%M%S')}.db"
+    return Response(data, mimetype="application/octet-stream",
+                    headers={"Content-Disposition": f"attachment; filename={name}"})
+
+
+@app.route("/hr/backup-now-uploads")
+def hr_backup_now_uploads():
+    """Admin-only, login-gated zip of the uploads/ folder (photos, IC copies, receipts, other documents)."""
+    if session.get("hr_role") != "admin":
+        abort(403)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, _dirs, files in os.walk(UPLOAD_DIR):
+            for fname in files:
+                full_path = os.path.join(root, fname)
+                zf.write(full_path, os.path.relpath(full_path, UPLOAD_DIR))
+    name = f"uploads_backup_{datetime.datetime.now(MYT).strftime('%Y-%m-%d_%H%M%S')}.zip"
+    return Response(buf.getvalue(), mimetype="application/zip",
+                    headers={"Content-Disposition": f"attachment; filename={name}"})
+
+
 @app.route("/hr/backup-uploads")
 def hr_backup_uploads():
     """Downloads the uploads/ folder (photos, IC copies, receipts, other

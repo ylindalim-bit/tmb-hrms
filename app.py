@@ -4490,9 +4490,11 @@ def finalize_payroll(year, month):
     db = get_db()
     emps = employed_this_month(db, year, month)
     now = datetime.datetime.now().isoformat(timespec="seconds")
+    newly_finalized = 0
     for r in emps:
         if _payroll_locked(db, r["emp_id"], year, month):
-            continue  # already finalized and not reopened - never overwrite a payroll that is done
+            continue  # already finalized and locked - never overwrite a payroll that is done
+        newly_finalized += 1
         result = payroll_calc.calculate_payroll(db, r["emp_id"], year, month)
         db.execute(
             """INSERT INTO payroll_runs (
@@ -4552,7 +4554,15 @@ def finalize_payroll(year, month):
                  pcb_deducted=excluded.pcb_deducted""",
             (result["emp_id"], year, month, result["gross_pay"], result["epf_employee"], result["pcb"]),
         )
-    db.execute("DELETE FROM payroll_reopen WHERE year=? AND month=?", (year, month))  # finalized again = locked again
+    if request.form.get("lock") == "1":
+        db.execute("DELETE FROM payroll_reopen WHERE year=? AND month=?", (year, month))  # now locked
+    elif newly_finalized:
+        # Finalizing saves the figures but does NOT lock the month - the lock is a separate, deliberate click
+        # (Lock this month), so attendance can still be corrected after a first run.
+        db.execute(
+            "INSERT OR IGNORE INTO payroll_reopen (year, month, reopened_by, reopened_at) VALUES (?,?,?,?)",
+            (year, month, "not locked yet", datetime.datetime.now().isoformat(timespec="seconds")),
+        )
     db.commit()
     return redirect(url_for("run_payroll", year=year, month=month))
 

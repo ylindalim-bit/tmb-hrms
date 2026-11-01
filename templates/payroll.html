@@ -128,27 +128,35 @@
   Attendance, leave and OT for this month can no longer be changed.
   {% if hr_role == "admin" %}
   <form method="post" action="{{ url_for('reopen_payroll', year=year, month=month) }}" style="margin-top:8px;"
-        onsubmit="return confirm('Reopen {{ month_names[month] }} {{ year }}? Attendance can then be edited until you finalize it again. Only do this to correct a mistake.');">
+        onsubmit="return confirm('Reopen {{ month_names[month] }} {{ year }}? Attendance can then be edited until you lock it again. Only do this to correct a mistake.');">
     <button class="btn secondary" type="submit" style="padding:4px 10px;">Reopen this month to correct a mistake</button>
   </form>
   {% endif %}
 </div>
 {% else %}
-{% if reopened %}
+{% if finalized %}
 <div class="card" style="background:#fef3c7; border-color:#f59e0b;">
-  <strong>This month was reopened</strong> by {{ reopened.reopened_by }} on {{ reopened.reopened_at }} &mdash; attendance can be edited.
-  Finalize again when done to lock it.
-  {% if hr_role == "admin" %}
-  <form method="post" action="{{ url_for('relock_payroll', year=year, month=month) }}" style="margin-top:8px;">
-    <button class="btn secondary" type="submit" style="padding:4px 10px;">Lock it again without changes</button>
-  </form>
-  {% endif %}
+  <strong>&#128275; {{ month_names[month] }} {{ year }} is NOT locked yet.</strong>
+  The figures are saved{% if reopened and reopened.reopened_by != "not locked yet" %} (reopened by {{ reopened.reopened_by }}){% endif %}, but attendance, leave and OT can still be edited and the numbers above follow any change.
+  When you have checked everything and are ready, lock the month.
+  <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
+    <form method="post" action="{{ url_for('finalize_payroll', year=year, month=month) }}"
+          onsubmit="return confirm('Save the latest figures for {{ month_names[month] }} {{ year }}? The month stays unlocked.');">
+      <button class="btn secondary" type="submit">Save latest figures (stay unlocked)</button>
+    </form>
+    <form method="post" action="{{ url_for('finalize_payroll', year=year, month=month) }}"
+          onsubmit="return confirm('LOCK payroll for {{ month_names[month] }} {{ year }}? This saves the final figures and nobody can edit attendance, leave or OT for this month afterwards (an admin can still reopen it).');">
+      <input type="hidden" name="lock" value="1">
+      <button class="btn" type="submit">&#128274; Lock this month</button>
+    </form>
+  </div>
 </div>
-{% endif %}
+{% else %}
 <form method="post" action="{{ url_for('finalize_payroll', year=year, month=month) }}"
-      onsubmit="return confirm('Finalize payroll for {{ month_names[month] }} {{ year }}? This locks in the numbers above and updates YTD tax records.');">
-  <button class="btn" type="submit">{% if finalized %}Finalize again (reopened / remaining staff){% else %}Finalize Payroll for {{ month_names[month] }} {{ year }}{% endif %}</button>
+      onsubmit="return confirm('Finalize payroll for {{ month_names[month] }} {{ year }}? This saves the figures and updates YTD tax records. The month will NOT be locked - you lock it yourself later.');">
+  <button class="btn" type="submit">Finalize Payroll for {{ month_names[month] }} {{ year }} (does not lock)</button>
 </form>
+{% endif %}
 {% endif %}
 <script>
 // Display-only filter: hides rows and re-totals the visible ones. Finalize

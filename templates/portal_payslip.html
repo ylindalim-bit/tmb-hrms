@@ -40,7 +40,7 @@
 
   <h2>Deductions</h2>
   {% if r.unpaid_deduction %}
-  <div class="row"><span>Unpaid Leave ({{ "%g"|format(r.unpaid_days or 0) }} day{{ "s" if (r.unpaid_days or 0) != 1 }} @ RM {{ "%.4f"|format((r.basic_salary + r.unpaid_deduction) / days_in_month) }}/day)</span><span>RM {{ "%.2f"|format(r.unpaid_deduction) }}</span></div>
+  <div class="row"><span>Unpaid Leave ({{ "%g"|format(r.unpaid_days or 0) }} day{{ "s" if (r.unpaid_days or 0) != 1 }} @ RM {{ "%.2f"|format((r.basic_salary + r.unpaid_deduction) / days_in_month) }}/day)</span><span>RM {{ "%.2f"|format(r.unpaid_deduction) }}</span></div>
   {% endif %}
   <div class="row"><span>EPF (Employee){% if r.additional_epf_employee %} &mdash; incl. RM {{ "%.2f"|format(r.additional_epf_employee) }} voluntary{% endif %}</span><span>RM {{ "%.2f"|format(r.epf_employee) }}</span></div>
   <div class="row"><span>SOCSO (Employee)</span><span>RM {{ "%.2f"|format(r.socso_employee) }}</span></div>

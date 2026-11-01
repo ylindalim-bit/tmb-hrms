@@ -606,6 +606,13 @@ def get_payroll_result(conn: sqlite3.Connection, emp_id: str, year: int, month: 
     ).fetchone()
     if row is None:
         return calculate_payroll(conn, emp_id, year, month)
+    # A month an admin has reopened is being corrected, so show the live figures (they are frozen again
+    # when it is finalized again).
+    try:
+        if conn.execute("SELECT 1 FROM payroll_reopen WHERE year=? AND month=?", (year, month)).fetchone():
+            return calculate_payroll(conn, emp_id, year, month)
+    except sqlite3.OperationalError:
+        pass
 
     result = dict(row)
     emp = conn.execute("SELECT full_name FROM employees WHERE emp_id=?", (emp_id,)).fetchone()

@@ -957,8 +957,8 @@ def _portal_delete_own_pending(db, table, record_id, emp_id):
 def index():
     if session.get("hr_role") == "approver":
         return redirect(_approver_home())
-    today = datetime.date.today()
-    return redirect(url_for("run_payroll", year=today.year, month=today.month))
+    pay_year, pay_month = _payroll_default_month(get_db())
+    return redirect(url_for("run_payroll", year=pay_year, month=pay_month))
 
 
 # ---------------- HR Login ----------------

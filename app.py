@@ -6072,7 +6072,8 @@ def payslip(emp_id, year, month):
     emp = db.execute("SELECT * FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
     result = payroll_calc.get_payroll_result(db, emp_id, year, month)
     return render_template("payslip.html", emp=emp, r=result, year=year, month=month,
-                            payment_date=payment_date_for(year, month))
+                            payment_date=payment_date_for(year, month),
+                            days_in_month=calendar.monthrange(year, month)[1])
 
 
 @app.route("/payroll/<int:year>/<int:month>/<emp_id>/detail")
@@ -7718,7 +7719,8 @@ def portal_payslip(year, month):
         return "This payslip hasn't been released yet. Please check back later.", 404
     result = payroll_calc.get_payroll_result(db, emp["emp_id"], year, month)
     return render_template("portal_payslip.html", emp=emp, r=result, year=year, month=month,
-                            payment_date=payment_date_for(year, month))
+                            payment_date=payment_date_for(year, month),
+                            days_in_month=calendar.monthrange(year, month)[1])
 
 
 @app.route("/portal/attendance")

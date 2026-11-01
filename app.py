@@ -319,6 +319,16 @@ try:
         r_technical TEXT, r_experience TEXT, r_communication TEXT, r_attitude TEXT, r_teamwork TEXT,
         strengths TEXT, concerns TEXT, recommendation TEXT, notes TEXT, saved_by TEXT, saved_at TEXT,
         UNIQUE(application_id, slot))""")
+    _ensure_conn.execute("""CREATE TABLE IF NOT EXISTS payroll_reopen (
+        year INTEGER NOT NULL, month INTEGER NOT NULL, reopened_by TEXT, reopened_at TEXT,
+        PRIMARY KEY (year, month))""")
+    # One-time: October 2026 was finalized early (15 Oct) before the month was complete and is about to be
+    # run for real, so leave it open when the lock is introduced; it locks again once it is finalized.
+    _ensure_conn.execute("CREATE TABLE IF NOT EXISTS app_flags (name TEXT PRIMARY KEY, set_at TEXT)")
+    if _ensure_conn.execute("SELECT 1 FROM app_flags WHERE name='reopen_2026_10_for_run'").fetchone() is None:
+        _ensure_conn.execute(
+            "INSERT OR IGNORE INTO payroll_reopen (year, month, reopened_by, reopened_at) VALUES (2026, 10, 'system (October run in progress)', datetime('now'))")
+        _ensure_conn.execute("INSERT INTO app_flags (name, set_at) VALUES ('reopen_2026_10_for_run', datetime('now'))")
     _ensure_conn.execute("""CREATE TABLE IF NOT EXISTS al_adjustment_documents (
         id INTEGER PRIMARY KEY AUTOINCREMENT, adjustment_id INTEGER NOT NULL,
         original_name TEXT NOT NULL, stored_name TEXT NOT NULL, uploaded_at TEXT NOT NULL)""")
@@ -514,6 +524,59 @@ def close_db(exception=None):
         db.close()
 
 
+class PayrollLocked(Exception):
+    """Raised when someone tries to change attendance for a month whose payroll is already finalized."""
+
+    def __init__(self, year, month, emp_id=None):
+        super().__init__(f"Payroll {year}-{month:02d} is finalized")
+        self.year, self.month, self.emp_id = year, month, emp_id
+
+
+def _payroll_locked(db, emp_id, year, month):
+    """True once this employee's payroll for the month is finalized, unless an admin has reopened that month."""
+    try:
+        done = db.execute(
+            "SELECT 1 FROM payroll_runs WHERE emp_id=? AND year=? AND month=? AND finalized_at IS NOT NULL",
+            (emp_id, year, month),
+        ).fetchone()
+        if not done:
+            return False
+        return db.execute("SELECT 1 FROM payroll_reopen WHERE year=? AND month=?", (year, month)).fetchone() is None
+    except sqlite3.OperationalError:
+        return False
+
+
+def _assert_payroll_open(db, emp_id, year, month):
+    """Blocks HR/approver edits to a finalized month. (One-off token routes and the employee portal have no
+    HR login in the session, so they are unaffected.) Raising rolls back the whole request, since nothing
+    is committed until the end of it."""
+    if session.get("hr_username") and _payroll_locked(db, emp_id, year, month):
+        raise PayrollLocked(year, month, emp_id)
+
+
+@app.errorhandler(PayrollLocked)
+def payroll_locked_page(e):
+    name = ""
+    try:
+        row = get_db().execute("SELECT full_name FROM employees WHERE emp_id=?", (e.emp_id,)).fetchone()
+        name = f" for {e.emp_id} - {row['full_name']}" if row else ""
+    except Exception:
+        pass
+    month_label = f"{MONTH_NAMES[e.month]} {e.year}"
+    page = (
+        "<!doctype html><meta charset=utf-8><title>Payroll is locked</title>"
+        "<body style=\"font-family:Arial,sans-serif;max-width:560px;margin:60px auto;padding:0 20px;\">"
+        f"<h2 style=\"color:#b91c1c;\">Payroll {month_label} is already finalized{name}</h2>"
+        "<p>Attendance, leave and OT for a finalized month can't be changed, so the payslip and the statutory "
+        "files stay exactly as they were paid. <strong>Nothing was saved.</strong></p>"
+        "<p>If a correction is really needed, an admin can <em>Reopen</em> the month from the Run Payroll page, "
+        "make the change, and finalize it again.</p>"
+        f"<p><a href=\"/payroll/{e.year}/{e.month}\">Go to Run Payroll - {month_label}</a> &nbsp;|&nbsp; "
+        "<a href=\"javascript:history.back()\">Go back</a></p></body>"
+    )
+    return page, 409
+
+
 # Paths reachable without an HR login. Deny-by-default (checked in
 # require_hr_login below) rather than a decorator on every individual HR
 # route, since a dozens-of-routes app makes it too easy to forget one.
@@ -647,7 +710,24 @@ def require_hr_login():
 @app.context_processor
 def inject_globals():
     today = datetime.date.today()
+    # The "Run Payroll" menu opens the month that still needs running: the month after the latest finalized one
+    # (never later than the current month), instead of whatever month it happens to be today.
+    pay_year, pay_month = today.year, today.month
+    try:
+        reopened = get_db().execute("SELECT year, month FROM payroll_reopen ORDER BY year, month LIMIT 1").fetchone()
+        last = get_db().execute(
+            "SELECT year, month FROM payroll_runs WHERE finalized_at IS NOT NULL ORDER BY year DESC, month DESC LIMIT 1"
+        ).fetchone()
+        if reopened:
+            pay_year, pay_month = reopened["year"], reopened["month"]  # a reopened month is the one being worked on
+        elif last:
+            ny, nm = (last["year"], last["month"] + 1) if last["month"] < 12 else (last["year"] + 1, 1)
+            if (ny, nm) <= (today.year, today.month):
+                pay_year, pay_month = ny, nm
+    except Exception:
+        pass
     return {"month_names": MONTH_NAMES, "cur_year": today.year, "cur_month": today.month,
+            "pay_year": pay_year, "pay_month": pay_month,
             "hr_username": session.get("hr_username"), "hr_role": session.get("hr_role"),
             "can_approve_leave": session.get("can_approve_leave"),
             "can_approve_appraisal": session.get("can_approve_appraisal"),
@@ -2258,7 +2338,11 @@ def attendance(year, month):
                   "absent_days", "working_days_in_month",
                   "ot_hours_1_5", "ot_hours_2_0", "ot_hours_3_0",
                   "meal_eligible_days", "cewi_eligible_days"]
+        locked_skipped = 0
         for emp_id in emp_ids:
+            if _payroll_locked(db, emp_id, year, month):
+                locked_skipped += 1  # finalized: its attendance can't be changed
+                continue
             values = [float(request.form.get(f"{f}__{emp_id}", 0) or 0) for f in fields]
             db.execute(
                 f"""INSERT INTO attendance_monthly (emp_id, year, month, {", ".join(fields)})
@@ -2284,7 +2368,7 @@ def attendance(year, month):
                 (emp_id, year, month, var_amt, var_flag, other_ded, other_ded_desc),
             )
         db.commit()
-        return redirect(url_for("attendance", year=year, month=month))
+        return redirect(url_for("attendance", year=year, month=month, locked=locked_skipped or None))
 
     emps = employed_this_month(
         db, year, month,
@@ -2324,7 +2408,9 @@ def attendance(year, month):
                             suggested_ph_days=suggested_ph_days, base_options=BASE_OPTIONS,
                             base_counts=base_counts,
                             late_personal=_personal_late_early_suggestions(db, year, month),
-                            late_desc_marker=LATE_EARLY_DESC_MARKER)
+                            late_desc_marker=LATE_EARLY_DESC_MARKER,
+                            locked_ids={e["emp_id"] for e in emps if _payroll_locked(db, e["emp_id"], year, month)},
+                            locked_skipped=request.args.get("locked", type=int))
 
 
 LATE_EARLY_DESC_MARKER = "Late/early (personal)"
@@ -2431,6 +2517,7 @@ def _sync_daily_to_monthly(db, emp_id, year, month):
     employee/month's attendance_daily rows and upserts them - the same
     row payroll already reads, so a daily-entered month feeds payroll
     exactly like a directly-typed monthly total would."""
+    _assert_payroll_open(db, emp_id, year, month)
     _auto_tick_meal(db, emp_id, year, month)
     rows = db.execute(
         "SELECT * FROM attendance_daily WHERE emp_id=? AND date LIKE ?",
@@ -4016,8 +4103,14 @@ def run_payroll(year, month):
         b = base_by_emp.get(r["emp_id"])
         if b in base_counts:
             base_counts[b] += 1
+    reopened = db.execute("SELECT reopened_by, reopened_at FROM payroll_reopen WHERE year=? AND month=?",
+                          (year, month)).fetchone()
+    all_emp_ids = {r["emp_id"] for r in results}
     return render_template("payroll.html", results=results, year=year, month=month,
                             finalized=finalized, totals=totals, bank_info=bank_info,
+                            month_locked=bool(finalized) and reopened is None,
+                            all_finalized=bool(all_emp_ids) and all_emp_ids <= finalized,
+                            reopened=reopened,
                             base_by_emp=base_by_emp, zero_pay_notes=_zero_pay_notes(results),
                             base_options=BASE_OPTIONS, base_counts=base_counts)
 
@@ -4398,6 +4491,8 @@ def finalize_payroll(year, month):
     emps = employed_this_month(db, year, month)
     now = datetime.datetime.now().isoformat(timespec="seconds")
     for r in emps:
+        if _payroll_locked(db, r["emp_id"], year, month):
+            continue  # already finalized and not reopened - never overwrite a payroll that is done
         result = payroll_calc.calculate_payroll(db, r["emp_id"], year, month)
         db.execute(
             """INSERT INTO payroll_runs (
@@ -4457,6 +4552,32 @@ def finalize_payroll(year, month):
                  pcb_deducted=excluded.pcb_deducted""",
             (result["emp_id"], year, month, result["gross_pay"], result["epf_employee"], result["pcb"]),
         )
+    db.execute("DELETE FROM payroll_reopen WHERE year=? AND month=?", (year, month))  # finalized again = locked again
+    db.commit()
+    return redirect(url_for("run_payroll", year=year, month=month))
+
+
+@app.route("/payroll/<int:year>/<int:month>/reopen", methods=["POST"])
+def reopen_payroll(year, month):
+    """Admin only: lifts the lock on a finalized month so attendance can be corrected. Nothing is deleted; the
+    month locks again as soon as it is finalized again."""
+    if session.get("hr_role") != "admin":
+        abort(403)
+    db = get_db()
+    db.execute(
+        "INSERT OR REPLACE INTO payroll_reopen (year, month, reopened_by, reopened_at) VALUES (?,?,?,?)",
+        (year, month, session.get("hr_username"), datetime.datetime.now().isoformat(timespec="seconds")),
+    )
+    db.commit()
+    return redirect(url_for("run_payroll", year=year, month=month))
+
+
+@app.route("/payroll/<int:year>/<int:month>/relock", methods=["POST"])
+def relock_payroll(year, month):
+    if session.get("hr_role") != "admin":
+        abort(403)
+    db = get_db()
+    db.execute("DELETE FROM payroll_reopen WHERE year=? AND month=?", (year, month))
     db.commit()
     return redirect(url_for("run_payroll", year=year, month=month))
 
@@ -9116,6 +9237,7 @@ def _sync_days_to_attendance_monthly(db, emp_id, start_date, end_date, column, w
         day += datetime.timedelta(days=1)
 
     for (year, month), count in days_per_month.items():
+        _assert_payroll_open(db, emp_id, year, month)
         db.execute(
             f"""INSERT INTO attendance_monthly (emp_id, year, month, {column})
                 VALUES (?,?,?,?)

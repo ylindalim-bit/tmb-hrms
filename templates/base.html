@@ -40,7 +40,7 @@
     <a href="{{ url_for('portal_dashboard') }}" style="color:var(--muted);">&larr; My Portal</a>
     {% endif %}
     {% else %}
-    <a href="{{ url_for('run_payroll', year=cur_year, month=cur_month) }}">Run Payroll</a>
+    <a href="{{ url_for('run_payroll', year=pay_year, month=pay_month) }}">Run Payroll</a>
     <a href="{{ url_for('attendance', year=cur_year, month=cur_month) }}">Attendance</a>
     <a href="{{ url_for('history') }}">History</a>
     <a href="{{ url_for('confirmation_due') }}">Alerts

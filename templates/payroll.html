@@ -6,7 +6,8 @@
   <a href="{{ url_for('run_payroll', year=year if month>1 else year-1, month=month-1 if month>1 else 12) }}">&laquo; Prev</a>
   <strong>{{ month_names[month] }} {{ year }}</strong>
   <a href="{{ url_for('run_payroll', year=year if month<12 else year+1, month=month+1 if month<12 else 1) }}">Next &raquo;</a>
-  <a class="btn secondary" href="{{ url_for('attendance', year=year, month=month) }}">Edit Attendance</a>
+  {% if month_locked %}<span class="pill finalized" title="Payroll for this month is finalized, so attendance can't be edited.">&#128274; Locked</span>
+  {% else %}<a class="btn secondary" href="{{ url_for('attendance', year=year, month=month) }}">Edit Attendance</a>{% endif %}
   <a class="btn secondary" href="{{ url_for('payroll_summary', year=year, month=month) }}">Print Summary Report</a>
   <a class="btn secondary" href="{{ url_for('payroll_export', year=year, month=month) }}">Export to Excel</a>
   <a class="btn secondary" href="{{ url_for('payroll_statutory_report', year=year, month=month) }}">Statutory Reports (Excel)</a>
@@ -121,10 +122,34 @@
 </div>
 {% endif %}
 
+{% if month_locked and all_finalized %}
+<div class="card" style="background:#dcfce7; border-color:#16a34a;">
+  <strong>&#128274; Payroll for {{ month_names[month] }} {{ year }} is finalized and locked.</strong>
+  Attendance, leave and OT for this month can no longer be changed.
+  {% if hr_role == "admin" %}
+  <form method="post" action="{{ url_for('reopen_payroll', year=year, month=month) }}" style="margin-top:8px;"
+        onsubmit="return confirm('Reopen {{ month_names[month] }} {{ year }}? Attendance can then be edited until you finalize it again. Only do this to correct a mistake.');">
+    <button class="btn secondary" type="submit" style="padding:4px 10px;">Reopen this month to correct a mistake</button>
+  </form>
+  {% endif %}
+</div>
+{% else %}
+{% if reopened %}
+<div class="card" style="background:#fef3c7; border-color:#f59e0b;">
+  <strong>This month was reopened</strong> by {{ reopened.reopened_by }} on {{ reopened.reopened_at }} &mdash; attendance can be edited.
+  Finalize again when done to lock it.
+  {% if hr_role == "admin" %}
+  <form method="post" action="{{ url_for('relock_payroll', year=year, month=month) }}" style="margin-top:8px;">
+    <button class="btn secondary" type="submit" style="padding:4px 10px;">Lock it again without changes</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
 <form method="post" action="{{ url_for('finalize_payroll', year=year, month=month) }}"
       onsubmit="return confirm('Finalize payroll for {{ month_names[month] }} {{ year }}? This locks in the numbers above and updates YTD tax records.');">
-  <button class="btn" type="submit">Finalize Payroll for {{ month_names[month] }} {{ year }}</button>
+  <button class="btn" type="submit">{% if finalized %}Finalize again (reopened / remaining staff){% else %}Finalize Payroll for {{ month_names[month] }} {{ year }}{% endif %}</button>
 </form>
+{% endif %}
 <script>
 // Display-only filter: hides rows and re-totals the visible ones. Finalize
 // Payroll below still applies to everyone, whichever Base is selected.

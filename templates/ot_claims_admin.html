@@ -139,7 +139,10 @@
         <td>{{ c.ot_hours_1_5 }}</td>
         <td>{{ c.ot_hours_2_0 }}</td>
         <td>{{ c.ot_hours_3_0 }}</td>
-        <td class="text">{{ c.reason or "" }}</td>
+        <td class="text">{{ c.reason or "" }}
+          <form method="post" action="{{ url_for('ot_claim_edit_reason', claim_id=c.id) }}" style="display:inline;" onsubmit="var r = prompt('Reason for this OT claim:', this.dataset.reason); if (r === null || !r.trim()) return false; this.reason.value = r.trim(); return true;" data-reason="{{ c.reason or '' }}">
+            <input type="hidden" name="reason"><button type="submit" style="border:0; background:none; color:var(--accent); cursor:pointer; font-size:11px; padding:0 0 0 6px;">edit</button>
+          </form></td>
         <td class="text">{{ c.submitted_by }}</td>
         <td class="text">{{ c.submitted_at }}</td>
         <td class="text" style="white-space:nowrap;">
@@ -180,7 +183,10 @@
         <td>{{ c.ot_hours_1_5 }}</td>
         <td>{{ c.ot_hours_2_0 }}</td>
         <td>{{ c.ot_hours_3_0 }}</td>
-        <td class="text">{{ c.reason or "" }}</td>
+        <td class="text">{{ c.reason or "" }}
+          <form method="post" action="{{ url_for('ot_claim_edit_reason', claim_id=c.id) }}" style="display:inline;" onsubmit="var r = prompt('Reason for this OT claim:', this.dataset.reason); if (r === null || !r.trim()) return false; this.reason.value = r.trim(); return true;" data-reason="{{ c.reason or '' }}">
+            <input type="hidden" name="reason"><button type="submit" style="border:0; background:none; color:var(--accent); cursor:pointer; font-size:11px; padding:0 0 0 6px;">edit</button>
+          </form></td>
         <td class="text">
           <span class="pill {% if c.status == 'Approved' %}finalized{% else %}rejected{% endif %}">{{ c.status }}</span>
         </td>

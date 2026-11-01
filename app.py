@@ -9861,6 +9861,29 @@ def review_ot_claim(claim_id):
     return redirect(url_for("ot_claims_admin"))
 
 
+@app.route("/ot-claims/<int:claim_id>/reason", methods=["POST"])
+def ot_claim_edit_reason(claim_id):
+    """Corrects the Reason of an OT claim (Pending or already decided). If the claim was Approved, the same text is
+    carried onto that day's OT Reason on Daily Attendance - but only where it still shows the old wording, so a
+    reason someone typed there by hand is never overwritten."""
+    db = get_db()
+    claim = db.execute("SELECT * FROM ot_claims WHERE id=?", (claim_id,)).fetchone()
+    if claim is None:
+        abort(404)
+    new_reason = (request.form.get("reason") or "").strip()
+    if not new_reason:
+        return redirect(request.referrer or url_for("ot_claims_admin"))
+    db.execute("UPDATE ot_claims SET reason=? WHERE id=?", (new_reason, claim_id))
+    if claim["status"] == "Approved":
+        db.execute(
+            """UPDATE attendance_daily SET ot_reason=? WHERE emp_id=? AND date=?
+               AND (COALESCE(ot_reason,'')='' OR ot_reason=?)""",
+            (new_reason, claim["emp_id"], claim["claim_date"], claim["reason"] or ""),
+        )
+    db.commit()
+    return redirect(request.referrer or url_for("ot_claims_admin"))
+
+
 @app.route("/ot-claims/<int:claim_id>/delete", methods=["POST"])
 def delete_ot_claim(claim_id):
     """Permanently removes an OT claim record - refused for an Approved

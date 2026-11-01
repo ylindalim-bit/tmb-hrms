@@ -92,7 +92,9 @@
 </tr>
 {% endfor %}
 <tr class="totals-row">
-  <td class="text sticky-col" style="left:0" colspan="15">TOTAL</td>
+  <td class="text sticky-col" style="left:0" colspan="4">TOTAL</td>
+  {# Basic .. CEWI (columns 4-14): filled in by the script below from the rows shown #}
+  <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
   <td>{{ "%.2f"|format(totals.gross_pay + totals.unpaid_deduction) }}</td>
   <td>{{ "%.2f"|format(totals.epf_employee) }}</td>
   <td>{{ "%.2f"|format(totals.socso_employee) }}</td>
@@ -171,18 +173,20 @@ function filterByBase(base) {
     row.style.display = visible ? '' : 'none';
     if (!visible) return;
     shown++;
-    // Gross..NET PAY are cells 15-28 in a row; the TOTAL row's first cell spans 0-14.
-    for (var c = 15; c <= 28; c++) {
+    // Basic..NET PAY are cells 4-28 in a row (10 = OT Rate, not a total); the TOTAL row's first cell spans 0-3.
+    for (var c = 4; c <= 28; c++) {
+      if (c === 10) continue;
       sums[c] = (sums[c] || 0) + (parseFloat(row.cells[c].textContent.replace(/,/g, '')) || 0);
     }
   });
-  for (var c = 15; c <= 28; c++) {
-    totalsRow.cells[c - 14].textContent = (sums[c] || 0).toFixed(2);
+  for (var c = 4; c <= 28; c++) {
+    totalsRow.cells[c - 3].textContent = c === 10 ? '' : (sums[c] || 0).toFixed(2);
   }
   document.getElementById('headcount').textContent = shown;
   document.querySelectorAll('.base-filter-btn').forEach(function (btn) {
     btn.classList.toggle('secondary', btn.dataset.base !== base);
   });
 }
+filterByBase('');  // fill the TOTAL row as soon as the page loads
 </script>
 {% endblock %}

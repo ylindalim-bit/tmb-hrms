@@ -196,7 +196,7 @@
   <div class="table-wrap frozen-header">
   <table>
     <thead>
-      <tr><th class="text">Employee</th><th class="text">Date</th><th class="text">OT From</th><th class="text">OT To</th><th>1.5x</th><th>2.0x</th><th>3.0x</th><th class="text">Reason</th><th class="text">Status</th><th class="text">Reviewed By</th><th class="text">Reviewed</th><th>Action</th></tr>
+      <tr><th class="text">Employee</th><th class="text">Date</th><th class="text">OT From</th><th class="text">OT To</th><th>1.5x</th><th>2.0x</th><th>3.0x</th><th class="text">Reason</th><th class="text">Reviewed By</th><th class="text">Status</th><th class="text">Reviewed</th><th>Action</th></tr>
     </thead>
     <tbody>
       {% for c in reviewed %}
@@ -214,10 +214,10 @@
           <form method="post" action="{{ url_for('ot_claim_edit_reason', claim_id=c.id) }}" style="display:inline;" onsubmit="var r = prompt('Reason for this OT claim:', this.dataset.reason); if (r === null || !r.trim()) return false; this.reason.value = r.trim(); return true;" data-reason="{{ c.reason or '' }}">
             <input type="hidden" name="reason"><button type="submit" style="border:0; background:none; color:var(--accent); cursor:pointer; font-size:11px; padding:0 0 0 6px;">edit</button>
           </form></td>
+        <td class="text">{{ c.reviewed_by or "" }}</td>
         <td class="text">
           <span class="pill {% if c.status == 'Approved' %}finalized{% else %}rejected{% endif %}">{{ c.status }}</span>
         </td>
-        <td class="text">{{ c.reviewed_by or "" }}</td>
         <td class="text">{{ c.reviewed_at }}</td>
         <td class="text" style="white-space:nowrap;">
           {% if c.status != 'Approved' %}

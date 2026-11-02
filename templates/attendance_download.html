@@ -18,7 +18,9 @@
   <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
     <button type="button" class="btn secondary" onclick="tickAll(true)" style="padding:4px 10px;">Tick everyone</button>
     <button type="button" class="btn secondary" onclick="tickAll(false)" style="padding:4px 10px;">Untick everyone</button>
-    <button type="button" class="btn secondary" onclick="tickUL()" style="padding:4px 10px;" {% if not ul_days %}disabled title="Nobody has unpaid leave this month"{% endif %}>Tick only staff with Unpaid Leave ({{ ul_days|length }})</button>
+    {% for k, label in cats %}
+    <button type="button" class="btn secondary" onclick="tickLeave('{{ k }}')" style="padding:4px 10px;" {% if not leave_days[k] %}disabled title="Nobody this month"{% endif %}>Only {{ label }} ({{ leave_days[k]|length }})</button>
+    {% endfor %}
   </div>
   {% for b in bases %}
   <div style="margin-bottom:10px;">
@@ -28,8 +30,8 @@
     <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(290px, 1fr)); gap:2px 16px;">
       {% for e in emps if e.base == b %}
       <label style="display:flex; gap:6px; align-items:center; font-weight:400; font-size:13px;">
-        <input type="checkbox" name="emps" value="{{ e.emp_id }}" data-ul="{{ 1 if e.emp_id in ul_days else 0 }}" data-base="{{ b }}" style="width:auto;" {% if e.emp_id in picked %}checked{% endif %}>
-        {{ e.emp_id }} &mdash; {{ e.full_name }}{% if e.emp_id in ul_days %} <span class="pill" style="background:#fee2e2; color:#991b1b;">UL {{ '%g'|format(ul_days[e.emp_id]) }}d</span>{% endif %}
+        <input type="checkbox" name="emps" value="{{ e.emp_id }}" data-leave="{% for k, label in cats %}{% if e.emp_id in leave_days[k] %}{{ k }} {% endif %}{% endfor %}" data-base="{{ b }}" style="width:auto;" {% if e.emp_id in picked %}checked{% endif %}>
+        {{ e.emp_id }} &mdash; {{ e.full_name }}{% for k, label in cats %}{% if e.emp_id in leave_days[k] %} <span class="pill" style="background:{{ '#fee2e2' if k in ('UL','ABSENT') else '#dbeafe' }}; color:{{ '#991b1b' if k in ('UL','ABSENT') else '#1e3a8a' }};">{{ k }} {{ '%g'|format(leave_days[k][e.emp_id]) }}d</span>{% endif %}{% endfor %}
       </label>
       {% endfor %}
     </div>
@@ -45,7 +47,7 @@
 </form>
 <script>
 function tickAll(on) { document.querySelectorAll('input[name="emps"]').forEach(function (c) { c.checked = on; }); }
-function tickUL() { document.querySelectorAll('input[name="emps"]').forEach(function (c) { c.checked = c.dataset.ul === '1'; }); }
+function tickLeave(k) { document.querySelectorAll('input[name="emps"]').forEach(function (c) { c.checked = c.dataset.leave.split(' ').indexOf(k) >= 0; }); }
 function tickBase(base, on) { document.querySelectorAll('input[name="emps"][data-base="' + base + '"]').forEach(function (c) { c.checked = on; }); }
 document.getElementById('dl-form').addEventListener('submit', function (e) {
   if (!document.querySelector('input[name="emps"]:checked')) { e.preventDefault(); document.getElementById('dl-note').style.display = 'block'; }

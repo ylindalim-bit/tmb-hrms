@@ -2750,18 +2750,25 @@ def attendance_download(year, month):
     prev_y, prev_m = (year, month - 1) if month > 1 else (year - 1, 12)
     next_y, next_m = (year, month + 1) if month < 12 else (year + 1, 1)
     month_like = f"{year:04d}-{month:02d}-%"
-    ul_days = {}
+    # who took each kind of leave this month: the daily records (half-days count 0.5) or the monthly totals, whichever is higher
+    cats = {"UL": ("Unpaid Leave", "ul_days"), "AL": ("Annual Leave", "al_days"),
+            "MC": ("Medical Leave", "mc_days"), "ABSENT": ("Absent", "absent_days")}
+    leave_days = {k: {} for k in cats}
     for r in db.execute(
-            """SELECT emp_id, SUM(CASE WHEN day_type='UL' THEN 1
-                                       WHEN day_type='WORKED' AND half_leave_type='UL' THEN 0.5 ELSE 0 END) AS d
-               FROM attendance_daily WHERE date LIKE ? GROUP BY emp_id""", (month_like,)):
-        ul_days[r["emp_id"]] = r["d"] or 0
-    for r in db.execute("SELECT emp_id, ul_days FROM attendance_monthly WHERE year=? AND month=?", (year, month)):
-        ul_days[r["emp_id"]] = max(ul_days.get(r["emp_id"], 0), r["ul_days"] or 0)
-    ul_days = {k: v for k, v in ul_days.items() if v > 0}
+            """SELECT emp_id, day_type, SUM(CASE WHEN day_type IN ('UL','AL','MC') THEN 1 ELSE 0 END) AS full_days
+               FROM attendance_daily WHERE date LIKE ? AND day_type IN ('UL','AL','MC') GROUP BY emp_id, day_type""", (month_like,)):
+        leave_days[r["day_type"]][r["emp_id"]] = r["full_days"] or 0
+    for r in db.execute(
+            """SELECT emp_id, half_leave_type AS t, COUNT(*) * 0.5 AS d FROM attendance_daily
+               WHERE date LIKE ? AND day_type='WORKED' AND half_leave_type IN ('UL','AL','MC') GROUP BY emp_id, half_leave_type""", (month_like,)):
+        leave_days[r["t"]][r["emp_id"]] = leave_days[r["t"]].get(r["emp_id"], 0) + r["d"]
+    for r in db.execute("SELECT * FROM attendance_monthly WHERE year=? AND month=?", (year, month)):
+        for k, (_label, col) in cats.items():
+            leave_days[k][r["emp_id"]] = max(leave_days[k].get(r["emp_id"], 0), r[col] or 0)
+    leave_days = {k: {e: v for e, v in d.items() if v > 0} for k, d in leave_days.items()}
     return render_template("attendance_download.html", year=year, month=month, emps=emps, bases=bases,
                            picked={e["emp_id"] for e in chosen}, prev=(prev_y, prev_m), nxt=(next_y, next_m),
-                           ul_days=ul_days)
+                           cats=[(k, cats[k][0]) for k in cats], leave_days=leave_days)
 
 
 def _att_dl_fmt(v):

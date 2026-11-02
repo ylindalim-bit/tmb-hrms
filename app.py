@@ -2678,6 +2678,269 @@ def _daily_attendance_view_data(db, emp, year, month):
     return days, monthly, cewi_incentive
 
 
+ATT_DL_DAY_LABELS = {"WORKED": "Worked", "OFF": "Off day", "REST": "Rest day", "PH": "Public holiday",
+                     "AL": "Annual leave", "MC": "Medical leave", "HL": "Hospitalisation leave",
+                     "UL": "Unpaid leave", "OTHER_PAID": "Other paid leave"}
+ATT_DL_TOTAL_COLUMNS = [
+    ("Days Worked", "days_worked"), ("AL", "al_days"), ("MC", "mc_days"), ("HL", "hl_days"), ("UL", "ul_days"),
+    ("Other Paid", "other_paid_leave"), ("PH", "ph_days"), ("OFF", "off_days"), ("REST", "rest_days"),
+    ("Absent", "absent_days"), ("Working Days", "working_days_in_month"),
+    ("OT 1.5x", "ot_hours_1_5"), ("OT 2.0x", "ot_hours_2_0"), ("OT 3.0x", "ot_hours_3_0"),
+    ("Meal Days", "meal_eligible_days"), ("CEWI Days", "cewi_eligible_days"),
+]
+
+
+def _att_dl_selection(db, year, month):
+    """(employees, selected_ids) for the attendance download pages: ?emps=A001&emps=... (or ?base=CD for a whole base),
+    in Emp ID order, limited to people employed that month."""
+    emps = employed_this_month(
+        db, year, month, "emp_id, full_name, base, department, position, standard_start, standard_end, work_pattern, "
+                         "meal_allowance_flag, cewi_flag, cewi_effective_date, cewi_rate, date_joined")
+    wanted = set(request.args.getlist("emps"))
+    base = request.args.get("base", "")
+    chosen = [e for e in emps if e["emp_id"] in wanted or (base and e["base"] == base and not wanted)]
+    chosen.sort(key=lambda e: e["emp_id"])
+    return emps, chosen
+
+
+def _att_dl_daily_rows(db, emp, year, month):
+    """[(date, weekday, status, time_in, time_out, late_early, meal, cewi, ot15, ot20, ot30, ot_reason_or_note)] for one
+    employee-month, plus the monthly totals row (or None)."""
+    days, monthly, _cewi = _daily_attendance_view_data(db, emp, year, month)
+    rows = []
+    for d in days:
+        r = d["row"]
+        if r is not None:
+            status = ATT_DL_DAY_LABELS.get(r["day_type"], r["day_type"])
+            if d["half_leave"]:
+                status += f" + half-day {ATT_DL_DAY_LABELS.get(d['half_leave'], d['half_leave']).lower()}"
+        elif d["trip_label"]:
+            status = d["trip_label"]
+        elif d["holiday_name"]:
+            status = "Public holiday"
+        elif d["unrecorded"]:
+            status = "No record"
+        else:
+            status = ""
+        late_early = ", ".join(x for x in ["Late in" if d["late_in"] else "", "Early out" if d["early_out"] else ""] if x)
+        if late_early and r is not None and r["late_early_type"]:
+            late_early += f" ({r['late_early_type']})"
+        note_bits = [x for x in [r["ot_reason"] if r is not None else None, d["trip_label"] if r is not None else None,
+                                 d["holiday_name"], (r["late_early_remark"] if r is not None else None)] if x]
+        rows.append((
+            d["date"], d["weekday"], status, (r["time_in"] if r is not None else "") or "",
+            (r["time_out"] if r is not None else "") or "", late_early,
+            "Y" if r is not None and r["meal_allowance_flag"] == "Y" else "",
+            "Y" if r is not None and r["cewi_flag"] == "Y" else "",
+            (r["ot_hours_1_5"] or 0) if r is not None else 0, (r["ot_hours_2_0"] or 0) if r is not None else 0,
+            (r["ot_hours_3_0"] or 0) if r is not None else 0, "; ".join(dict.fromkeys(note_bits)),
+        ))
+    return rows, monthly
+
+
+@app.route("/attendance-download/<int:year>/<int:month>")
+def attendance_download(year, month):
+    """Pick any staff and download their attendance for the month: day-by-day (PDF one page per person, Excel one sheet
+    per person) or the monthly totals table (one PDF / one Excel sheet)."""
+    if session.get("hr_role") == "approver":
+        abort(403)
+    db = get_db()
+    emps, chosen = _att_dl_selection(db, year, month)
+    bases = sorted({e["base"] for e in emps if e["base"]})
+    prev_y, prev_m = (year, month - 1) if month > 1 else (year - 1, 12)
+    next_y, next_m = (year, month + 1) if month < 12 else (year + 1, 1)
+    return render_template("attendance_download.html", year=year, month=month, emps=emps, bases=bases,
+                           picked={e["emp_id"] for e in chosen}, prev=(prev_y, prev_m), nxt=(next_y, next_m))
+
+
+def _att_dl_fmt(v):
+    return f"{v:g}" if isinstance(v, (int, float)) else (v or "")
+
+
+@app.route("/attendance-download/<int:year>/<int:month>/daily.xlsx")
+def attendance_download_daily_xlsx(year, month):
+    if session.get("hr_role") == "approver":
+        abort(403)
+    db = get_db()
+    _emps, chosen = _att_dl_selection(db, year, month)
+    if not chosen:
+        return redirect(url_for("attendance_download", year=year, month=month))
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    head_fill = PatternFill("solid", fgColor="1D4ED8")
+    thin = Side(style="thin", color="BFBFBF")
+    for e in chosen:
+        rows, monthly = _att_dl_daily_rows(db, e, year, month)
+        ws = wb.create_sheet(e["emp_id"])
+        ws.append([f"{e['emp_id']} - {e['full_name']}"])
+        ws.append([f"{MONTH_NAMES[month]} {year}   |   Base: {e['base'] or '-'}   |   Normal hours: {e['standard_start'] or '-'} - {e['standard_end'] or '-'}"])
+        ws["A1"].font = Font(bold=True, size=13)
+        ws.append([])
+        ws.append(["Date", "Day", "Status", "Time In", "Time Out", "Late / Early", "Meal", "CEWI",
+                   "OT 1.5x", "OT 2.0x", "OT 3.0x", "OT Reason / Remark"])
+        for c in ws[4]:
+            c.font = Font(bold=True, color="FFFFFF"); c.fill = head_fill; c.alignment = Alignment(horizontal="center")
+        for r in rows:
+            ws.append([r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7],
+                       r[8] or None, r[9] or None, r[10] or None, r[11]])
+        ws.append([])
+        if monthly is not None:
+            ws.append(["Monthly totals"])
+            ws.cell(ws.max_row, 1).font = Font(bold=True)
+            for label, key in ATT_DL_TOTAL_COLUMNS:
+                ws.append([label, monthly[key] if monthly[key] is not None else 0])
+        for row in ws.iter_rows(min_row=4, max_row=4 + len(rows)):
+            for c in row:
+                c.border = Border(top=thin, bottom=thin, left=thin, right=thin)
+        for col, w in zip("ABCDEFGHIJKL", (12, 6, 22, 9, 9, 22, 6, 6, 9, 9, 9, 40)):
+            ws.column_dimensions[col].width = w
+        ws.freeze_panes = "A5"
+    buf = io.BytesIO()
+    wb.save(buf)
+    name = f"Attendance_Daily_{MONTH_NAMES[month]}_{year}.xlsx"
+    return Response(buf.getvalue(), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename={name}"})
+
+
+@app.route("/attendance-download/<int:year>/<int:month>/daily.pdf")
+def attendance_download_daily_pdf(year, month):
+    if session.get("hr_role") == "approver":
+        abort(403)
+    db = get_db()
+    _emps, chosen = _att_dl_selection(db, year, month)
+    if not chosen:
+        return redirect(url_for("attendance_download", year=year, month=month))
+    styles = getSampleStyleSheet()
+    small = ParagraphStyle("adl", parent=styles["Normal"], fontSize=7.2, leading=8.6)
+    title = ParagraphStyle("adt", parent=styles["Title"], fontSize=13, spaceAfter=2, alignment=0)
+    story = []
+    for idx, e in enumerate(chosen):
+        rows, monthly = _att_dl_daily_rows(db, e, year, month)
+        story.append(Paragraph("TIANMA PRECISION SDN BHD - Attendance Record", title))
+        story.append(Paragraph(f"<b>{xml_escape(e['emp_id'])} &mdash; {xml_escape(e['full_name'])}</b> &nbsp; | &nbsp; "
+                               f"{MONTH_NAMES[month]} {year} &nbsp; | &nbsp; Base: {xml_escape(e['base'] or '-')} &nbsp; | &nbsp; "
+                               f"Normal hours: {xml_escape(e['standard_start'] or '-')}-{xml_escape(e['standard_end'] or '-')}", styles["Normal"]))
+        story.append(Spacer(1, 6))
+        data = [["Date", "Day", "Status", "In", "Out", "Late / Early", "Meal", "CEWI", "OT 1.5", "OT 2.0", "OT 3.0", "Remark"]]
+        for r in rows:
+            data.append([r[0][5:], r[1], Paragraph(xml_escape(r[2]), small), r[3], r[4], Paragraph(xml_escape(r[5]), small),
+                         r[6], r[7], _att_dl_fmt(r[8]) if r[8] else "", _att_dl_fmt(r[9]) if r[9] else "",
+                         _att_dl_fmt(r[10]) if r[10] else "", Paragraph(xml_escape(r[11]), small)])
+        tbl = Table(data, colWidths=[1.3 * cm, 0.9 * cm, 3.0 * cm, 1.1 * cm, 1.1 * cm, 2.3 * cm, 0.8 * cm, 0.9 * cm,
+                                      1.0 * cm, 1.0 * cm, 1.0 * cm, 4.3 * cm], repeatRows=1)
+        style_cmds = [
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1D4ED8")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 7.2),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#BFBFBF")),
+            ("TOPPADDING", (0, 0), (-1, -1), 1.6), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.6),
+        ]
+        for i, r in enumerate(rows, start=1):
+            if r[2] in ("Rest day", "Off day", "Public holiday"):
+                style_cmds.append(("BACKGROUND", (0, i), (-1, i), colors.HexColor("#F3F4F6")))
+            elif r[2] == "No record":
+                style_cmds.append(("BACKGROUND", (0, i), (-1, i), colors.HexColor("#FEF3C7")))
+        tbl.setStyle(TableStyle(style_cmds))
+        story.append(tbl)
+        story.append(Spacer(1, 6))
+        if monthly is not None:
+            tot = [[label for label, _k in ATT_DL_TOTAL_COLUMNS],
+                   [_att_dl_fmt(monthly[k] if monthly[k] is not None else 0) for _l, k in ATT_DL_TOTAL_COLUMNS]]
+            tt = Table(tot, repeatRows=0)
+            tt.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E0E7FF")),
+                                    ("FONTSIZE", (0, 0), (-1, -1), 6.6), ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#BFBFBF"))]))
+            story.append(Paragraph("<b>Monthly totals</b>", styles["Normal"]))
+            story.append(tt)
+        story.append(Spacer(1, 22))
+        sig = Table([["Employee's signature & date:", "", "Checked by HR (name, signature & date):", ""]],
+                    colWidths=[4.2 * cm, 4.2 * cm, 5.8 * cm, 3.6 * cm])
+        sig.setStyle(TableStyle([("FONTSIZE", (0, 0), (-1, -1), 7.5), ("LINEBELOW", (1, 0), (1, 0), 0.5, colors.black),
+                                 ("LINEBELOW", (3, 0), (3, 0), 0.5, colors.black)]))
+        story.append(sig)
+        if idx < len(chosen) - 1:
+            story.append(PageBreak())
+    buf = io.BytesIO()
+    SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.3 * cm, rightMargin=1.3 * cm, topMargin=1.2 * cm,
+                      bottomMargin=1.0 * cm, title=f"Attendance {MONTH_NAMES[month]} {year}").build(story)
+    name = f"Attendance_Daily_{MONTH_NAMES[month]}_{year}.pdf"
+    return Response(buf.getvalue(), mimetype="application/pdf",
+                    headers={"Content-Disposition": f"attachment; filename={name}"})
+
+
+def _att_dl_totals_table(db, chosen, year, month):
+    head = ["Emp ID", "Name", "Base"] + [label for label, _k in ATT_DL_TOTAL_COLUMNS]
+    body = []
+    for e in chosen:
+        m = db.execute("SELECT * FROM attendance_monthly WHERE emp_id=? AND year=? AND month=?", (e["emp_id"], year, month)).fetchone()
+        body.append([e["emp_id"], e["full_name"], e["base"] or ""] + [(m[k] if m is not None and m[k] is not None else 0) for _l, k in ATT_DL_TOTAL_COLUMNS])
+    return head, body
+
+
+@app.route("/attendance-download/<int:year>/<int:month>/totals.xlsx")
+def attendance_download_totals_xlsx(year, month):
+    if session.get("hr_role") == "approver":
+        abort(403)
+    db = get_db()
+    _emps, chosen = _att_dl_selection(db, year, month)
+    if not chosen:
+        return redirect(url_for("attendance_download", year=year, month=month))
+    head, body = _att_dl_totals_table(db, chosen, year, month)
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = f"{MONTH_NAMES[month][:3]} {year}"
+    ws.append([f"Attendance totals - {MONTH_NAMES[month]} {year}"])
+    ws["A1"].font = Font(bold=True, size=13)
+    ws.append([])
+    ws.append(head)
+    for c in ws[3]:
+        c.font = Font(bold=True, color="FFFFFF"); c.fill = PatternFill("solid", fgColor="1D4ED8"); c.alignment = Alignment(horizontal="center")
+    for r in body:
+        ws.append(r)
+    ws.append(["", "TOTAL", ""] + [round(sum(r[i] for r in body), 2) for i in range(3, len(head))])
+    for c in ws[ws.max_row]:
+        c.font = Font(bold=True)
+    ws.column_dimensions["A"].width = 9
+    ws.column_dimensions["B"].width = 42
+    ws.freeze_panes = "D4"
+    buf = io.BytesIO()
+    wb.save(buf)
+    name = f"Attendance_Totals_{MONTH_NAMES[month]}_{year}.xlsx"
+    return Response(buf.getvalue(), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename={name}"})
+
+
+@app.route("/attendance-download/<int:year>/<int:month>/totals.pdf")
+def attendance_download_totals_pdf(year, month):
+    if session.get("hr_role") == "approver":
+        abort(403)
+    db = get_db()
+    _emps, chosen = _att_dl_selection(db, year, month)
+    if not chosen:
+        return redirect(url_for("attendance_download", year=year, month=month))
+    head, body = _att_dl_totals_table(db, chosen, year, month)
+    styles = getSampleStyleSheet()
+    small = ParagraphStyle("atd", parent=styles["Normal"], fontSize=7, leading=8.2)
+    data = [head]
+    for r in body:
+        data.append([r[0], Paragraph(xml_escape(r[1]), small), r[2]] + [_att_dl_fmt(v) for v in r[3:]])
+    data.append(["", "TOTAL", ""] + [_att_dl_fmt(round(sum(r[i] for r in body), 2)) for i in range(3, len(head))])
+    tbl = Table(data, colWidths=[1.2 * cm, 4.6 * cm, 0.9 * cm] + [1.35 * cm] * (len(head) - 3), repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1D4ED8")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 7), ("ALIGN", (3, 0), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#BFBFBF")), ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#E0E7FF")),
+    ]))
+    story = [Paragraph("TIANMA PRECISION SDN BHD", styles["Title"]),
+             Paragraph(f"<b>Attendance totals - {MONTH_NAMES[month]} {year}</b>", styles["Normal"]), Spacer(1, 8), tbl]
+    buf = io.BytesIO()
+    SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=1.2 * cm, rightMargin=1.2 * cm, topMargin=1.2 * cm,
+                      bottomMargin=1.2 * cm, title=f"Attendance totals {MONTH_NAMES[month]} {year}").build(story)
+    name = f"Attendance_Totals_{MONTH_NAMES[month]}_{year}.pdf"
+    return Response(buf.getvalue(), mimetype="application/pdf",
+                    headers={"Content-Disposition": f"attachment; filename={name}"})
+
+
 @app.route("/portal/daily-attendance")
 @portal_login_required
 def portal_daily_attendance():

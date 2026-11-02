@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Download Attendance - TMB Payroll{% endblock %}
+{% block content %}
+<h1>Download Attendance &mdash; {{ month_names[month] }} {{ year }}</h1>
+<div class="month-nav">
+  <a href="{{ url_for('attendance_download', year=prev[0], month=prev[1]) }}">&laquo; Prev</a>
+  <strong>{{ month_names[month] }} {{ year }}</strong>
+  <a href="{{ url_for('attendance_download', year=nxt[0], month=nxt[1]) }}">Next &raquo;</a>
+  <a href="{{ url_for('attendance', year=year, month=month) }}" style="margin-left:16px; color:var(--muted);">&larr; Back to Attendance</a>
+</div>
+<p style="color:var(--muted); font-size:13px;">
+  Tick the staff you want, then choose what to download. <strong>Day-by-day</strong> gives each person's daily record for
+  the month (PDF: one page per person with signature lines, handy for staff to check; Excel: one sheet per person).
+  <strong>Monthly totals</strong> gives one table for everyone you tick (the same figures as the Attendance page).
+</p>
+
+<form method="get" class="card" id="dl-form">
+  <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+    <button type="button" class="btn secondary" onclick="tickAll(true)" style="padding:4px 10px;">Tick everyone</button>
+    <button type="button" class="btn secondary" onclick="tickAll(false)" style="padding:4px 10px;">Untick everyone</button>
+  </div>
+  {% for b in bases %}
+  <div style="margin-bottom:10px;">
+    <strong>{{ b }}</strong>
+    <a href="#" onclick="tickBase('{{ b }}', true); return false;" style="font-size:12px; margin-left:8px;">all</a>
+    <a href="#" onclick="tickBase('{{ b }}', false); return false;" style="font-size:12px; margin-left:6px;">none</a>
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(290px, 1fr)); gap:2px 16px;">
+      {% for e in emps if e.base == b %}
+      <label style="display:flex; gap:6px; align-items:center; font-weight:400; font-size:13px;">
+        <input type="checkbox" name="emps" value="{{ e.emp_id }}" data-base="{{ b }}" style="width:auto;" {% if e.emp_id in picked %}checked{% endif %}>
+        {{ e.emp_id }} &mdash; {{ e.full_name }}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+  <div class="form-actions" style="flex-wrap:wrap;">
+    <button class="btn" type="submit" formaction="{{ url_for('attendance_download_daily_pdf', year=year, month=month) }}">Day-by-day &mdash; PDF</button>
+    <button class="btn" type="submit" formaction="{{ url_for('attendance_download_daily_xlsx', year=year, month=month) }}">Day-by-day &mdash; Excel</button>
+    <button class="btn secondary" type="submit" formaction="{{ url_for('attendance_download_totals_pdf', year=year, month=month) }}">Monthly totals &mdash; PDF</button>
+    <button class="btn secondary" type="submit" formaction="{{ url_for('attendance_download_totals_xlsx', year=year, month=month) }}">Monthly totals &mdash; Excel</button>
+  </div>
+  <p id="dl-note" style="color:var(--danger); font-size:12px; display:none;">Tick at least one staff member first.</p>
+</form>
+<script>
+function tickAll(on) { document.querySelectorAll('input[name="emps"]').forEach(function (c) { c.checked = on; }); }
+function tickBase(base, on) { document.querySelectorAll('input[name="emps"][data-base="' + base + '"]').forEach(function (c) { c.checked = on; }); }
+document.getElementById('dl-form').addEventListener('submit', function (e) {
+  if (!document.querySelector('input[name="emps"]:checked')) { e.preventDefault(); document.getElementById('dl-note').style.display = 'block'; }
+});
+</script>
+{% endblock %}

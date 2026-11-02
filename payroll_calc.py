@@ -297,6 +297,46 @@ def calc_pcb(month_index, current_gross, current_epf_employee, current_socso_eis
     }
 
 
+# Overseas incentive and long unpaid leave (decided Nov 2026): when an employee's Unpaid Leave runs
+# for more than 2 weeks in one go, the overseas incentive is prorated - cut by 1/(days in month)
+# for every UL day that falls inside that long leave. Short UL stays at the full incentive.
+OVERSEA_UL_RULE_FROM = (2026, 10)
+OVERSEA_UL_LONG_DAYS = 14          # "more than 2 weeks" = more than 14 calendar days in a row
+OVERSEA_UL_GAP_DAYS = 3            # ranges <= 3 days apart (a weekend) are one continuous leave
+
+
+def oversea_long_ul_days(conn, emp_id, year, month):
+    """Number of UL days in this month that belong to one continuous Unpaid Leave of more than
+    14 calendar days (approved Unpaid Leave applications, joined across weekends, even when the
+    leave carries on into the next month)."""
+    if (year, month) < OVERSEA_UL_RULE_FROM:
+        return 0
+    reqs = conn.execute(
+        """SELECT start_date, end_date FROM leave_requests
+           WHERE emp_id=? AND status='Approved' AND leave_type='Unpaid Leave' AND COALESCE(half_day,'')=''
+           ORDER BY start_date""", (emp_id,)).fetchall()
+    spells = []
+    for r in reqs:
+        a, b = _parse_date(r["start_date"]), _parse_date(r["end_date"])
+        if not a or not b:
+            continue
+        if spells and (a - spells[-1][1]).days <= OVERSEA_UL_GAP_DAYS:
+            spells[-1][1] = max(spells[-1][1], b)
+        else:
+            spells.append([a, b])
+    long_spells = [(a, b) for a, b in spells if (b - a).days + 1 > OVERSEA_UL_LONG_DAYS]
+    if not long_spells:
+        return 0
+    days = 0
+    for r in conn.execute(
+            "SELECT date FROM attendance_daily WHERE emp_id=? AND date LIKE ? AND day_type='UL'",
+            (emp_id, f"{year:04d}-{month:02d}-%")).fetchall():
+        d = _parse_date(r["date"])
+        if d and any(a <= d <= b for a, b in long_spells):
+            days += 1
+    return days
+
+
 def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: int,
                        variable_allowance: float = None, variable_allowance_flag: str = None):
     conn.row_factory = sqlite3.Row
@@ -391,9 +431,19 @@ def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: i
     unpaid_deduction = round((prorated_basic / calendar_days_in_month) * unpaid_days, 2)
     basic_after_unpaid = prorated_basic - (prorated_basic / calendar_days_in_month) * unpaid_days
 
+    # Overseas incentive: prorated for UL days inside a long (> 2 weeks) Unpaid Leave.
+    oversea_cut = 0.0
+    if emp["oversea_incentive_flag"] == "Y" and (emp["oversea_incentive"] or 0):
+        long_ul_days = oversea_long_ul_days(conn, emp_id, year, month)
+        if long_ul_days:
+            oversea_full = ((emp["oversea_incentive"] or 0)
+                            * allowance_month_factor(emp["oversea_incentive_flag"], emp["oversea_incentive_effective_date"]) * factor)
+            oversea_cut = round(min(oversea_full, oversea_full / calendar_days_in_month * long_ul_days), 2)
+    fixed_allowance_paid = fixed_allowance_prorated * factor - oversea_cut
+
     gross_pay = (
         basic_after_unpaid
-        + fixed_allowance_prorated * factor
+        + fixed_allowance_paid
         + (variable_allowance if variable_allowance_flag == "Y" else 0.0)
         + ot_pay
         + transport_allowance
@@ -529,7 +579,8 @@ def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: i
         "year": year,
         "month": month,
         "basic_salary": round(basic_after_unpaid, 2),
-        "fixed_allowance": round(fixed_allowance_prorated * factor, 2),
+        "fixed_allowance": round(fixed_allowance_paid, 2),
+        "oversea_incentive_cut": oversea_cut,
         # Only counts (in gross, and so shown on the payslip) when the month's flag is Y.
         "variable_allowance": round(variable_allowance if variable_allowance_flag == "Y" else 0.0, 2),
         "working_days_in_month": working_days_in_month,

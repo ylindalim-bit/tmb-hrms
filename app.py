@@ -2682,12 +2682,25 @@ ATT_DL_DAY_LABELS = {"WORKED": "Worked", "OFF": "Off day", "REST": "Rest day", "
                      "AL": "Annual leave", "MC": "Medical leave", "HL": "Hospitalisation leave",
                      "UL": "Unpaid leave", "OTHER_PAID": "Other paid leave"}
 ATT_DL_TOTAL_COLUMNS = [
-    ("Days Worked", "days_worked"), ("AL", "al_days"), ("MC", "mc_days"), ("HL", "hl_days"), ("UL", "ul_days"),
+    ("Days Worked", "days_worked"), ("Worked on PH / Rest / Off", "hol_worked"), ("AL", "al_days"), ("MC", "mc_days"), ("HL", "hl_days"), ("UL", "ul_days"),
     ("Other Paid", "other_paid_leave"), ("PH", "ph_days"), ("OFF", "off_days"), ("REST", "rest_days"),
-    ("Absent", "absent_days"), ("Working Days", "working_days_in_month"),
+    ("Absent", "absent_days"), ("Work Days", "working_days_in_month"),
     ("OT 1.5x", "ot_hours_1_5"), ("OT 2.0x", "ot_hours_2_0"), ("OT 3.0x", "ot_hours_3_0"),
     ("Meal Days", "meal_eligible_days"), ("CEWI Days", "cewi_eligible_days"),
 ]
+
+
+def _att_dl_month_values(db, emp_id, year, month):
+    """attendance_monthly row as a dict (zeros if none) plus 'hol_worked': days actually worked on a public holiday,
+    rest day or off day. The system books those under PH/REST/OFF (with the OT hours), not under Days Worked, so they
+    would otherwise look like days not worked."""
+    m = db.execute("SELECT * FROM attendance_monthly WHERE emp_id=? AND year=? AND month=?", (emp_id, year, month)).fetchone()
+    vals = {k: ((m[k] or 0) if m is not None else 0) for _l, k in ATT_DL_TOTAL_COLUMNS if k != "hol_worked"}
+    vals["hol_worked"] = db.execute(
+        """SELECT COUNT(*) FROM attendance_daily WHERE emp_id=? AND date LIKE ? AND day_type IN ('PH','REST','OFF')
+           AND (COALESCE(time_in,'')!='' OR COALESCE(ot_hours_1_5,0)+COALESCE(ot_hours_2_0,0)+COALESCE(ot_hours_3_0,0) > 0)""",
+        (emp_id, f"{year:04d}-{month:02d}-%")).fetchone()[0]
+    return vals, m is not None
 
 
 def _att_dl_selection(db, year, month):
@@ -2712,6 +2725,8 @@ def _att_dl_daily_rows(db, emp, year, month):
         r = d["row"]
         if r is not None:
             status = ATT_DL_DAY_LABELS.get(r["day_type"], r["day_type"])
+            if r["day_type"] in ("PH", "REST", "OFF") and (r["time_in"] or (r["ot_hours_1_5"] or 0) + (r["ot_hours_2_0"] or 0) + (r["ot_hours_3_0"] or 0) > 0):
+                status += " - WORKED"
             if d["half_leave"]:
                 status += f" + half-day {ATT_DL_DAY_LABELS.get(d['half_leave'], d['half_leave']).lower()}"
         elif d["trip_label"]:
@@ -2802,11 +2817,12 @@ def attendance_download_daily_xlsx(year, month):
             ws.append([r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7],
                        r[8] or None, r[9] or None, r[10] or None, r[11]])
         ws.append([])
-        if monthly is not None:
+        vals, has_monthly = _att_dl_month_values(db, e["emp_id"], year, month)
+        if has_monthly:
             ws.append(["Monthly totals"])
             ws.cell(ws.max_row, 1).font = Font(bold=True)
             for label, key in ATT_DL_TOTAL_COLUMNS:
-                ws.append([label, monthly[key] if monthly[key] is not None else 0])
+                ws.append([label, vals[key]])
         for row in ws.iter_rows(min_row=4, max_row=4 + len(rows)):
             for c in row:
                 c.border = Border(top=thin, bottom=thin, left=thin, right=thin)
@@ -2831,6 +2847,7 @@ def attendance_download_daily_pdf(year, month):
     styles = getSampleStyleSheet()
     small = ParagraphStyle("adl", parent=styles["Normal"], fontSize=7.2, leading=8.6)
     title = ParagraphStyle("adt", parent=styles["Title"], fontSize=13, spaceAfter=2, alignment=0)
+    hdr_small = ParagraphStyle("adh", parent=styles["Normal"], fontSize=6, leading=7, alignment=1)
     story = []
     for idx, e in enumerate(chosen):
         rows, monthly = _att_dl_daily_rows(db, e, year, month)
@@ -2844,8 +2861,8 @@ def attendance_download_daily_pdf(year, month):
             data.append([r[0][5:], r[1], Paragraph(xml_escape(r[2]), small), r[3], r[4], Paragraph(xml_escape(r[5]), small),
                          r[6], r[7], _att_dl_fmt(r[8]) if r[8] else "", _att_dl_fmt(r[9]) if r[9] else "",
                          _att_dl_fmt(r[10]) if r[10] else "", Paragraph(xml_escape(r[11]), small)])
-        tbl = Table(data, colWidths=[1.3 * cm, 0.9 * cm, 3.0 * cm, 1.1 * cm, 1.1 * cm, 2.3 * cm, 0.8 * cm, 0.9 * cm,
-                                      1.0 * cm, 1.0 * cm, 1.0 * cm, 4.3 * cm], repeatRows=1)
+        tbl = Table(data, colWidths=[1.3 * cm, 0.9 * cm, 3.2 * cm, 1.1 * cm, 1.1 * cm, 2.2 * cm, 0.9 * cm, 1.0 * cm,
+                                      1.1 * cm, 1.1 * cm, 1.1 * cm, 3.6 * cm], repeatRows=1)
         style_cmds = [
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1D4ED8")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 7.2),
@@ -2860,9 +2877,10 @@ def attendance_download_daily_pdf(year, month):
         tbl.setStyle(TableStyle(style_cmds))
         story.append(tbl)
         story.append(Spacer(1, 6))
-        if monthly is not None:
-            tot = [[label for label, _k in ATT_DL_TOTAL_COLUMNS],
-                   [_att_dl_fmt(monthly[k] if monthly[k] is not None else 0) for _l, k in ATT_DL_TOTAL_COLUMNS]]
+        vals, has_monthly = _att_dl_month_values(db, e["emp_id"], year, month)
+        if has_monthly:
+            tot = [[Paragraph(label.replace(" / ", "/<br/>"), hdr_small) for label, _k in ATT_DL_TOTAL_COLUMNS],
+                   [_att_dl_fmt(vals[k]) for _l, k in ATT_DL_TOTAL_COLUMNS]]
             tt = Table(tot, repeatRows=0)
             tt.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E0E7FF")),
                                     ("FONTSIZE", (0, 0), (-1, -1), 6.6), ("ALIGN", (0, 0), (-1, -1), "CENTER"),
@@ -2889,8 +2907,8 @@ def _att_dl_totals_table(db, chosen, year, month):
     head = ["Emp ID", "Name", "Base"] + [label for label, _k in ATT_DL_TOTAL_COLUMNS]
     body = []
     for e in chosen:
-        m = db.execute("SELECT * FROM attendance_monthly WHERE emp_id=? AND year=? AND month=?", (e["emp_id"], year, month)).fetchone()
-        body.append([e["emp_id"], e["full_name"], e["base"] or ""] + [(m[k] if m is not None and m[k] is not None else 0) for _l, k in ATT_DL_TOTAL_COLUMNS])
+        vals, _has = _att_dl_month_values(db, e["emp_id"], year, month)
+        body.append([e["emp_id"], e["full_name"], e["base"] or ""] + [vals[k] for _l, k in ATT_DL_TOTAL_COLUMNS])
     return head, body
 
 
@@ -2938,11 +2956,14 @@ def attendance_download_totals_pdf(year, month):
     head, body = _att_dl_totals_table(db, chosen, year, month)
     styles = getSampleStyleSheet()
     small = ParagraphStyle("atd", parent=styles["Normal"], fontSize=7, leading=8.2)
-    data = [head]
+    hdr = ParagraphStyle("atdh", parent=styles["Normal"], fontSize=6.2, leading=7.2, alignment=1, textColor=colors.white,
+                         fontName="Helvetica-Bold")
+    data = [[Paragraph(h.replace(" / ", "/<br/>").replace("Worked on", "Worked<br/>on").replace(" Days", "<br/>Days")
+                       .replace("Days Worked", "Days<br/>Worked"), hdr) for h in head]]
     for r in body:
         data.append([r[0], Paragraph(xml_escape(r[1]), small), r[2]] + [_att_dl_fmt(v) for v in r[3:]])
     data.append(["", "TOTAL", ""] + [_att_dl_fmt(round(sum(r[i] for r in body), 2)) for i in range(3, len(head))])
-    tbl = Table(data, colWidths=[1.2 * cm, 4.6 * cm, 0.9 * cm] + [1.35 * cm] * (len(head) - 3), repeatRows=1)
+    tbl = Table(data, colWidths=[1.1 * cm, 3.8 * cm, 1.1 * cm] + [(27.0 - 6.0) / (len(head) - 3) * cm] * (len(head) - 3), repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1D4ED8")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),

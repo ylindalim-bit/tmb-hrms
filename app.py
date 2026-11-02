@@ -54,6 +54,14 @@ def _set_a4_one_page(ws):
     ws.print_options.horizontalCentered = True
 
 
+def _hrd_levy_payable(db, rows):
+    """What HRD Corp's e-Slip asks you to pay: the levy rate on the TOTAL wages,
+    rounded once. (Adding up each person's rounded levy can differ by a sen.)"""
+    rate = db.execute("SELECT value FROM payroll_settings WHERE key='hrd_levy_rate'").fetchone()
+    rate = float(rate["value"]) if rate and rate["value"] not in (None, "") else 0.01
+    return round(sum((r["gross_pay"] or 0) for r in rows if (r["hrd_levy_employer"] or 0) > 0) * rate + 1e-9, 2)
+
+
 def _add_headcount_block(ws, start_row, totals, employee_count, paid_count=None):
     """Head count + statutory contribution (Employee/Employer/Total) summary
     box, written starting at start_row in columns A-E. Shared by both
@@ -81,7 +89,7 @@ def _add_headcount_block(ws, start_row, totals, employee_count, paid_count=None)
     other_rows = [
         ("EPF", totals["epf_employee"], totals["epf_employer"]),
         ("PCB", totals["pcb"], None),
-        ("HRDCORP", None, totals["hrd_levy_employer"]),
+        ("HRDCORP", None, totals.get("hrd_levy_payable", totals["hrd_levy_employer"])),
     ]
 
     def _write_row(r_idx, label, eyee, eyer):
@@ -4631,6 +4639,7 @@ def payroll_export(year, month):
             row_idx += 1
         row_idx -= 1
 
+    totals["hrd_levy_payable"] = _hrd_levy_payable(db, paid_results)
     last_row = _add_headcount_block(ws, row_idx + 2, totals, len(results), len(paid_results))
     last_row = _add_wage_base_composition_block(ws, last_row + 2, results)
     _add_cewi_remark(ws, last_row + 2, db)
@@ -4792,6 +4801,7 @@ def payroll_summary_export(year, month):
         row_idx += 1
     write_values(row_idx, f"TOTAL ({len(paid_results)} employees)", totals, bold=True)
 
+    totals["hrd_levy_payable"] = _hrd_levy_payable(db, paid_results)
     last_row = _add_headcount_block(ws, row_idx + 2, totals, len(results), len(paid_results))
     last_row = _add_wage_base_composition_block(ws, last_row + 2, results)
     notes_last_row = _add_zero_pay_notes(ws, last_row + 2, _zero_pay_notes(results))
@@ -5895,7 +5905,7 @@ def payroll_statutory_report(year, month):
     skb_ee = round(sum(r["skbbk_employee"] or 0 for r in socso_rows), 2)
     eis_ee, eis_er = s(eis_rows, "eis_employee", "eis_employer")
     pcb_ee = round(sum(r["pcb"] or 0 for r in pcb_rows), 2)
-    hrd_er = round(sum(r["hrd_levy_employer"] or 0 for r in hrd_rows), 2)
+    hrd_er = _hrd_levy_payable(db, hrd_rows)
     lines = [
         ("EPF (KWSP)", employer["epf_employer_no"], len(epf_rows), epf_ee, epf_er),
         ("SOCSO (PERKESO)", employer["socso_eis_employer_code"], len(socso_rows), soc_ee, soc_er),
@@ -6034,7 +6044,7 @@ def payroll_statutory_report_pdf(year, month):
         ("SKBBK (PERKESO)", employer["socso_eis_employer_code"], len(socso_rows), sm(socso_rows, "skbbk_employee"), 0),
         ("EIS (PERKESO)", employer["socso_eis_employer_code"], len(eis_rows), sm(eis_rows, "eis_employee"), sm(eis_rows, "eis_employer")),
         ("PCB / MTD (LHDN)", employer["income_tax_employer_no"], len(pcb_rows), sm(pcb_rows, "pcb"), 0),
-        ("HRD Corp Levy", employer["hrdcorp_employer_no"], len(hrd_rows), 0, sm(hrd_rows, "hrd_levy_employer")),
+        ("HRD Corp Levy", employer["hrdcorp_employer_no"], len(hrd_rows), 0, _hrd_levy_payable(db, hrd_rows)),
     ]
     sdata = [["Statutory body", "Employer reference", "Employees", "Employee share (RM)", "Employer share (RM)", "Total payable (RM)"]]
     extra = []

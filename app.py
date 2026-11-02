@@ -4454,6 +4454,7 @@ PAYROLL_EXPORT_COLUMNS = [
     ("Total Ded.", "total_deduction"), ("NET PAY", "net_pay"), ("I/C", "ic_passport_no"),
     ("Bank", "bank_name"), ("Acct No.", "bank_account_no"),
     ("SOCSO Base", "socso_base"), ("EPF Base", "epf_base"), ("PCB Base", "pcb_base"),
+    ("HRD Base", "hrd_base"),
 ]
 
 
@@ -4486,6 +4487,7 @@ def _summary_row_values(r):
         "net_pay": r["net_pay"], "socso_base": socso_base,
         "epf_base": round((r["gross_pay"] or 0) - (r["ot_pay"] or 0) - (r["transport_allowance"] or 0) - other, 2),
         "pcb_base": socso_base,
+        "hrd_base": round(r["gross_pay"] or 0, 2),   # the wage the 1% HRD levy is charged on
     }
 
 
@@ -4528,7 +4530,7 @@ def payroll_export(year, month):
     money_cols = {"Basic", "Fixed Allow.", "Total OT", "Transport", "Meal", "CEWI",
                   "Gross", "EPF (EE)", "EPF (Er)", "SOCSO (EE)", "SOCSO (Er)", "EIS (EE)",
                   "EIS (Er)", "PCB", "SKBBK", "HRD Levy", "UL Deduction", "Other Ded.",
-                  "Total Ded.", "NET PAY", "SOCSO Base", "EPF Base", "PCB Base"}
+                  "Total Ded.", "NET PAY", "SOCSO Base", "EPF Base", "PCB Base", "HRD Base"}
 
     # Staff with RM0 net pay (e.g. a whole month of unpaid leave) are listed
     # directly UNDER the TOTAL row and are not part of it; everyone else keeps
@@ -4560,6 +4562,7 @@ def payroll_export(year, month):
             "total_deduction": round(r["total_deductions"] + (r["unpaid_deduction"] or 0), 2),
             "net_pay": r["net_pay"],
             "socso_base": socso_base, "epf_base": epf_base, "pcb_base": socso_base,
+            "hrd_base": round(r["gross_pay"] or 0, 2),
             "ic_passport_no": bank_info.get(r["emp_id"], {}).get("ic_passport_no") or "",
             "bank_name": bank_info.get(r["emp_id"], {}).get("bank_name") or "",
             "bank_account_no": bank_info.get(r["emp_id"], {}).get("bank_account_no") or "",
@@ -4605,6 +4608,7 @@ def payroll_export(year, month):
             - totals["other_deduction"], 2
         ),
         "pcb_base": round(totals["gross_pay"] - totals["other_deduction"], 2),
+        "hrd_base": round(totals["gross_pay"], 2),
     }
     for col_idx, (label, key) in enumerate(PAYROLL_EXPORT_COLUMNS, start=1):
         cell = ws.cell(row=row_idx, column=col_idx, value=total_row[key])

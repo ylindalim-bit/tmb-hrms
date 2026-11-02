@@ -313,7 +313,7 @@ try:
     for _tbl, _col in (("leave_requests", "half_day"), ("attendance_daily", "half_leave_type"),
                        ("attendance_daily", "half_leave_session"),
                        ("tax_profile", "children_study_full"), ("tax_profile", "children_study_half"),
-                       ("attendance_daily", "meal_override"), ("job_applications", "interview_date"),
+                       ("attendance_daily", "meal_override"), ("attendance_daily", "cewi_override"), ("job_applications", "interview_date"),
                        ("job_applications", "interview_time"), ("job_applications", "interview_notes"),
                        ("job_applications", "interview_interviewer"),
                        ("job_applications", "assess_c1_name"), ("job_applications", "assess_c1_text"), ("job_applications", "assess_c2_name"), ("job_applications", "assess_c2_text"), ("job_applications", "assess_c3_name"), ("job_applications", "assess_c3_text"),
@@ -2543,6 +2543,24 @@ def _auto_tick_meal(db, emp_id, year, month):
             db.execute("UPDATE attendance_daily SET meal_allowance_flag='Y' WHERE id=?", (r["id"],))
 
 
+def _auto_tick_cewi(db, emp_id, year, month):
+    """CEWI is automatic too: for an employee with CEWI switched on (and a daily rate), every
+    full WORKED day that has both a Time In and a Time Out gets the CEWI tick - half-day leave
+    days earn none. A day HR deliberately unticked on the Daily Attendance page carries
+    cewi_override='N' and is left alone."""
+    emp = db.execute("SELECT cewi_flag, cewi_rate FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+    if emp is None or emp["cewi_flag"] != "Y" or not (emp["cewi_rate"] or 0):
+        return
+    rows = db.execute(
+        "SELECT * FROM attendance_daily WHERE emp_id=? AND date LIKE ? AND day_type='WORKED'",
+        (emp_id, f"{year:04d}-{month:02d}-%"),
+    ).fetchall()
+    for r in rows:
+        if (r["cewi_flag"] != "Y" and r["time_in"] and r["time_out"] and not _half_leave_type(r)
+                and (r["cewi_override"] if "cewi_override" in r.keys() else None) != "N"):
+            db.execute("UPDATE attendance_daily SET cewi_flag='Y' WHERE id=?", (r["id"],))
+
+
 def _sync_daily_to_monthly(db, emp_id, year, month):
     """Recomputes attendance_monthly's aggregate columns from this
     employee/month's attendance_daily rows and upserts them - the same
@@ -2550,6 +2568,7 @@ def _sync_daily_to_monthly(db, emp_id, year, month):
     exactly like a directly-typed monthly total would."""
     _assert_payroll_open(db, emp_id, year, month)
     _auto_tick_meal(db, emp_id, year, month)
+    _auto_tick_cewi(db, emp_id, year, month)
     rows = db.execute(
         "SELECT * FROM attendance_daily WHERE emp_id=? AND date LIKE ?",
         (emp_id, f"{year:04d}-{month:02d}-%"),
@@ -3054,6 +3073,13 @@ def attendance_daily(emp_id, year, month):
                                      _half_leave_type(existing_rows[date_str]) if date_str in existing_rows else None)
             ) else None
             cewi_flag = "Y" if request.form.get(f"cewi__{day}") else "N"
+            # Same as Meal: the system ticks CEWI by itself, so an unticked CEWI on a complete full
+            # WORKED day of a CEWI employee is HR's deliberate "no CEWI" - keep it.
+            cewi_override = "N" if (
+                cewi_flag == "N" and day_type == "WORKED" and time_in and time_out
+                and emp["cewi_flag"] == "Y"
+                and not (_half_leave_type(existing_rows[date_str]) if date_str in existing_rows else None)
+            ) else None
             ot_1_5 = float(request.form.get(f"ot_1_5__{day}", 0) or 0)
             ot_2_0 = float(request.form.get(f"ot_2_0__{day}", 0) or 0)
             ot_3_0 = float(request.form.get(f"ot_3_0__{day}", 0) or 0)
@@ -3066,17 +3092,17 @@ def attendance_daily(emp_id, year, month):
                 """INSERT INTO attendance_daily (
                        emp_id, date, day_type, time_in, time_out, meal_allowance_flag, cewi_flag,
                        ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, ot_reason, late_early_remark, late_early_type,
-                       meal_override
-                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                       meal_override, cewi_override
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(emp_id, date) DO UPDATE SET
                      day_type=excluded.day_type, time_in=excluded.time_in, time_out=excluded.time_out,
                      meal_allowance_flag=excluded.meal_allowance_flag, cewi_flag=excluded.cewi_flag,
-                     meal_override=excluded.meal_override,
+                     meal_override=excluded.meal_override, cewi_override=excluded.cewi_override,
                      ot_hours_1_5=excluded.ot_hours_1_5, ot_hours_2_0=excluded.ot_hours_2_0,
                      ot_hours_3_0=excluded.ot_hours_3_0, ot_reason=excluded.ot_reason,
                      late_early_remark=excluded.late_early_remark, late_early_type=excluded.late_early_type""",
                 (emp_id, date_str, day_type, time_in, time_out, meal_flag, cewi_flag,
-                 ot_1_5, ot_2_0, ot_3_0, ot_reason, late_early_remark, late_early_type, meal_override),
+                 ot_1_5, ot_2_0, ot_3_0, ot_reason, late_early_remark, late_early_type, meal_override, cewi_override),
             )
         _sync_daily_to_monthly(db, emp_id, year, month)
         db.commit()

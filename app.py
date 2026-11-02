@@ -2749,8 +2749,19 @@ def attendance_download(year, month):
     bases = sorted({e["base"] for e in emps if e["base"]})
     prev_y, prev_m = (year, month - 1) if month > 1 else (year - 1, 12)
     next_y, next_m = (year, month + 1) if month < 12 else (year + 1, 1)
+    month_like = f"{year:04d}-{month:02d}-%"
+    ul_days = {}
+    for r in db.execute(
+            """SELECT emp_id, SUM(CASE WHEN day_type='UL' THEN 1
+                                       WHEN day_type='WORKED' AND half_leave_type='UL' THEN 0.5 ELSE 0 END) AS d
+               FROM attendance_daily WHERE date LIKE ? GROUP BY emp_id""", (month_like,)):
+        ul_days[r["emp_id"]] = r["d"] or 0
+    for r in db.execute("SELECT emp_id, ul_days FROM attendance_monthly WHERE year=? AND month=?", (year, month)):
+        ul_days[r["emp_id"]] = max(ul_days.get(r["emp_id"], 0), r["ul_days"] or 0)
+    ul_days = {k: v for k, v in ul_days.items() if v > 0}
     return render_template("attendance_download.html", year=year, month=month, emps=emps, bases=bases,
-                           picked={e["emp_id"] for e in chosen}, prev=(prev_y, prev_m), nxt=(next_y, next_m))
+                           picked={e["emp_id"] for e in chosen}, prev=(prev_y, prev_m), nxt=(next_y, next_m),
+                           ul_days=ul_days)
 
 
 def _att_dl_fmt(v):

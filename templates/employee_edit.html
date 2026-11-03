@@ -453,6 +453,7 @@
     to gather everything needed for the MyTax e-SPC filing.{% endif %}
   </p>
 
+{% if is_new %}
   <h2>Allowances</h2>
   <p style="color:var(--muted); font-size:12px; margin:-4px 0 10px;">
     Effective Date: leave blank to always apply (as long as the flag is Y). Set a date to start the
@@ -461,7 +462,7 @@
   <div class="table-wrap">
   <table>
     <thead>
-      <tr><th class="text">Allowance</th><th>Amount (RM)</th><th>Flag</th><th>Effective Date</th>{% if not is_new %}<th>New amount valid from</th>{% endif %}</tr>
+      <tr><th class="text">Allowance</th><th>Amount (RM)</th><th>Flag</th><th>Effective Date</th></tr>
     </thead>
     <tbody>
       {% for label, amount_field, flag_field, date_field in [
@@ -482,12 +483,76 @@
           </select>
         </td>
         <td><input type="date" form="employee-form" name="{{ date_field }}" value="{{ emp[date_field] or '' }}"></td>
-        {% if not is_new %}<td><input type="date" form="employee-form" name="{{ amount_field }}_valid_from" title="Only used when you change the amount or the flag: the date the new amount starts, for the Allowance History below. Blank = today."></td>{% endif %}
       </tr>
       {% endfor %}
     </tbody>
   </table>
   </div>
+
+{% else %}
+  <h2>Allowances</h2>
+  <p style="color:var(--muted); font-size:12px; margin:-4px 0 10px;">
+    One line for each amount the person gets, with the dates it applies: <strong>From</strong> and <strong>To</strong>
+    (leave To blank for the current amount). Payroll uses the line that covers each month, and splits a month by
+    days if an amount changes in the middle of it. To change an allowance, give the old line a To date and add a
+    new line from the next day. Lines for the same allowance must not overlap. Flag N switches a line off.
+  </p>
+  <div class="table-wrap">
+  <table id="allowance-lines-table">
+    <thead>
+      <tr><th class="text">Allowance</th><th>Amount (RM)</th><th>Flag</th><th>From</th><th>To</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for amount_field, label in allowance_history_labels.items() %}
+      <input type="hidden" form="employee-form" name="al_present__{{ amount_field }}" value="1">
+      {% for ln in allowance_lines[amount_field] %}
+      <tr data-key="{{ amount_field }}">
+        <td class="text allowance-label" style="{% if loop.first and ln.flag=='Y' and ln.amount %}color:var(--accent); font-weight:600;{% endif %}">{% if loop.first %}{{ label }}{% else %}<span style="color:var(--muted);">&nbsp;&nbsp;&hellip; {{ label.split(' (')[0] }}</span>{% endif %}</td>
+        <td><input type="number" step="0.01" form="employee-form" name="al__{{ amount_field }}__{{ loop.index0 }}__amount" value="{{ '%.2f'|format(ln.amount or 0) }}"></td>
+        <td>
+          <select form="employee-form" name="al__{{ amount_field }}__{{ loop.index0 }}__flag">
+            <option value="Y" {% if ln.flag=="Y" %}selected{% endif %}>Y</option>
+            <option value="N" {% if ln.flag!="Y" %}selected{% endif %}>N</option>
+          </select>
+        </td>
+        <td><input type="date" form="employee-form" name="al__{{ amount_field }}__{{ loop.index0 }}__from" value="{{ ln.from }}"></td>
+        <td><input type="date" form="employee-form" name="al__{{ amount_field }}__{{ loop.index0 }}__to" value="{{ ln.to }}"></td>
+        <td class="text" style="white-space:nowrap;">
+          <a href="#" onclick="alAddLine('{{ amount_field }}', this); return false;" style="font-size:12px;">+ line</a>
+          <a href="#" onclick="alRemoveLine(this); return false;" style="font-size:12px; margin-left:8px; color:var(--danger);" title="Remove this line">&#10005;</a>
+        </td>
+      </tr>
+      {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <script>
+  var alCounter = 1000;
+  function alAddLine(key, link) {
+    var rowAfter = link.closest('tr');
+    while (rowAfter.nextElementSibling && rowAfter.nextElementSibling.dataset.key === key) { rowAfter = rowAfter.nextElementSibling; }
+    var i = ++alCounter;
+    var tr = document.createElement('tr');
+    tr.dataset.key = key;
+    var base = 'al__' + key + '__' + i + '__';
+    tr.innerHTML =
+      '<td class="text"><span style="color:var(--muted);">&nbsp;&nbsp;&hellip; new line</span></td>' +
+      '<td><input type="number" step="0.01" form="employee-form" name="' + base + 'amount"></td>' +
+      '<td><select form="employee-form" name="' + base + 'flag"><option value="Y" selected>Y</option><option value="N">N</option></select></td>' +
+      '<td><input type="date" form="employee-form" name="' + base + 'from"></td>' +
+      '<td><input type="date" form="employee-form" name="' + base + 'to"></td>' +
+      '<td class="text" style="white-space:nowrap;"><a href="#" onclick="alAddLine(\'' + key + '\', this); return false;" style="font-size:12px;">+ line</a>' +
+      '<a href="#" onclick="alRemoveLine(this); return false;" style="font-size:12px; margin-left:8px; color:var(--danger);" title="Remove this line">&#10005;</a></td>';
+    rowAfter.parentNode.insertBefore(tr, rowAfter.nextElementSibling);
+  }
+  function alRemoveLine(link) {
+    var tr = link.closest('tr');
+    if (confirm('Remove this line? It is gone once you Save.')) { tr.parentNode.removeChild(tr); }
+  }
+  </script>
+
+{% endif %}
 
   <h2 style="color:var(--accent);">Leave Entitlements</h2>
   <div class="form-grid">
@@ -650,60 +715,6 @@
   <p style="color:var(--muted); margin-top:12px;">No changes logged yet - the hours above are the only ones on file.</p>
   {% endif %}
 </div>
-
-{% if not is_new %}
-<div class="card" id="allowance-history">
-  <h2 style="margin-top:0;">Allowance History</h2>
-  <p style="color:var(--muted); font-size:12px; margin-top:-4px;">
-    What this person has been getting, from when to when. When you change an amount above, type the date the
-    new amount starts in <strong>New amount valid from</strong> (blank = today) and this table closes the old row
-    the day before and starts a new one. Payroll uses the Allowances table above, not this record.
-    A row marked <em>current</em> has no To date.
-  </p>
-  <form method="post" action="{{ url_for('add_allowance_history', emp_id=emp.emp_id) }}">
-    <div class="form-grid">
-      <div><label>Allowance</label>
-        <select name="allowance" required>
-          {% for k, lab in allowance_history_labels.items() %}<option value="{{ k }}">{{ lab }}</option>{% endfor %}
-        </select>
-      </div>
-      <div><label>Amount (RM)</label><input type="number" step="0.01" name="amount" required></div>
-      <div><label>Valid from</label><input type="date" name="valid_from" required></div>
-      <div><label>Valid to (blank if current)</label><input type="date" name="valid_to"></div>
-    </div>
-    <div class="form-actions"><button class="btn" type="submit">Add row (for a past period)</button></div>
-  </form>
-  {% if allowance_history %}
-  {% for r in allowance_history %}
-  <form id="ah-save-{{ r.id }}" method="post" action="{{ url_for('update_allowance_history', emp_id=emp.emp_id, row_id=r.id) }}"></form>
-  {% endfor %}
-  <div class="table-wrap" style="margin-top:14px;">
-  <table>
-    <thead><tr><th class="text">Allowance</th><th>Amount (RM)</th><th class="text">From</th><th class="text">To</th><th class="text">Recorded by</th><th></th></tr></thead>
-    <tbody>
-      {% for r in allowance_history %}
-      <tr>
-        <td class="text">{{ allowance_history_labels.get(r.allowance, r.allowance) }}</td>
-        <td><input form="ah-save-{{ r.id }}" type="number" step="0.01" name="amount" value="{{ '%.2f'|format(r.amount) }}" style="width:90px;"></td>
-        <td class="text"><input form="ah-save-{{ r.id }}" type="date" name="valid_from" value="{{ r.valid_from or '' }}"></td>
-        <td class="text"><input form="ah-save-{{ r.id }}" type="date" name="valid_to" value="{{ r.valid_to or '' }}">{% if not r.valid_to %} <span class="pill" style="background:#dcfce7; color:#166534;">current</span>{% endif %}</td>
-        <td class="text">{{ r.recorded_by or '-' }}</td>
-        <td class="text" style="white-space:nowrap;">
-          <button form="ah-save-{{ r.id }}" type="submit" class="btn" style="padding:3px 8px; font-size:11px;">Save</button>
-          <form method="post" action="{{ url_for('delete_allowance_history', emp_id=emp.emp_id, row_id=r.id) }}" onsubmit="return confirm('Delete this history row?');" style="display:inline;">
-            <button type="submit" class="btn secondary" style="padding:3px 8px; font-size:11px; color:var(--danger);">Delete</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  </div>
-  {% else %}
-  <p style="color:var(--muted); font-size:13px;">No allowance records yet.</p>
-  {% endif %}
-</div>
-{% endif %}
 
 <div class="card" id="overseas-assignment-log">
   <h2 style="margin-top:0;">Overseas Assignment Log</h2>

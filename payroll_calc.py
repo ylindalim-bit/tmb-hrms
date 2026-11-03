@@ -73,6 +73,54 @@ def flat_allowance_factor(effective_date, date_joined, last_working_day, year, m
     return max(0, (end - start).days + 1) / days_in_month
 
 
+def allowance_lines(conn, emp_id, key):
+    """The employee's lines for one allowance (amount, flag, from, to), or [] when none have been set up -
+    then the old single amount / flag / effective date on the employee record is used instead."""
+    try:
+        rows = conn.execute(
+            "SELECT amount, flag, valid_from, valid_to FROM allowance_history WHERE emp_id=? AND allowance=? "
+            "ORDER BY valid_from, id", (emp_id, key)).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    return [{"amount": r["amount"] or 0, "on": (r["flag"] or "Y") == "Y",
+             "from": _parse_date(r["valid_from"]), "to": _parse_date(r["valid_to"])} for r in rows]
+
+
+def lines_month_amount(lines, year, month, window_start=None, window_end=None):
+    """What the lines pay for the month: each line's amount x the share of the month it covers (limited to the
+    window, e.g. the days the employee was employed). A line that covers the whole month pays its full amount."""
+    days_in_month = calendar.monthrange(year, month)[1]
+    lo = datetime.date(year, month, 1)
+    hi = datetime.date(year, month, days_in_month)
+    if window_start:
+        lo = max(lo, window_start)
+    if window_end:
+        hi = min(hi, window_end)
+    total = 0.0
+    for ln in lines:
+        if not ln["on"]:
+            continue
+        a = max(lo, ln["from"]) if ln["from"] else lo
+        b = min(hi, ln["to"]) if ln["to"] else hi
+        if b >= a:
+            total += ln["amount"] * ((b - a).days + 1) / days_in_month
+    return total
+
+
+def lines_amount_at(lines, day, as_is=False):
+    """The amount of the line that covers this day (0 when none). as_is=True is for the OT rate, which has always
+    used the allowance amount as-is, even before its start date or after its end: when no line covers the day, the
+    nearest line (the next one to start, else the last one) is used."""
+    active = [ln for ln in lines if ln["on"]]
+    for ln in active:
+        if (ln["from"] is None or ln["from"] <= day) and (ln["to"] is None or day <= ln["to"]):
+            return ln["amount"]
+    if as_is and active:
+        upcoming = [ln for ln in active if ln["from"] and ln["from"] > day]
+        return (upcoming[0] if upcoming else active[-1])["amount"]
+    return 0.0
+
+
 def prorate_factor(date_joined, last_working_day, year, month):
     """Payroll!L and Payroll!M: calendar-day prorate factor for the month."""
     days_in_month = calendar.monthrange(year, month)[1]
@@ -385,19 +433,26 @@ def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: i
     # Full (unprorated) Fixed Allowance - used for the OT hourly-rate (ORP)
     # calc below, matching the workbook's formula which uses the flagged
     # amount as-is, not a prorated one.
-    fixed_allowance = (
-        (emp["position_allowance"] if emp["position_allowance_flag"] == "Y" else 0)
-        + (emp["training_incentive"] if emp["training_incentive_flag"] == "Y" else 0)
-        + (emp["oversea_incentive"] if emp["oversea_incentive_flag"] == "Y" else 0)
-    )
-    # Same components, but each prorated by its own effective-date factor -
-    # used for Gross Pay so a mid-month allowance start doesn't pay a full
-    # month's worth.
-    fixed_allowance_prorated = (
-        (emp["position_allowance"] or 0) * allowance_month_factor(emp["position_allowance_flag"], emp["position_allowance_effective_date"])
-        + (emp["training_incentive"] or 0) * allowance_month_factor(emp["training_incentive_flag"], emp["training_incentive_effective_date"])
-        + (emp["oversea_incentive"] or 0) * allowance_month_factor(emp["oversea_incentive_flag"], emp["oversea_incentive_effective_date"])
-    )
+    # Position / Training / Oversea: from the employee's lines (amount per period) when set up, else the single
+    # amount + flag + effective date. comp_unprorated feeds the OT rate, comp_paid goes into Gross Pay.
+    _m_start = datetime.date(year, month, 1)
+    _m_end = datetime.date(year, month, calendar.monthrange(year, month)[1])
+    _emp_start = max(_m_start, _parse_date(emp["date_joined"]) or _m_start)
+    _emp_end = min(_m_end, _parse_date(emp["last_working_day"]) or _m_end)
+    _factor_for_legacy = prorate_factor(emp["date_joined"], emp["last_working_day"], year, month)[1]
+    comp_unprorated, comp_paid = {}, {}
+    for _key, _flag, _eff in (("position_allowance", "position_allowance_flag", "position_allowance_effective_date"),
+                              ("training_incentive", "training_incentive_flag", "training_incentive_effective_date"),
+                              ("oversea_incentive", "oversea_incentive_flag", "oversea_incentive_effective_date")):
+        _lines = allowance_lines(conn, emp_id, _key)
+        if _lines:
+            comp_unprorated[_key] = lines_amount_at(_lines, _emp_end, as_is=True)
+            comp_paid[_key] = lines_month_amount(_lines, year, month, _emp_start, _emp_end)
+        else:
+            comp_unprorated[_key] = (emp[_key] or 0) if emp[_flag] == "Y" else 0
+            comp_paid[_key] = (emp[_key] or 0) * allowance_month_factor(emp[_flag], emp[_eff]) * _factor_for_legacy
+    fixed_allowance = sum(comp_unprorated.values())
+    fixed_allowance_paid_base = sum(comp_paid.values())
 
     days_employed, factor = prorate_factor(emp["date_joined"], emp["last_working_day"], year, month)
 
@@ -406,21 +461,33 @@ def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: i
         ot_hours_1_5, ot_hours_2_0, ot_hours_3_0)
     ot_pay = round(ot_pay_1_5 + ot_pay_2_0 + ot_pay_3_0, 2)
 
-    transport_allowance = (emp["transport_allowance"] or 0) * (
-        flat_allowance_factor(emp["transport_allowance_effective_date"], emp["date_joined"],
-                              emp["last_working_day"], year, month)
-        if emp["transport_allowance_flag"] == "Y" else 0.0
-    )
-    meal_allowance = round(
-        meal_eligible_days * (emp["meal_allowance_rate"] or 0)
-        * (per_day_allowance_factor(emp["meal_allowance_effective_date"], year, month)
-           if emp["meal_allowance_flag"] == "Y" else 0.0), 2
-    )
-    cewi_allowance = round(
-        cewi_eligible_days * (emp["cewi_rate"] or 0)
-        * (per_day_allowance_factor(emp["cewi_effective_date"], year, month)
-           if emp["cewi_flag"] == "Y" else 0.0), 2
-    )
+    _t_lines = allowance_lines(conn, emp_id, "transport_allowance")
+    if _t_lines:
+        transport_allowance = lines_month_amount(_t_lines, year, month, _emp_start, _emp_end)
+    else:
+        transport_allowance = (emp["transport_allowance"] or 0) * (
+            flat_allowance_factor(emp["transport_allowance_effective_date"], emp["date_joined"],
+                                  emp["last_working_day"], year, month)
+            if emp["transport_allowance_flag"] == "Y" else 0.0
+        )
+    _meal_lines = allowance_lines(conn, emp_id, "meal_allowance_rate")
+    if _meal_lines:
+        meal_allowance = round(meal_eligible_days * lines_amount_at(_meal_lines, _emp_end), 2)
+    else:
+        meal_allowance = round(
+            meal_eligible_days * (emp["meal_allowance_rate"] or 0)
+            * (per_day_allowance_factor(emp["meal_allowance_effective_date"], year, month)
+               if emp["meal_allowance_flag"] == "Y" else 0.0), 2
+        )
+    _cewi_lines = allowance_lines(conn, emp_id, "cewi_rate")
+    if _cewi_lines:
+        cewi_allowance = round(cewi_eligible_days * lines_amount_at(_cewi_lines, _emp_end), 2)
+    else:
+        cewi_allowance = round(
+            cewi_eligible_days * (emp["cewi_rate"] or 0)
+            * (per_day_allowance_factor(emp["cewi_effective_date"], year, month)
+               if emp["cewi_flag"] == "Y" else 0.0), 2
+        )
 
     prorated_basic = basic_salary * factor
     # Unpaid Leave / Absent deduction uses the number of calendar days in
@@ -442,9 +509,8 @@ def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: i
             oversea_override, oversea_override_reason = _ov["oversea_override"], _ov["oversea_override_reason"]
     except sqlite3.OperationalError:
         pass  # database not migrated yet
-    if emp["oversea_incentive_flag"] == "Y" and (emp["oversea_incentive"] or 0):
-        oversea_full = ((emp["oversea_incentive"] or 0)
-                        * allowance_month_factor(emp["oversea_incentive_flag"], emp["oversea_incentive_effective_date"]) * factor)
+    oversea_full = comp_paid["oversea_incentive"]
+    if oversea_full > 0:
         if oversea_override is not None:
             # A fixed amount decided for this month replaces the normal rule.
             oversea_cut = round(oversea_full - oversea_override, 2)
@@ -452,7 +518,7 @@ def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: i
             long_ul_days = oversea_long_ul_days(conn, emp_id, year, month)
             if long_ul_days:
                 oversea_cut = round(min(oversea_full, oversea_full / calendar_days_in_month * long_ul_days), 2)
-    fixed_allowance_paid = fixed_allowance_prorated * factor - oversea_cut
+    fixed_allowance_paid = fixed_allowance_paid_base - oversea_cut
 
     gross_pay = (
         basic_after_unpaid

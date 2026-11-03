@@ -344,6 +344,9 @@ try:
     _ensure_conn.execute("""CREATE TABLE IF NOT EXISTS allowance_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL, allowance TEXT NOT NULL,
         amount REAL NOT NULL, valid_from TEXT, valid_to TEXT, recorded_by TEXT, recorded_at TEXT)""")
+    _ah_cols = [_r[1] for _r in _ensure_conn.execute("PRAGMA table_info(allowance_history)").fetchall()]
+    if "flag" not in _ah_cols:
+        _ensure_conn.execute("ALTER TABLE allowance_history ADD COLUMN flag TEXT DEFAULT 'Y'")
     # One-time: give every employee's current allowances a starting row (valid from the allowance's effective
     # date, else the date joined), so the history shows what each person has been getting.
     if _ensure_conn.execute("SELECT 1 FROM app_flags WHERE name='allowance_history_seeded'").fetchone() is None:
@@ -1259,7 +1262,7 @@ ALLOWANCE_HISTORY_LABELS = {
 }
 
 
-def _record_allowance_history(db, emp_id, old, new_fields, form):
+def _record_allowance_history(db, emp_id, old, new_fields, form, skip=()):
     """Keeps the Allowance History in step with the Allowances table: when an amount changes (or an allowance is
     switched on/off) the open row is closed the day before the new date and a new row starts. The new date is the
     "New amount valid from" box on the row, else today. `old` is the employee's row before the save (None = a new
@@ -1268,6 +1271,8 @@ def _record_allowance_history(db, emp_id, old, new_fields, form):
     now = datetime.datetime.now().isoformat(timespec="seconds")
     today = datetime.date.today()
     for amount_field, flag_field, date_field in ALLOWANCE_FIELDS:
+        if amount_field in skip:
+            continue
         new_amt = float(new_fields.get(amount_field) or 0)
         new_on = new_fields.get(flag_field) == "Y" and new_amt > 0
         old_amt = float((old[amount_field] if old is not None else 0) or 0)
@@ -1297,6 +1302,84 @@ def _record_allowance_history(db, emp_id, old, new_fields, form):
                 """INSERT INTO allowance_history (emp_id, allowance, amount, valid_from, valid_to, recorded_by, recorded_at)
                    VALUES (?,?,?,?,NULL,?,?)""",
                 (emp_id, amount_field, new_amt, valid_from, who, now))
+
+
+_ALLOWANCE_LINE_KEY = re.compile(r"^al__([a-z_]+)__(\d+)__(amount|flag|from|to)$")
+
+
+def _parse_allowance_lines(form):
+    """The Allowances table sends one or more lines per allowance (amount, flag, from, to). Returns
+    ({allowance: [line, ...]}, error). An allowance is only handled when its marker (al_present__<key>) is in
+    the form, so an old page that still sends the single amount keeps working."""
+    present = {k[len("al_present__"):] for k in form.keys() if k.startswith("al_present__")}
+    raw = {}
+    for k in form.keys():
+        m = _ALLOWANCE_LINE_KEY.match(k)
+        if m and m.group(1) in present:
+            raw.setdefault(m.group(1), {}).setdefault(int(m.group(2)), {})[m.group(3)] = (form.get(k) or "").strip()
+    result = {}
+    for key in present:
+        if key not in ALLOWANCE_HISTORY_LABELS:
+            continue
+        lines = []
+        for _, d in sorted(raw.get(key, {}).items()):
+            try:
+                _empty_amount = float(d.get("amount") or 0) == 0
+            except ValueError:
+                _empty_amount = False
+            if _empty_amount and not d.get("from"):
+                continue  # an empty line
+            label = ALLOWANCE_HISTORY_LABELS[key]
+            try:
+                amount = float(d.get("amount") or 0)
+            except ValueError:
+                return None, f"{label}: '{d.get('amount')}' is not a number."
+            if amount < 0:
+                return None, f"{label}: the amount cannot be negative."
+            if not d.get("from"):
+                return None, f"{label}: every line needs a From date."
+            try:
+                d_from = datetime.date.fromisoformat(d["from"])
+                d_to = datetime.date.fromisoformat(d["to"]) if d.get("to") else None
+            except ValueError:
+                return None, f"{label}: a date is not valid."
+            if d_to and d_to < d_from:
+                return None, f"{label}: the To date ({d['to']}) is before the From date ({d['from']})."
+            lines.append({"amount": amount, "flag": "N" if d.get("flag") == "N" else "Y",
+                          "from": d["from"], "to": d.get("to") or None, "d_from": d_from, "d_to": d_to})
+        active = sorted((ln for ln in lines if ln["flag"] == "Y"), key=lambda ln: ln["d_from"])
+        for prev, nxt in zip(active, active[1:]):
+            if prev["d_to"] is None or nxt["d_from"] <= prev["d_to"]:
+                return None, (f"{ALLOWANCE_HISTORY_LABELS[key]}: the lines overlap (one from {prev['from']} to "
+                              f"{prev['to'] or 'current'}, the next from {nxt['from']}). Give each line its own dates.")
+        result[key] = sorted(lines, key=lambda ln: ln["d_from"])
+    return result, None
+
+
+def _master_from_lines(lines, today):
+    """What the single Amount / Flag / Effective Date on the employee record should show for a set of lines:
+    the line covering today (else the latest one that has started, else the first)."""
+    if not lines:
+        return 0.0, "N", None
+    cur = None
+    for ln in lines:
+        if ln["d_from"] <= today and (ln["d_to"] is None or today <= ln["d_to"]):
+            cur = ln
+    if cur is None:
+        started = [ln for ln in lines if ln["d_from"] <= today]
+        cur = started[-1] if started else lines[0]
+    return cur["amount"], (cur["flag"] if cur["amount"] > 0 else "N"), lines[0]["from"]
+
+
+def _save_allowance_lines(db, emp_id, lines_map, who):
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    for key, lines in lines_map.items():
+        db.execute("DELETE FROM allowance_history WHERE emp_id=? AND allowance=?", (emp_id, key))
+        for ln in lines:
+            db.execute(
+                """INSERT INTO allowance_history (emp_id, allowance, amount, flag, valid_from, valid_to, recorded_by, recorded_at)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (emp_id, key, ln["amount"], ln["flag"], ln["from"], ln["to"], who, now))
 
 
 def _eis_applies(dob_str, eis_flag):
@@ -1493,6 +1576,12 @@ def edit_employee(emp_id):
     db = get_db()
     if request.method == "POST":
         fields = _employee_fields_from_form(request.form)
+        lines_map, lines_error = _parse_allowance_lines(request.form)
+        if lines_error:
+            return (f"Not saved: {lines_error} Go back, fix it and save again.", 400)
+        for key, lines in lines_map.items():
+            amount_field, flag_field, date_field = next(a for a in ALLOWANCE_FIELDS if a[0] == key)
+            fields[amount_field], fields[flag_field], fields[date_field] = _master_from_lines(lines, datetime.date.today())
         # Normal Start/End Time on an existing employee only changes through
         # the Working Schedule History log (dated, and kept), never by
         # saving this form - a stale form would otherwise overwrite a
@@ -1524,8 +1613,9 @@ def edit_employee(emp_id):
             f"UPDATE employees SET {set_clause} WHERE emp_id=?",
             list(fields.values()) + [emp_id],
         )
+        _save_allowance_lines(db, emp_id, lines_map, session.get("hr_username"))
         if old_row is not None:
-            _record_allowance_history(db, emp_id, old_row, fields, request.form)
+            _record_allowance_history(db, emp_id, old_row, fields, request.form, skip=set(lines_map))
         db.commit()
         return redirect(url_for("edit_employee", emp_id=emp_id))
 
@@ -1558,13 +1648,18 @@ def edit_employee(emp_id):
            WHERE a.emp_id=? ORDER BY d.uploaded_at""", (emp_id,),
     ).fetchall():
         al_adjustment_docs.setdefault(d["adjustment_id"], []).append(d)
-    allowance_history = []
+    allowance_lines = {}
     try:
-        allowance_history = db.execute(
-            "SELECT * FROM allowance_history WHERE emp_id=? ORDER BY allowance, valid_from DESC, id DESC", (emp_id,)
-        ).fetchall()
+        for r in db.execute("SELECT * FROM allowance_history WHERE emp_id=? ORDER BY valid_from, id", (emp_id,)).fetchall():
+            allowance_lines.setdefault(r["allowance"], []).append(
+                {"amount": r["amount"], "flag": r["flag"] or "Y", "from": r["valid_from"] or "", "to": r["valid_to"] or ""})
     except sqlite3.OperationalError:
         pass
+    for amount_field, flag_field, date_field in ALLOWANCE_FIELDS:
+        if amount_field not in allowance_lines:   # no lines yet: show the single amount as the first line
+            allowance_lines[amount_field] = [{
+                "amount": emp[amount_field] or 0, "flag": emp[flag_field] or "N",
+                "from": emp[date_field] or "", "to": ""}]
     overseas_assignments = []
     performance_evaluations = []
     try:
@@ -1632,7 +1727,7 @@ def edit_employee(emp_id):
                             appraisal_supervisors=appraisal_supervisors, leave_approvers=leave_approvers,
                             hr_accounts=hr_accounts, clockin_locations=clockin_locations,
                             schedule_error=SCHEDULE_ERRORS.get(request.args.get("schedule_err")),
-                            allowance_history=allowance_history, allowance_history_labels=ALLOWANCE_HISTORY_LABELS,
+                            allowance_lines=allowance_lines, allowance_history_labels=ALLOWANCE_HISTORY_LABELS,
                             overseas_assignments=overseas_assignments, performance_evaluations=performance_evaluations,
                             current_assignment=current_assignment, long_service_milestone=long_service_milestone,
                             tax_profile=tax_profile)

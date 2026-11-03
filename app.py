@@ -327,6 +327,10 @@ try:
         r_technical TEXT, r_experience TEXT, r_communication TEXT, r_attitude TEXT, r_teamwork TEXT,
         strengths TEXT, concerns TEXT, recommendation TEXT, notes TEXT, saved_by TEXT, saved_at TEXT,
         UNIQUE(application_id, slot))""")
+    for _col, _decl in (("oversea_override", "REAL"), ("oversea_override_reason", "TEXT")):
+        _pr_cols = [_r[1] for _r in _ensure_conn.execute("PRAGMA table_info(payroll_runs)").fetchall()]
+        if _pr_cols and _col not in _pr_cols:
+            _ensure_conn.execute(f"ALTER TABLE payroll_runs ADD COLUMN {_col} {_decl}")
     _ensure_conn.execute("""CREATE TABLE IF NOT EXISTS payroll_reopen (
         year INTEGER NOT NULL, month INTEGER NOT NULL, reopened_by TEXT, reopened_at TEXT,
         PRIMARY KEY (year, month))""")
@@ -4873,6 +4877,70 @@ def payroll_summary_export(year, month):
     )
 
 
+def _save_finalized_payroll(db, emp_id, year, month, now):
+    """Calculates one employee's month and saves it as that month's finalized payroll_runs row (and the PCB
+    record). Used by Finalize and by the per-person overrides."""
+    result = payroll_calc.calculate_payroll(db, emp_id, year, month)
+    db.execute(
+        """INSERT INTO payroll_runs (
+            emp_id, year, month, basic_salary, fixed_allowance, variable_allowance,
+            working_days_in_month, days_worked, paid_leave_days, unpaid_days, unpaid_deduction,
+            ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, ot_pay_1_5, ot_pay_2_0, ot_pay_3_0,
+            ot_hourly_rate, ot_pay, days_employed, prorate_factor, transport_allowance,
+            meal_allowance, cewi_allowance, gross_pay, epf_employee, additional_epf_employee,
+            epf_employer, socso_employee, socso_employer, eis_employee, eis_employer, pcb,
+            skbbk_employee, hrd_levy_employer, other_deduction, other_deduction_desc,
+            total_deductions, net_pay, finalized_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(emp_id, year, month) DO UPDATE SET
+            basic_salary=excluded.basic_salary, fixed_allowance=excluded.fixed_allowance,
+            variable_allowance=excluded.variable_allowance,
+            working_days_in_month=excluded.working_days_in_month,
+            days_worked=excluded.days_worked, paid_leave_days=excluded.paid_leave_days,
+            unpaid_days=excluded.unpaid_days, unpaid_deduction=excluded.unpaid_deduction,
+            ot_hours_1_5=excluded.ot_hours_1_5, ot_hours_2_0=excluded.ot_hours_2_0,
+            ot_hours_3_0=excluded.ot_hours_3_0, ot_pay_1_5=excluded.ot_pay_1_5,
+            ot_pay_2_0=excluded.ot_pay_2_0, ot_pay_3_0=excluded.ot_pay_3_0,
+            ot_hourly_rate=excluded.ot_hourly_rate, ot_pay=excluded.ot_pay,
+            days_employed=excluded.days_employed, prorate_factor=excluded.prorate_factor,
+            transport_allowance=excluded.transport_allowance,
+            meal_allowance=excluded.meal_allowance, cewi_allowance=excluded.cewi_allowance,
+            gross_pay=excluded.gross_pay, net_pay=excluded.net_pay,
+            pcb=excluded.pcb, epf_employee=excluded.epf_employee,
+            additional_epf_employee=excluded.additional_epf_employee,
+            epf_employer=excluded.epf_employer, socso_employee=excluded.socso_employee,
+            socso_employer=excluded.socso_employer, eis_employee=excluded.eis_employee,
+            eis_employer=excluded.eis_employer, skbbk_employee=excluded.skbbk_employee,
+            hrd_levy_employer=excluded.hrd_levy_employer,
+            other_deduction=excluded.other_deduction, other_deduction_desc=excluded.other_deduction_desc,
+            total_deductions=excluded.total_deductions, finalized_at=excluded.finalized_at""",
+        (
+            result["emp_id"], year, month, result["basic_salary"], result["fixed_allowance"],
+            result["variable_allowance"], result["working_days_in_month"],
+            result["working_days_in_month"] - result["unpaid_days"] - result["paid_leave_days"],
+            result["paid_leave_days"], result["unpaid_days"], result["unpaid_deduction"],
+            result["ot_hours_1_5"], result["ot_hours_2_0"], result["ot_hours_3_0"],
+            result["ot_pay_1_5"], result["ot_pay_2_0"], result["ot_pay_3_0"],
+            result["ot_hourly_rate"], result["ot_pay"], result["days_employed"], result["prorate_factor"],
+            result["transport_allowance"], result["meal_allowance"], result["cewi_allowance"],
+            result["gross_pay"], result["epf_employee"], result["additional_epf_employee"],
+            result["epf_employer"],
+            result["socso_employee"], result["socso_employer"], result["eis_employee"],
+            result["eis_employer"], result["pcb"], result["skbbk_employee"],
+            result["hrd_levy_employer"], result["other_deduction"], result["other_deduction_desc"],
+            result["total_deductions"], result["net_pay"], now,
+        ),
+    )
+    db.execute(
+        """INSERT INTO pcb_monthly_record (emp_id, year, month, gross_remun, epf_employee, pcb_deducted)
+           VALUES (?,?,?,?,?,?)
+           ON CONFLICT(emp_id, year, month) DO UPDATE SET
+             gross_remun=excluded.gross_remun, epf_employee=excluded.epf_employee,
+             pcb_deducted=excluded.pcb_deducted""",
+        (result["emp_id"], year, month, result["gross_pay"], result["epf_employee"], result["pcb"]),
+    )
+
+
 @app.route("/payroll/<int:year>/<int:month>/finalize", methods=["POST"])
 def finalize_payroll(year, month):
     db = get_db()
@@ -4883,65 +4951,7 @@ def finalize_payroll(year, month):
         if _payroll_locked(db, r["emp_id"], year, month):
             continue  # already finalized and locked - never overwrite a payroll that is done
         newly_finalized += 1
-        result = payroll_calc.calculate_payroll(db, r["emp_id"], year, month)
-        db.execute(
-            """INSERT INTO payroll_runs (
-                emp_id, year, month, basic_salary, fixed_allowance, variable_allowance,
-                working_days_in_month, days_worked, paid_leave_days, unpaid_days, unpaid_deduction,
-                ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, ot_pay_1_5, ot_pay_2_0, ot_pay_3_0,
-                ot_hourly_rate, ot_pay, days_employed, prorate_factor, transport_allowance,
-                meal_allowance, cewi_allowance, gross_pay, epf_employee, additional_epf_employee,
-                epf_employer, socso_employee, socso_employer, eis_employee, eis_employer, pcb,
-                skbbk_employee, hrd_levy_employer, other_deduction, other_deduction_desc,
-                total_deductions, net_pay, finalized_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(emp_id, year, month) DO UPDATE SET
-                basic_salary=excluded.basic_salary, fixed_allowance=excluded.fixed_allowance,
-                variable_allowance=excluded.variable_allowance,
-                working_days_in_month=excluded.working_days_in_month,
-                days_worked=excluded.days_worked, paid_leave_days=excluded.paid_leave_days,
-                unpaid_days=excluded.unpaid_days, unpaid_deduction=excluded.unpaid_deduction,
-                ot_hours_1_5=excluded.ot_hours_1_5, ot_hours_2_0=excluded.ot_hours_2_0,
-                ot_hours_3_0=excluded.ot_hours_3_0, ot_pay_1_5=excluded.ot_pay_1_5,
-                ot_pay_2_0=excluded.ot_pay_2_0, ot_pay_3_0=excluded.ot_pay_3_0,
-                ot_hourly_rate=excluded.ot_hourly_rate, ot_pay=excluded.ot_pay,
-                days_employed=excluded.days_employed, prorate_factor=excluded.prorate_factor,
-                transport_allowance=excluded.transport_allowance,
-                meal_allowance=excluded.meal_allowance, cewi_allowance=excluded.cewi_allowance,
-                gross_pay=excluded.gross_pay, net_pay=excluded.net_pay,
-                pcb=excluded.pcb, epf_employee=excluded.epf_employee,
-                additional_epf_employee=excluded.additional_epf_employee,
-                epf_employer=excluded.epf_employer, socso_employee=excluded.socso_employee,
-                socso_employer=excluded.socso_employer, eis_employee=excluded.eis_employee,
-                eis_employer=excluded.eis_employer, skbbk_employee=excluded.skbbk_employee,
-                hrd_levy_employer=excluded.hrd_levy_employer,
-                other_deduction=excluded.other_deduction, other_deduction_desc=excluded.other_deduction_desc,
-                total_deductions=excluded.total_deductions, finalized_at=excluded.finalized_at""",
-            (
-                result["emp_id"], year, month, result["basic_salary"], result["fixed_allowance"],
-                result["variable_allowance"], result["working_days_in_month"],
-                result["working_days_in_month"] - result["unpaid_days"] - result["paid_leave_days"],
-                result["paid_leave_days"], result["unpaid_days"], result["unpaid_deduction"],
-                result["ot_hours_1_5"], result["ot_hours_2_0"], result["ot_hours_3_0"],
-                result["ot_pay_1_5"], result["ot_pay_2_0"], result["ot_pay_3_0"],
-                result["ot_hourly_rate"], result["ot_pay"], result["days_employed"], result["prorate_factor"],
-                result["transport_allowance"], result["meal_allowance"], result["cewi_allowance"],
-                result["gross_pay"], result["epf_employee"], result["additional_epf_employee"],
-                result["epf_employer"],
-                result["socso_employee"], result["socso_employer"], result["eis_employee"],
-                result["eis_employer"], result["pcb"], result["skbbk_employee"],
-                result["hrd_levy_employer"], result["other_deduction"], result["other_deduction_desc"],
-                result["total_deductions"], result["net_pay"], now,
-            ),
-        )
-        db.execute(
-            """INSERT INTO pcb_monthly_record (emp_id, year, month, gross_remun, epf_employee, pcb_deducted)
-               VALUES (?,?,?,?,?,?)
-               ON CONFLICT(emp_id, year, month) DO UPDATE SET
-                 gross_remun=excluded.gross_remun, epf_employee=excluded.epf_employee,
-                 pcb_deducted=excluded.pcb_deducted""",
-            (result["emp_id"], year, month, result["gross_pay"], result["epf_employee"], result["pcb"]),
-        )
+        _save_finalized_payroll(db, r["emp_id"], year, month, now)
     if request.form.get("lock") == "1":
         db.execute("DELETE FROM payroll_reopen WHERE year=? AND month=?", (year, month))  # now locked
     elif newly_finalized:
@@ -6509,6 +6519,28 @@ def set_pcb_override(year, month, emp_id):
            ON CONFLICT(emp_id, year, month) DO UPDATE SET pcb_deducted=excluded.pcb_deducted""",
         (emp_id, year, month, result["gross_pay"], result["epf_employee"], result["pcb"]),
     )
+    db.commit()
+    return redirect(url_for("payroll_detail", year=year, month=month, emp_id=emp_id))
+
+
+@app.route("/payroll/<int:year>/<int:month>/<emp_id>/oversea-override", methods=["POST"])
+def set_oversea_override(year, month, emp_id):
+    """Pays a fixed overseas incentive for ONE employee/month (e.g. RM500 instead of the RM1,000), decided by
+    management. Needs an already finalized, not-yet-locked month; the month is recalculated for that person right away
+    (EPF/SOCSO/EIS/PCB/HRD follow the new pay), and the amount survives re-Finalizing. Leave the box blank to clear it."""
+    db = get_db()
+    if db.execute("SELECT 1 FROM payroll_runs WHERE emp_id=? AND year=? AND month=?", (emp_id, year, month)).fetchone() is None:
+        return "This month hasn't been finalized yet - finalize it first.", 400
+    if _payroll_locked(db, emp_id, year, month):
+        return "This month is locked. Reopen it first.", 400
+    raw = request.form.get("oversea_override", "").strip()
+    reason = request.form.get("oversea_override_reason", "").strip() or None
+    value = round(float(raw), 2) if raw else None
+    db.execute(
+        "UPDATE payroll_runs SET oversea_override=?, oversea_override_reason=? WHERE emp_id=? AND year=? AND month=?",
+        (value, reason if value is not None else None, emp_id, year, month),
+    )
+    _save_finalized_payroll(db, emp_id, year, month, datetime.datetime.now().isoformat(timespec="seconds"))
     db.commit()
     return redirect(url_for("payroll_detail", year=year, month=month, emp_id=emp_id))
 

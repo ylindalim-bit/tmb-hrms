@@ -324,6 +324,10 @@ CREATE TABLE payroll_runs (
     -- survives re-Finalizing (finalize_payroll never clears it).
     pcb_override        REAL,
     pcb_override_reason TEXT,
+    -- Fixed overseas incentive for this one month (e.g. management decides RM500 instead of the
+    -- RM1,000). NULL = the normal rule; set = that amount is paid instead. Survives re-Finalizing.
+    oversea_override        REAL,
+    oversea_override_reason TEXT,
     skbbk_employee      REAL,
     hrd_levy_employer   REAL,
     other_deduction     REAL,

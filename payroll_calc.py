@@ -433,12 +433,25 @@ def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: i
 
     # Overseas incentive: prorated for UL days inside a long (> 2 weeks) Unpaid Leave.
     oversea_cut = 0.0
+    oversea_override = oversea_override_reason = None
+    try:
+        _ov = conn.execute(
+            "SELECT oversea_override, oversea_override_reason FROM payroll_runs WHERE emp_id=? AND year=? AND month=?",
+            (emp_id, year, month)).fetchone()
+        if _ov:
+            oversea_override, oversea_override_reason = _ov["oversea_override"], _ov["oversea_override_reason"]
+    except sqlite3.OperationalError:
+        pass  # database not migrated yet
     if emp["oversea_incentive_flag"] == "Y" and (emp["oversea_incentive"] or 0):
-        long_ul_days = oversea_long_ul_days(conn, emp_id, year, month)
-        if long_ul_days:
-            oversea_full = ((emp["oversea_incentive"] or 0)
-                            * allowance_month_factor(emp["oversea_incentive_flag"], emp["oversea_incentive_effective_date"]) * factor)
-            oversea_cut = round(min(oversea_full, oversea_full / calendar_days_in_month * long_ul_days), 2)
+        oversea_full = ((emp["oversea_incentive"] or 0)
+                        * allowance_month_factor(emp["oversea_incentive_flag"], emp["oversea_incentive_effective_date"]) * factor)
+        if oversea_override is not None:
+            # A fixed amount decided for this month replaces the normal rule.
+            oversea_cut = round(oversea_full - oversea_override, 2)
+        else:
+            long_ul_days = oversea_long_ul_days(conn, emp_id, year, month)
+            if long_ul_days:
+                oversea_cut = round(min(oversea_full, oversea_full / calendar_days_in_month * long_ul_days), 2)
     fixed_allowance_paid = fixed_allowance_prorated * factor - oversea_cut
 
     gross_pay = (
@@ -581,6 +594,8 @@ def calculate_payroll(conn: sqlite3.Connection, emp_id: str, year: int, month: i
         "basic_salary": round(basic_after_unpaid, 2),
         "fixed_allowance": round(fixed_allowance_paid, 2),
         "oversea_incentive_cut": oversea_cut,
+        "oversea_override": oversea_override,
+        "oversea_override_reason": oversea_override_reason,
         # Only counts (in gross, and so shown on the payslip) when the month's flag is Y.
         "variable_allowance": round(variable_allowance if variable_allowance_flag == "Y" else 0.0, 2),
         "working_days_in_month": working_days_in_month,

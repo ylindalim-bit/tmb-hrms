@@ -4433,9 +4433,25 @@ def leave_application_form():
 
 # ---------------- Payroll ----------------
 
+def _stale_payroll_month_redirect(db, year, month):
+    """A bookmark, a restored browser tab or a typed address that opens an OLD payroll month
+    is sent to the month still to be run. Links clicked inside the app (they carry a Referer),
+    and a page reload, are left alone, so Prev/History/Reload still show the month asked for."""
+    h = request.headers
+    if h.get("Sec-Fetch-Site") != "none" or h.get("Referer") or "max-age=0" in (h.get("Cache-Control") or ""):
+        return None
+    default = _payroll_default_month(db)
+    if (year, month) < default:
+        return redirect(url_for("run_payroll", year=default[0], month=default[1]))
+    return None
+
+
 @app.route("/payroll/<int:year>/<int:month>")
 def run_payroll(year, month):
     db = get_db()
+    stale = _stale_payroll_month_redirect(db, year, month)
+    if stale:
+        return stale
     emps = employed_this_month(db, year, month)
     results = [payroll_calc.get_payroll_result(db, r["emp_id"], year, month) for r in emps]
     finalized = {

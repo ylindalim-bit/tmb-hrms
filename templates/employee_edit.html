@@ -461,7 +461,7 @@
   <div class="table-wrap">
   <table>
     <thead>
-      <tr><th class="text">Allowance</th><th>Amount (RM)</th><th>Flag</th><th>Effective Date</th></tr>
+      <tr><th class="text">Allowance</th><th>Amount (RM)</th><th>Flag</th><th>Effective Date</th>{% if not is_new %}<th>New amount valid from</th>{% endif %}</tr>
     </thead>
     <tbody>
       {% for label, amount_field, flag_field, date_field in [
@@ -482,6 +482,7 @@
           </select>
         </td>
         <td><input type="date" form="employee-form" name="{{ date_field }}" value="{{ emp[date_field] or '' }}"></td>
+        {% if not is_new %}<td><input type="date" form="employee-form" name="{{ amount_field }}_valid_from" title="Only used when you change the amount or the flag: the date the new amount starts, for the Allowance History below. Blank = today."></td>{% endif %}
       </tr>
       {% endfor %}
     </tbody>
@@ -649,6 +650,60 @@
   <p style="color:var(--muted); margin-top:12px;">No changes logged yet - the hours above are the only ones on file.</p>
   {% endif %}
 </div>
+
+{% if not is_new %}
+<div class="card" id="allowance-history">
+  <h2 style="margin-top:0;">Allowance History</h2>
+  <p style="color:var(--muted); font-size:12px; margin-top:-4px;">
+    What this person has been getting, from when to when. When you change an amount above, type the date the
+    new amount starts in <strong>New amount valid from</strong> (blank = today) and this table closes the old row
+    the day before and starts a new one. Payroll uses the Allowances table above, not this record.
+    A row marked <em>current</em> has no To date.
+  </p>
+  <form method="post" action="{{ url_for('add_allowance_history', emp_id=emp.emp_id) }}">
+    <div class="form-grid">
+      <div><label>Allowance</label>
+        <select name="allowance" required>
+          {% for k, lab in allowance_history_labels.items() %}<option value="{{ k }}">{{ lab }}</option>{% endfor %}
+        </select>
+      </div>
+      <div><label>Amount (RM)</label><input type="number" step="0.01" name="amount" required></div>
+      <div><label>Valid from</label><input type="date" name="valid_from" required></div>
+      <div><label>Valid to (blank if current)</label><input type="date" name="valid_to"></div>
+    </div>
+    <div class="form-actions"><button class="btn" type="submit">Add row (for a past period)</button></div>
+  </form>
+  {% if allowance_history %}
+  {% for r in allowance_history %}
+  <form id="ah-save-{{ r.id }}" method="post" action="{{ url_for('update_allowance_history', emp_id=emp.emp_id, row_id=r.id) }}"></form>
+  {% endfor %}
+  <div class="table-wrap" style="margin-top:14px;">
+  <table>
+    <thead><tr><th class="text">Allowance</th><th>Amount (RM)</th><th class="text">From</th><th class="text">To</th><th class="text">Recorded by</th><th></th></tr></thead>
+    <tbody>
+      {% for r in allowance_history %}
+      <tr>
+        <td class="text">{{ allowance_history_labels.get(r.allowance, r.allowance) }}</td>
+        <td><input form="ah-save-{{ r.id }}" type="number" step="0.01" name="amount" value="{{ '%.2f'|format(r.amount) }}" style="width:90px;"></td>
+        <td class="text"><input form="ah-save-{{ r.id }}" type="date" name="valid_from" value="{{ r.valid_from or '' }}"></td>
+        <td class="text"><input form="ah-save-{{ r.id }}" type="date" name="valid_to" value="{{ r.valid_to or '' }}">{% if not r.valid_to %} <span class="pill" style="background:#dcfce7; color:#166534;">current</span>{% endif %}</td>
+        <td class="text">{{ r.recorded_by or '-' }}</td>
+        <td class="text" style="white-space:nowrap;">
+          <button form="ah-save-{{ r.id }}" type="submit" class="btn" style="padding:3px 8px; font-size:11px;">Save</button>
+          <form method="post" action="{{ url_for('delete_allowance_history', emp_id=emp.emp_id, row_id=r.id) }}" onsubmit="return confirm('Delete this history row?');" style="display:inline;">
+            <button type="submit" class="btn secondary" style="padding:3px 8px; font-size:11px; color:var(--danger);">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p style="color:var(--muted); font-size:13px;">No allowance records yet.</p>
+  {% endif %}
+</div>
+{% endif %}
 
 <div class="card" id="overseas-assignment-log">
   <h2 style="margin-top:0;">Overseas Assignment Log</h2>

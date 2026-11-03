@@ -341,6 +341,30 @@ try:
         _ensure_conn.execute(
             "INSERT OR IGNORE INTO payroll_reopen (year, month, reopened_by, reopened_at) VALUES (2026, 10, 'system (October run in progress)', datetime('now'))")
         _ensure_conn.execute("INSERT INTO app_flags (name, set_at) VALUES ('reopen_2026_10_for_run', datetime('now'))")
+    _ensure_conn.execute("""CREATE TABLE IF NOT EXISTS allowance_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL, allowance TEXT NOT NULL,
+        amount REAL NOT NULL, valid_from TEXT, valid_to TEXT, recorded_by TEXT, recorded_at TEXT)""")
+    # One-time: give every employee's current allowances a starting row (valid from the allowance's effective
+    # date, else the date joined), so the history shows what each person has been getting.
+    if _ensure_conn.execute("SELECT 1 FROM app_flags WHERE name='allowance_history_seeded'").fetchone() is None:
+        _seed_cols = (("transport_allowance", "transport_allowance_flag", "transport_allowance_effective_date"),
+                      ("meal_allowance_rate", "meal_allowance_flag", "meal_allowance_effective_date"),
+                      ("position_allowance", "position_allowance_flag", "position_allowance_effective_date"),
+                      ("cewi_rate", "cewi_flag", "cewi_effective_date"),
+                      ("training_incentive", "training_incentive_flag", "training_incentive_effective_date"),
+                      ("oversea_incentive", "oversea_incentive_flag", "oversea_incentive_effective_date"))
+        _seed_cur = _ensure_conn.execute("SELECT * FROM employees")
+        _seed_names = [d[0] for d in _seed_cur.description]
+        for _row in _seed_cur.fetchall():
+            _e = dict(zip(_seed_names, _row))
+            for _amt, _flag, _date in _seed_cols:
+                if _e.get(_flag) == "Y" and (_e.get(_amt) or 0) > 0:
+                    _ensure_conn.execute(
+                        """INSERT INTO allowance_history (emp_id, allowance, amount, valid_from, valid_to, recorded_by, recorded_at)
+                           VALUES (?,?,?,?,?,?,datetime('now'))""",
+                        (_e["emp_id"], _amt, _e[_amt], _e.get(_date) or _e.get("date_joined"),
+                         _e.get("last_working_day") or None, "system (starting record)"))
+        _ensure_conn.execute("INSERT INTO app_flags (name, set_at) VALUES ('allowance_history_seeded', datetime('now'))")
     _ensure_conn.execute("""CREATE TABLE IF NOT EXISTS al_adjustment_documents (
         id INTEGER PRIMARY KEY AUTOINCREMENT, adjustment_id INTEGER NOT NULL,
         original_name TEXT NOT NULL, stored_name TEXT NOT NULL, uploaded_at TEXT NOT NULL)""")
@@ -1225,6 +1249,56 @@ def _employee_fields_from_form(f):
     return fields
 
 
+ALLOWANCE_HISTORY_LABELS = {
+    "transport_allowance": "Transport Allowance (RM/month)",
+    "meal_allowance_rate": "Meal Allowance (RM/day)",
+    "position_allowance": "Position Allowance (RM/month)",
+    "cewi_rate": "CEWI (RM/day)",
+    "training_incentive": "Training Incentive (RM/month)",
+    "oversea_incentive": "Oversea Incentive (RM/month)",
+}
+
+
+def _record_allowance_history(db, emp_id, old, new_fields, form):
+    """Keeps the Allowance History in step with the Allowances table: when an amount changes (or an allowance is
+    switched on/off) the open row is closed the day before the new date and a new row starts. The new date is the
+    "New amount valid from" box on the row, else today. `old` is the employee's row before the save (None = a new
+    employee). Payroll does not read this table - it is the record of who got what from when to when."""
+    who = session.get("hr_username")
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    today = datetime.date.today()
+    for amount_field, flag_field, date_field in ALLOWANCE_FIELDS:
+        new_amt = float(new_fields.get(amount_field) or 0)
+        new_on = new_fields.get(flag_field) == "Y" and new_amt > 0
+        old_amt = float((old[amount_field] if old is not None else 0) or 0)
+        old_on = old is not None and old[flag_field] == "Y" and old_amt > 0
+        if new_on == old_on and (not new_on or abs(new_amt - old_amt) < 0.005):
+            continue
+        valid_from = (form.get(f"{amount_field}_valid_from") or "").strip()
+        if not valid_from:
+            if old is None:
+                valid_from = new_fields.get(date_field) or new_fields.get("date_joined") or today.isoformat()
+            else:
+                valid_from = today.isoformat()
+        try:
+            from_day = datetime.date.fromisoformat(valid_from)
+        except ValueError:
+            from_day = today
+            valid_from = today.isoformat()
+        for r in db.execute(
+                "SELECT id, valid_from FROM allowance_history WHERE emp_id=? AND allowance=? AND valid_to IS NULL",
+                (emp_id, amount_field)).fetchall():
+            end = (from_day - datetime.timedelta(days=1)).isoformat()
+            if r["valid_from"] and end < r["valid_from"]:
+                end = r["valid_from"]
+            db.execute("UPDATE allowance_history SET valid_to=? WHERE id=?", (end, r["id"]))
+        if new_on:
+            db.execute(
+                """INSERT INTO allowance_history (emp_id, allowance, amount, valid_from, valid_to, recorded_by, recorded_at)
+                   VALUES (?,?,?,?,NULL,?,?)""",
+                (emp_id, amount_field, new_amt, valid_from, who, now))
+
+
 def _eis_applies(dob_str, eis_flag):
     """Same 18-59 working-age rule as calc_eis() in payroll_calc.py, plus the
     manual eis_flag override, just based on today's date rather than a
@@ -1367,6 +1441,7 @@ def add_employee():
             error = f"Employee ID '{emp_id}' already exists."
         else:
             fields = _employee_fields_from_form(request.form)
+            _record_allowance_history(db, emp_id, None, fields, request.form)
             columns = ["emp_id"] + list(fields.keys())
             placeholders = ",".join(["?"] * len(columns))
             db.execute(
@@ -1443,11 +1518,14 @@ def edit_employee(emp_id):
                     (emp_id, "(not set)", fields["probation_end_date"], "Initial",
                      datetime.datetime.now().isoformat(timespec="seconds")),
                 )
+        old_row = db.execute("SELECT * FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
         set_clause = ",".join(f"{col}=?" for col in fields)
         db.execute(
             f"UPDATE employees SET {set_clause} WHERE emp_id=?",
             list(fields.values()) + [emp_id],
         )
+        if old_row is not None:
+            _record_allowance_history(db, emp_id, old_row, fields, request.form)
         db.commit()
         return redirect(url_for("edit_employee", emp_id=emp_id))
 
@@ -1480,6 +1558,13 @@ def edit_employee(emp_id):
            WHERE a.emp_id=? ORDER BY d.uploaded_at""", (emp_id,),
     ).fetchall():
         al_adjustment_docs.setdefault(d["adjustment_id"], []).append(d)
+    allowance_history = []
+    try:
+        allowance_history = db.execute(
+            "SELECT * FROM allowance_history WHERE emp_id=? ORDER BY allowance, valid_from DESC, id DESC", (emp_id,)
+        ).fetchall()
+    except sqlite3.OperationalError:
+        pass
     overseas_assignments = []
     performance_evaluations = []
     try:
@@ -1547,6 +1632,7 @@ def edit_employee(emp_id):
                             appraisal_supervisors=appraisal_supervisors, leave_approvers=leave_approvers,
                             hr_accounts=hr_accounts, clockin_locations=clockin_locations,
                             schedule_error=SCHEDULE_ERRORS.get(request.args.get("schedule_err")),
+                            allowance_history=allowance_history, allowance_history_labels=ALLOWANCE_HISTORY_LABELS,
                             overseas_assignments=overseas_assignments, performance_evaluations=performance_evaluations,
                             current_assignment=current_assignment, long_service_milestone=long_service_milestone,
                             tax_profile=tax_profile)
@@ -1971,6 +2057,51 @@ def delete_overseas_assignment(emp_id, assignment_id):
     db.execute("DELETE FROM overseas_assignments WHERE id=? AND emp_id=?", (assignment_id, emp_id))
     db.commit()
     return redirect(url_for("edit_employee", emp_id=emp_id) + "#overseas-assignment-log")
+
+
+@app.route("/employees/<emp_id>/allowance-history/add", methods=["POST"])
+def add_allowance_history(emp_id):
+    db = get_db()
+    allowance = request.form.get("allowance", "")
+    valid_from = request.form.get("valid_from", "")
+    valid_to = request.form.get("valid_to") or None
+    try:
+        amount = float(request.form.get("amount", ""))
+    except ValueError:
+        amount = None
+    if allowance in ALLOWANCE_HISTORY_LABELS and amount is not None and valid_from \
+            and db.execute("SELECT 1 FROM employees WHERE emp_id=?", (emp_id,)).fetchone():
+        db.execute(
+            """INSERT INTO allowance_history (emp_id, allowance, amount, valid_from, valid_to, recorded_by, recorded_at)
+               VALUES (?,?,?,?,?,?,?)""",
+            (emp_id, allowance, amount, valid_from, valid_to, session.get("hr_username"),
+             datetime.datetime.now().isoformat(timespec="seconds")))
+        db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id) + "#allowance-history")
+
+
+@app.route("/employees/<emp_id>/allowance-history/<int:row_id>/update", methods=["POST"])
+def update_allowance_history(emp_id, row_id):
+    db = get_db()
+    valid_from = request.form.get("valid_from", "")
+    valid_to = request.form.get("valid_to") or None
+    try:
+        amount = float(request.form.get("amount", ""))
+    except ValueError:
+        amount = None
+    if amount is not None and valid_from:
+        db.execute("UPDATE allowance_history SET amount=?, valid_from=?, valid_to=? WHERE id=? AND emp_id=?",
+                   (amount, valid_from, valid_to, row_id, emp_id))
+        db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id) + "#allowance-history")
+
+
+@app.route("/employees/<emp_id>/allowance-history/<int:row_id>/delete", methods=["POST"])
+def delete_allowance_history(emp_id, row_id):
+    db = get_db()
+    db.execute("DELETE FROM allowance_history WHERE id=? AND emp_id=?", (row_id, emp_id))
+    db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id) + "#allowance-history")
 
 
 # ---------------- Performance Evaluation Log ----------------

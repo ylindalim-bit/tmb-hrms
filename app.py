@@ -15,6 +15,8 @@ import uuid
 import zipfile
 
 import openpyxl
+
+import employment_letter
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.page import PageMargins
 from xml.sax.saxutils import escape as xml_escape
@@ -327,6 +329,12 @@ try:
         r_technical TEXT, r_experience TEXT, r_communication TEXT, r_attitude TEXT, r_teamwork TEXT,
         strengths TEXT, concerns TEXT, recommendation TEXT, notes TEXT, saved_by TEXT, saved_at TEXT,
         UNIQUE(application_id, slot))""")
+    # Employment Letter details HR enters on a hired candidate's page (one row per candidate),
+    # kept so the letter can be edited and downloaded again later.
+    _ensure_conn.execute("""CREATE TABLE IF NOT EXISTS job_application_offers (
+        application_id INTEGER PRIMARY KEY, position TEXT, join_date TEXT, salary REAL,
+        schedule TEXT, include_overseas TEXT, letter_date TEXT, salutation_line TEXT,
+        saved_by TEXT, saved_at TEXT)""")
     for _col, _decl in (("oversea_override", "REAL"), ("oversea_override_reason", "TEXT")):
         _pr_cols = [_r[1] for _r in _ensure_conn.execute("PRAGMA table_info(payroll_runs)").fetchall()]
         if _pr_cols and _col not in _pr_cols:
@@ -7412,6 +7420,7 @@ def recruitment_detail(app_id):
         "recruitment_detail.html", a=application, documents=documents, reviewers=reviewers,
         rating_fields=INTERVIEW_RATING_FIELDS, recommendations=INTERVIEW_RECOMMENDATIONS,
         commenters=commenters, assessments=_load_assessments(db, app_id), slots=INTERVIEW_SLOTS,
+        offer=_load_offer(db, application),
         family=json.loads(application["family_particulars_json"] or "[]"),
         education=json.loads(application["education_json"] or "[]"),
         other_quals=json.loads(application["other_qualifications_json"] or "[]"),
@@ -7500,6 +7509,104 @@ def recruitment_interview_sheet(app_id):
     assess = _load_assessments(db, app_id).get(slot)
     return render_template("recruitment_interview_sheet.html", a=application, s=assess, slot=slot,
                            rating_fields=INTERVIEW_RATING_FIELDS, recommendations=INTERVIEW_RECOMMENDATIONS)
+
+
+DEFAULT_OFFER_SALARY = 2000.0
+
+
+def _load_offer(db, application):
+    """The saved Employment Letter details for a candidate, or sensible defaults if HR
+    hasn't saved any yet (position from the application, RM2,000, shift, overseas clauses on)."""
+    try:
+        row = db.execute("SELECT * FROM job_application_offers WHERE application_id=?",
+                         (application["id"],)).fetchone()
+    except sqlite3.OperationalError:
+        row = None
+    today = datetime.datetime.now(MYT).date().isoformat()
+    offer = {
+        "position": (application["position_applied"] or "").strip().title(),
+        "join_date": "", "salary": DEFAULT_OFFER_SALARY, "schedule": "shift",
+        "include_overseas": "Y", "letter_date": today,
+        "salutation_line": employment_letter.default_salutation(
+            application["full_name"], application["salutation"], application["gender"]),
+        "saved": False, "saved_by": None, "saved_at": None,
+    }
+    if row:
+        for k in ("position", "join_date", "salary", "schedule", "include_overseas", "letter_date",
+                  "salutation_line", "saved_by", "saved_at"):
+            if row[k] not in (None, ""):
+                offer[k] = row[k]
+        offer["saved"] = True
+    return offer
+
+
+@app.route("/hr/recruitment/<int:app_id>/employment-letter", methods=["POST"])
+def recruitment_employment_letter_save(app_id):
+    """Saves the Employment Letter fields (position, join date, salary, schedule, overseas/bond
+    clauses, letter date, 'Dear ...' line). With action=download it also sends the Word letter."""
+    if session.get("hr_role") == "approver":
+        abort(403)
+    db = get_db()
+    application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
+    if application is None:
+        abort(404)
+    f = request.form
+    try:
+        salary = round(float((f.get("salary") or "").replace(",", "")), 2)
+    except ValueError:
+        salary = DEFAULT_OFFER_SALARY
+    schedule = f.get("schedule") if f.get("schedule") in employment_letter.SCHEDULES else "shift"
+    db.execute(
+        """INSERT INTO job_application_offers (application_id, position, join_date, salary, schedule,
+               include_overseas, letter_date, salutation_line, saved_by, saved_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(application_id) DO UPDATE SET position=excluded.position, join_date=excluded.join_date,
+               salary=excluded.salary, schedule=excluded.schedule, include_overseas=excluded.include_overseas,
+               letter_date=excluded.letter_date, salutation_line=excluded.salutation_line,
+               saved_by=excluded.saved_by, saved_at=excluded.saved_at""",
+        (app_id, (f.get("position") or "").strip() or None, f.get("join_date") or None, salary, schedule,
+         "Y" if f.get("include_overseas") else "N", f.get("letter_date") or None,
+         (f.get("salutation_line") or "").strip() or None,
+         session.get("hr_username"), datetime.datetime.now(MYT).isoformat(timespec="seconds")),
+    )
+    db.commit()
+    if f.get("action") == "download":
+        return redirect(url_for("recruitment_employment_letter_download", app_id=app_id))
+    return redirect(url_for("recruitment_detail", app_id=app_id) + "#employment-letter")
+
+
+@app.route("/hr/recruitment/<int:app_id>/employment-letter.docx")
+def recruitment_employment_letter_download(app_id):
+    """Word Letter of Employment built from letter_templates/employment_letter.docx with this
+    candidate's name/IC/address from the application and the saved offer details."""
+    if session.get("hr_role") == "approver":
+        abort(403)
+    db = get_db()
+    application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
+    if application is None:
+        abort(404)
+    offer = _load_offer(db, application)
+
+    def as_date(s, fallback):
+        try:
+            return datetime.date.fromisoformat(s)
+        except (TypeError, ValueError):
+            return fallback
+
+    today = datetime.datetime.now(MYT).date()
+    data = {
+        "full_name": application["full_name"], "address": application["address"],
+        "ic": application["ic_passport_no"], "salutation_line": offer["salutation_line"],
+        "position": offer["position"] or "________________",
+        "join_date": as_date(offer["join_date"], today), "letter_date": as_date(offer["letter_date"], today),
+        "salary": float(offer["salary"] or DEFAULT_OFFER_SALARY), "schedule": offer["schedule"],
+        "include_overseas": offer["include_overseas"] == "Y",
+    }
+    content = employment_letter.build_letter(data)
+    safe_name = re.sub(r"[^A-Za-z0-9 ]+", "", application["full_name"] or "Candidate").strip().replace(" ", "_")
+    return send_file(io.BytesIO(content), as_attachment=True,
+                     download_name=f"Letter_of_Employment_{safe_name}.docx",
+                     mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
 @app.route("/hr/recruitment/<int:app_id>/create-employee")

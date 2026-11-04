@@ -154,6 +154,48 @@
   {% endif %}
 </div>
 
+{% if hr_role != "approver" and a.status in ("Interviewed", "Hired") %}
+<div class="card no-print" id="employment-letter" style="max-width:520px;">
+  <h2 style="margin-top:0;">Employment Letter</h2>
+  <p style="color:var(--muted); font-size:12px; margin:0 0 10px;">
+    Name, I/C No. and address come from the application. Fill in the offer below, then download the Word letter.
+    Everything is remembered here, so you can change it and download again later.
+  </p>
+  <form method="post" action="{{ url_for('recruitment_employment_letter_save', app_id=a.id) }}">
+    <div class="form-grid">
+      <div><label>Position (in letter)</label>
+        <input type="text" name="position" value="{{ offer.position }}" required></div>
+      <div><label>Join Date</label>
+        <input type="date" name="join_date" value="{{ offer.join_date }}" required></div>
+      <div><label>Monthly Salary (RM)</label>
+        <input type="number" name="salary" step="0.01" min="0" value="{{ '%.2f' % offer.salary }}" required></div>
+      <div><label>Work Schedule</label>
+        <select name="schedule">
+          <option value="shift" {{ "selected" if offer.schedule == "shift" }}>Shift (Mon-Sat, 3 shifts)</option>
+          <option value="office" {{ "selected" if offer.schedule == "office" }}>Office hours (Mon-Fri 8am-6pm)</option>
+        </select></div>
+      <div><label>"Dear ..." line</label>
+        <input type="text" name="salutation_line" value="{{ offer.salutation_line }}" placeholder="e.g. Mr Safwan"></div>
+      <div><label>Letter Date</label>
+        <input type="date" name="letter_date" value="{{ offer.letter_date }}"></div>
+      <div style="grid-column:1 / -1;">
+        <label style="display:flex; gap:6px; align-items:center; font-weight:normal;">
+          <input type="checkbox" name="include_overseas" value="Y" {{ "checked" if offer.include_overseas == "Y" }}>
+          Include overseas training, bond (RM30,000) and 2-year service bonus clauses
+        </label></div>
+    </div>
+    {% if not a.ic_passport_no or not a.address %}
+    <p style="color:var(--danger); font-size:12px;">This application has no {{ "I/C No." if not a.ic_passport_no }}{{ " / " if not a.ic_passport_no and not a.address }}{{ "address" if not a.address }} &mdash; the letter will show a blank line there.</p>
+    {% endif %}
+    <div class="form-actions" style="display:flex; gap:8px;">
+      <button type="submit" name="action" value="save" class="btn secondary">Save</button>
+      <button type="submit" name="action" value="download" class="btn">Save &amp; Download Letter (Word)</button>
+    </div>
+    {% if offer.saved_at %}<p style="font-size:12px; color:var(--muted);">Last saved by {{ offer.saved_by or "-" }} at {{ offer.saved_at }}</p>{% endif %}
+  </form>
+</div>
+{% endif %}
+
 <div id="interview-assessment" class="no-print" style="margin-bottom:18px;">
   <h2 style="margin:0 0 4px;">Interview Assessment</h2>
   <p style="color:var(--muted); font-size:12px; margin:0 0 10px;">One box for each interviewer (up to three). Fill in during or after the interview, then click that box's own Save button.</p>

@@ -7265,10 +7265,10 @@ def recruitment_list():
     elif viewer_filter:
         where.append("assigned_reviewer_username=?")
         params.append(viewer_filter)
-    position_filter = (request.args.get("position") or "").strip().upper()
+    position_filter = sorted({v.strip().upper() for v in request.args.getlist("position") if v.strip()})
     if position_filter:
-        where.append("UPPER(TRIM(COALESCE(position_applied,'')))=?")
-        params.append(position_filter)
+        where.append("UPPER(TRIM(COALESCE(position_applied,''))) IN (" + ",".join("?" * len(position_filter)) + ")")
+        params.extend(position_filter)
     if status_filter == "all":
         pass
     elif status_filter == "interview":

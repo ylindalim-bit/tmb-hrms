@@ -58,10 +58,22 @@
     </select>
     {% endif %}
     <label style="margin:0; font-size:13px; font-weight:600;">Position:</label>
-    <select name="position" onchange="this.form.submit()" style="min-width:200px;">
-      <option value="">All positions</option>
-      {% for p in positions %}<option value="{{ p }}" {% if position_filter == p %}selected{% endif %}>{{ p }}</option>{% endfor %}
-    </select>
+    <details style="position:relative;">
+      <summary style="cursor:pointer; padding:6px 10px; border:1px solid var(--border, #cbd5e1); border-radius:6px; background:#fff; min-width:200px; font-size:14px; list-style:none;">
+        {% set pos_txt = position_filter|join(', ') %}{% if position_filter %}{{ position_filter|length }} selected: {{ pos_txt if pos_txt|length <= 34 else pos_txt[:34] ~ '...' }}{% else %}All positions{% endif %} &#9662;
+      </summary>
+      <div style="position:absolute; z-index:20; top:100%; left:0; margin-top:4px; min-width:260px; max-height:320px; overflow:auto; background:#fff; border:1px solid var(--border, #cbd5e1); border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,.15); padding:8px 10px;">
+        {% for p in positions %}
+        <label style="display:flex; gap:8px; align-items:center; margin:0; padding:3px 0; font-size:13px; font-weight:400; cursor:pointer;">
+          <input type="checkbox" name="position" value="{{ p }}" {% if p in position_filter %}checked{% endif %}> {{ p }}
+        </label>
+        {% endfor %}
+        <div style="margin-top:8px; display:flex; gap:8px;">
+          <button type="submit" class="btn" style="padding:4px 12px;">Apply</button>
+          <a href="#" onclick="this.closest('details').querySelectorAll('input').forEach(function(i){i.checked=false}); return false;" style="font-size:12px; align-self:center;">untick all</a>
+        </div>
+      </div>
+    </details>
     {% if viewer_filter or position_filter %}<a href="{{ url_for('recruitment_list', status=status_filter or None) }}" style="font-size:12px;">clear filters</a>{% endif %}
   </form>
   {% if not status_filter %}

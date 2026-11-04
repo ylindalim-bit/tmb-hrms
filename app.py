@@ -9545,6 +9545,66 @@ def ot_report(year, month):
     return render_template("ot_report.html", rows=rows, pending_rows=pending_rows, year=year, month=month)
 
 
+@app.route("/ot-report/<int:year>/<int:month>/<emp_id>")
+def ot_report_individual(year, month, emp_id):
+    """One employee's OT, day by day, for a payroll month (emp_id = 'all' gives one page per employee who has
+    OT, for printing). Same source as payroll: Daily Attendance rows (an approved OT Claim is written into them)."""
+    db = get_db()
+    prefix = f"{year:04d}-{month:02d}-%"
+    ot_sum = "COALESCE(ot_hours_1_5,0)+COALESCE(ot_hours_2_0,0)+COALESCE(ot_hours_3_0,0)"
+    if emp_id == "all":
+        ids = [r["emp_id"] for r in db.execute(
+            f"SELECT emp_id FROM attendance_daily WHERE date LIKE ? GROUP BY emp_id HAVING SUM({ot_sum}) > 0 ORDER BY emp_id",
+            (prefix,)).fetchall()]
+    else:
+        ids = [emp_id]
+    type_labels = {"PH": "Public Holiday", "REST": "Rest Day", "OFF": "Off Day", "WORKED": "Working Day"}
+    people = []
+    for eid in ids:
+        e = db.execute("SELECT emp_id, full_name, department, position FROM employees WHERE emp_id=?", (eid,)).fetchone()
+        if e is None:
+            abort(404)
+        days = db.execute(
+            f"""SELECT date, day_type, time_in, time_out, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0, ot_reason
+                FROM attendance_daily WHERE emp_id=? AND date LIKE ? AND {ot_sum} > 0 ORDER BY date""",
+            (eid, prefix)).fetchall()
+        claims = {}
+        for c in db.execute(
+                """SELECT claim_date, ot_before_start, ot_before_end, ot_start, ot_end, reason
+                   FROM ot_claims WHERE emp_id=? AND status='Approved' AND claim_date LIKE ?""", (eid, prefix)).fetchall():
+            claims[c["claim_date"]] = c
+        rows = []
+        for d in days:
+            c = claims.get(d["date"])
+            windows = []
+            if c:
+                if c["ot_before_start"] and c["ot_before_end"]:
+                    windows.append(f"{c['ot_before_start']}-{c['ot_before_end']}")
+                if c["ot_start"] and c["ot_end"]:
+                    windows.append(f"{c['ot_start']}-{c['ot_end']}")
+            dt = datetime.date.fromisoformat(d["date"])
+            label = type_labels.get(d["day_type"], d["day_type"])
+            if d["day_type"] == "WORKED" and dt.weekday() == 6:
+                label = "Sunday"
+            rows.append({
+                "date": d["date"], "weekday": dt.strftime("%A"), "day_label": label,
+                "time_in": d["time_in"], "time_out": d["time_out"], "ot_window": ", ".join(windows),
+                "h15": d["ot_hours_1_5"] or 0, "h20": d["ot_hours_2_0"] or 0, "h30": d["ot_hours_3_0"] or 0,
+                "reason": d["ot_reason"] or (c["reason"] if c else "") or "",
+            })
+        t15, t20, t30 = (round(sum(r[k] for r in rows), 2) for k in ("h15", "h20", "h30"))
+        monthly = db.execute(
+            f"SELECT {ot_sum} AS t FROM attendance_monthly WHERE emp_id=? AND year=? AND month=?", (eid, year, month)).fetchone()
+        people.append({"emp": e, "rows": rows, "t15": t15, "t20": t20, "t30": t30, "total": round(t15 + t20 + t30, 2),
+                       "monthly_total": round(monthly["t"], 2) if monthly else 0})
+    choices = db.execute(
+        f"""SELECT DISTINCT e.emp_id, e.full_name FROM employees e JOIN attendance_daily d ON d.emp_id=e.emp_id
+            WHERE d.date LIKE ? AND COALESCE(d.ot_hours_1_5,0)+COALESCE(d.ot_hours_2_0,0)+COALESCE(d.ot_hours_3_0,0) > 0
+            ORDER BY e.emp_id""", (prefix,)).fetchall()
+    return render_template("ot_report_individual.html", people=people, year=year, month=month,
+                           emp_id=emp_id, choices=choices)
+
+
 # ---------------- HR: Leave Requests Admin ----------------
 
 @app.route("/leave-requests")

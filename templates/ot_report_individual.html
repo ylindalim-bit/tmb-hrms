@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Individual OT Report {{ month_names[month] }} {{ year }} - TMB Payroll{% endblock %}
+{% block extra_style %}
+<style>
+  .print-only { display: none; }
+  .person { margin-bottom: 28px; }
+  @media print {
+    @page { size: A4 portrait; margin: 12mm; }
+    .print-only { display: block; }
+    .person { page-break-after: always; margin-bottom: 0; }
+    .person:last-of-type { page-break-after: auto; }
+    .card { box-shadow: none; border: none; padding: 0; }
+    table { font-size: 11px; width: 100%; }
+    th, td { padding: 4px 6px; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="no-print" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+  <h1 style="margin-bottom:0;">Individual OT Report &mdash; {{ month_names[month] }} {{ year }}</h1>
+  <span>
+    <a class="btn secondary" href="{{ url_for('ot_report', year=year, month=month) }}">&laquo; OT Report</a>
+    <button class="btn" type="button" onclick="window.print()">Print / Save as PDF</button>
+  </span>
+</div>
+<div class="no-print" style="margin:10px 0 14px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+  <label style="margin:0; font-weight:600; font-size:13px;">Employee:</label>
+  <select onchange="location.href=this.value" style="min-width:260px;">
+    <option value="{{ url_for('ot_report_individual', year=year, month=month, emp_id='all') }}" {% if emp_id == 'all' %}selected{% endif %}>All employees with OT (one page each)</option>
+    {% for c in choices %}<option value="{{ url_for('ot_report_individual', year=year, month=month, emp_id=c.emp_id) }}" {% if emp_id == c.emp_id %}selected{% endif %}>{{ c.emp_id }} &mdash; {{ c.full_name }}</option>{% endfor %}
+  </select>
+  <a href="{{ url_for('ot_report_individual', year=year if month>1 else year-1, month=month-1 if month>1 else 12, emp_id=emp_id) }}">&laquo; Prev month</a>
+  <a href="{{ url_for('ot_report_individual', year=year if month<12 else year+1, month=month+1 if month<12 else 1, emp_id=emp_id) }}">Next month &raquo;</a>
+</div>
+
+{% for p in people %}
+<div class="person card">
+  <div class="print-only" style="margin-bottom:8px;"><strong>TIANMA PRECISION SDN BHD</strong></div>
+  <h2 style="margin-top:0;">OT Report &mdash; {{ month_names[month] }} {{ year }}</h2>
+  <table style="width:auto; margin-bottom:10px;">
+    <tr><td class="text"><strong>Name</strong></td><td class="text">{{ p.emp.full_name }}</td>
+        <td class="text" style="padding-left:24px;"><strong>Employee ID</strong></td><td class="text">{{ p.emp.emp_id }}</td></tr>
+    <tr><td class="text"><strong>Position</strong></td><td class="text">{{ p.emp.position or "-" }}</td>
+        <td class="text" style="padding-left:24px;"><strong>Department</strong></td><td class="text">{{ p.emp.department or "-" }}</td></tr>
+  </table>
+  <div class="table-wrap">
+  <table>
+    <thead><tr>
+      <th class="text">Date</th><th class="text">Day</th><th class="text">Day Type</th><th class="text">Time In / Out</th><th class="text">OT Time</th>
+      <th>OT 1.5x</th><th>OT 2.0x</th><th>OT 3.0x</th><th>Total</th><th class="text">Reason</th>
+    </tr></thead>
+    <tbody>
+    {% for r in p.rows %}
+    <tr>
+      <td class="text">{{ r.date[8:10] }}/{{ r.date[5:7] }}/{{ r.date[:4] }}</td>
+      <td class="text"><strong>{{ r.weekday }}</strong></td>
+      <td class="text">{{ r.day_label }}</td>
+      <td class="text">{% if r.time_in or r.time_out %}{{ r.time_in or "-" }} - {{ r.time_out or "-" }}{% else %}-{% endif %}</td>
+      <td class="text">{{ r.ot_window or "-" }}</td>
+      <td>{{ "%.2f"|format(r.h15) if r.h15 else "-" }}</td>
+      <td>{{ "%.2f"|format(r.h20) if r.h20 else "-" }}</td>
+      <td>{{ "%.2f"|format(r.h30) if r.h30 else "-" }}</td>
+      <td><strong>{{ "%.2f"|format(r.h15 + r.h20 + r.h30) }}</strong></td>
+      <td class="text" style="white-space:normal;">{{ r.reason or "-" }}</td>
+    </tr>
+    {% else %}
+    <tr><td class="text" colspan="10">No OT recorded for {{ month_names[month] }} {{ year }}.</td></tr>
+    {% endfor %}
+    {% if p.rows %}
+    <tr style="background:#f1f5f9; font-weight:700;">
+      <td class="text" colspan="5">Total ({{ p.rows|length }} day{{ "s" if p.rows|length != 1 }} of OT)</td>
+      <td>{{ "%.2f"|format(p.t15) }}</td><td>{{ "%.2f"|format(p.t20) }}</td><td>{{ "%.2f"|format(p.t30) }}</td>
+      <td>{{ "%.2f"|format(p.total) }}</td><td class="text"></td>
+    </tr>
+    {% endif %}
+    </tbody>
+  </table>
+  </div>
+  {% if p.monthly_total != p.total %}
+  <p class="no-print" style="color:var(--danger); font-size:12px;">Note: the monthly total used by payroll ({{ "%.2f"|format(p.monthly_total) }} hrs) differs from the daily rows above ({{ "%.2f"|format(p.total) }} hrs) &mdash; check Daily Attendance.</p>
+  {% endif %}
+  <div style="margin-top:36px; display:flex; gap:60px; font-size:13px;">
+    <div style="min-width:220px; border-top:1px solid #000; padding-top:4px;">Employee signature</div>
+    <div style="min-width:220px; border-top:1px solid #000; padding-top:4px;">Checked / approved by</div>
+  </div>
+</div>
+{% else %}
+<p>No OT recorded for {{ month_names[month] }} {{ year }}.</p>
+{% endfor %}
+{% endblock %}

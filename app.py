@@ -7298,7 +7298,33 @@ def recruitment_list():
         "recruitment_list.html", applications=applications, status_filter=status_filter, counts=counts,
         interview_n=interview_n, today_iso=datetime.datetime.now(MYT).date().isoformat(),
         apply_url=url_for("careers_apply", _external=True), reviewers=reviewers,
+        reviewer_names={r["username"]: r["full_name"] for r in reviewers},
     )
+
+
+@app.route("/hr/recruitment/assign-reviewer", methods=["POST"])
+def recruitment_assign_reviewer():
+    """Bulk version of the Reviewer dropdown on a candidate's page: tick candidates on the list, pick a
+    reviewer, and those candidates become visible to that reviewer (blank = take the reviewer off)."""
+    if session.get("hr_role") == "approver":
+        abort(403)
+    db = get_db()
+    reviewer = (request.form.get("reviewer") or "").strip() or None
+    if reviewer is not None:
+        ok = db.execute(
+            "SELECT 1 FROM hr_users WHERE username=? AND role='approver' AND can_review_recruitment='Y'", (reviewer,)
+        ).fetchone()
+        if ok is None:
+            return "That reviewer account is not set up to review recruitment.", 400
+    ids = []
+    for v in request.form.getlist("app_ids"):
+        if v.isdigit():
+            ids.append(int(v))
+    if ids:
+        db.executemany("UPDATE job_applications SET assigned_reviewer_username=? WHERE id=?", [(reviewer, i) for i in ids])
+        db.commit()
+    back = request.form.get("back") or ""
+    return redirect(back if back.startswith("/hr/recruitment") else url_for("recruitment_list"))
 
 
 @app.route("/hr/recruitment/create", methods=["POST"])

@@ -50,15 +50,33 @@
   {% if not status_filter %}
   <p style="color:var(--muted); font-size:12px; margin:0 0 8px;">Showing active candidates (New, Reviewed, Shortlisted, Interviewed) in order of progress. Hired and Not Suitable are hidden &mdash; use the buttons above to see them.</p>
   {% endif %}
+  {% set can_assign = hr_role != "approver" %}
+  {% if can_assign %}
+  <form id="assign-form" method="post" action="{{ url_for('recruitment_assign_reviewer') }}"
+        style="margin:0 0 10px; padding:8px 10px; background:var(--bg, #f1f5f9); border-radius:8px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+    <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+    <strong style="font-size:13px;">Tick candidates below, then:</strong>
+    <select name="reviewer" style="min-width:200px;">
+      <option value="">(no reviewer &mdash; HR only)</option>
+      {% for r in reviewers %}<option value="{{ r.username }}">{{ r.full_name }}</option>{% endfor %}
+    </select>
+    <button type="submit" class="btn" style="padding:4px 12px;">Let this person view the ticked candidates</button>
+    <span id="assign-count" style="color:var(--muted); font-size:12px;">0 ticked</span>
+    {% if not reviewers %}<span style="color:var(--danger); font-size:12px;">No reviewer account yet &mdash; create one in HR Accounts (tick &ldquo;Review Recruitment candidates&rdquo;).</span>{% endif %}
+  </form>
+  {% endif %}
   <div class="table-wrap frozen-header">
   <table>
     <thead>
-      <tr><th class="text">Name</th><th class="text">Position Applied For</th><th class="text">Contact</th>
-          <th class="text">Status</th><th class="text">Interview</th><th class="text">Comments</th><th class="text">Submitted</th></tr>
+      <tr>{% if can_assign %}<th class="text" style="width:34px;"><input type="checkbox" id="assign-all" title="Tick / untick all shown"></th>{% endif %}
+          <th class="text">Name</th><th class="text">Position Applied For</th><th class="text">Contact</th>
+          <th class="text">Status</th><th class="text">Interview</th><th class="text">Comments</th>
+          {% if can_assign %}<th class="text">Can be viewed by</th>{% endif %}<th class="text">Submitted</th></tr>
     </thead>
     <tbody>
       {% for a in applications %}
       <tr>
+        {% if can_assign %}<td class="text"><input type="checkbox" form="assign-form" name="app_ids" value="{{ a.id }}" class="assign-box"></td>{% endif %}
         <td class="text"><a href="{{ url_for('recruitment_detail', app_id=a.id) }}">{{ a.full_name }}</a></td>
         <td class="text">{{ a.position_applied or "" }}</td>
         <td class="text">{{ a.handphone_no or a.email or "" }}</td>
@@ -67,13 +85,34 @@
         </td>
         <td class="text">{% if a.interview_date %}<span {% if a.interview_date == today_iso %}style="font-weight:700; color:var(--danger);"{% elif a.interview_date < today_iso %}style="color:var(--muted);"{% endif %}>{{ a.interview_date }}{% if a.interview_time %} {{ a.interview_time }}{% endif %}</span>{% if a.interview_interviewer %}<div style="font-size:12px; color:var(--muted);">Interviewer: {{ a.interview_interviewer }}</div>{% endif %}{% else %}<span style="color:var(--muted);">-</span>{% endif %}</td>
         <td class="text" style="min-width:160px; max-width:240px; white-space:normal; font-size:13px;" {% if a.comments %}title="{{ a.comments }}"{% endif %}>{% if a.comments %}{{ a.comments if a.comments|length <= 90 else a.comments[:90] ~ '…' }}{% else %}<span style="color:var(--muted);">-</span>{% endif %}</td>
+        {% if can_assign %}<td class="text" style="font-size:13px;">{% if a.assigned_reviewer_username %}{{ reviewer_names.get(a.assigned_reviewer_username, a.assigned_reviewer_username) }}{% else %}<span style="color:var(--muted);">HR only</span>{% endif %}</td>{% endif %}
         <td class="text">{{ a.submitted_at.replace('T', ' ')[:16] if a.submitted_at else "" }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="7" class="text" style="color:var(--muted);">No applications yet.</td></tr>
+      <tr><td colspan="9" class="text" style="color:var(--muted);">No applications yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
   </div>
 </div>
+{% if can_assign %}
+<script>
+(function () {
+  var boxes = document.querySelectorAll('.assign-box'), all = document.getElementById('assign-all'), n = document.getElementById('assign-count');
+  function upd() {
+    var c = 0; boxes.forEach(function (b) { if (b.checked) c++; });
+    n.textContent = c + ' ticked';
+    if (all) { all.checked = boxes.length > 0 && c === boxes.length; }
+  }
+  boxes.forEach(function (b) { b.addEventListener('change', upd); });
+  if (all) { all.addEventListener('change', function () { boxes.forEach(function (b) { b.checked = all.checked; }); upd(); }); }
+  document.getElementById('assign-form').addEventListener('submit', function (e) {
+    var c = 0; boxes.forEach(function (b) { if (b.checked) c++; });
+    if (!c) { e.preventDefault(); alert('Tick at least one candidate first.'); return; }
+    var sel = this.querySelector('select'), who = sel.options[sel.selectedIndex].text;
+    if (!confirm('Set "' + who + '" as the viewer for ' + c + ' ticked candidate(s)?')) { e.preventDefault(); }
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

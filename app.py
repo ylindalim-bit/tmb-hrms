@@ -7258,6 +7258,13 @@ def recruitment_list():
         scope_where.append("assigned_reviewer_username=?")
         scope_params.append(session["hr_username"])
     where, params = list(scope_where), list(scope_params)
+    # HR can narrow the list to what one reviewer can see ("__none__" = candidates nobody is assigned to).
+    viewer_filter = "" if session.get("hr_role") == "approver" else (request.args.get("viewer") or "")
+    if viewer_filter == "__none__":
+        where.append("(assigned_reviewer_username IS NULL OR assigned_reviewer_username='')")
+    elif viewer_filter:
+        where.append("assigned_reviewer_username=?")
+        params.append(viewer_filter)
     if status_filter == "all":
         pass
     elif status_filter == "interview":
@@ -7286,6 +7293,9 @@ def recruitment_list():
     reviewers = db.execute(
         "SELECT username, full_name FROM hr_users WHERE role='approver' AND can_review_recruitment='Y' ORDER BY full_name"
     ).fetchall()
+    viewer_counts = {r["u"]: r["n"] for r in db.execute(
+        "SELECT COALESCE(NULLIF(assigned_reviewer_username,''), '__none__') AS u, COUNT(*) AS n "
+        "FROM job_applications WHERE status IN ('New','Reviewed','Shortlisted','Interviewed') GROUP BY u").fetchall()}
     interview_where = " AND ".join(scope_where + ["interview_date IS NOT NULL AND interview_date >= ? AND status NOT IN ('Hired', 'Not Suitable')"])
     try:
         interview_n = db.execute(
@@ -7299,6 +7309,7 @@ def recruitment_list():
         interview_n=interview_n, today_iso=datetime.datetime.now(MYT).date().isoformat(),
         apply_url=url_for("careers_apply", _external=True), reviewers=reviewers,
         reviewer_names={r["username"]: r["full_name"] for r in reviewers},
+        viewer_filter=viewer_filter, viewer_counts=viewer_counts,
     )
 
 

@@ -37,16 +37,28 @@
   <div style="margin-bottom:10px; display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
     {% set active_n = counts.get("New", 0) + counts.get("Reviewed", 0) + counts.get("Shortlisted", 0) + counts.get("Interviewed", 0) %}
     {% set all_n = counts.values()|sum %}
-    <a href="{{ url_for('recruitment_list') }}" class="btn {{ 'secondary' if status_filter }}" style="padding:4px 10px;">Active ({{ active_n }})</a>
+    <a href="{{ url_for('recruitment_list', viewer=viewer_filter or None) }}" class="btn {{ 'secondary' if status_filter }}" style="padding:4px 10px;">Active ({{ active_n }})</a>
     <span style="color:var(--muted);">|</span>
     {% for s in ["New", "Reviewed", "Shortlisted", "Interviewed", "Hired", "Not Suitable"] %}
-    <a href="{{ url_for('recruitment_list', status=s) }}" class="btn {{ 'secondary' if status_filter != s }}" style="padding:4px 10px;">{{ s }} ({{ counts.get(s, 0) }})</a>
+    <a href="{{ url_for('recruitment_list', status=s, viewer=viewer_filter or None) }}" class="btn {{ 'secondary' if status_filter != s }}" style="padding:4px 10px;">{{ s }} ({{ counts.get(s, 0) }})</a>
     {% endfor %}
     <span style="color:var(--muted);">|</span>
-    <a href="{{ url_for('recruitment_list', status='interview') }}" class="btn {{ 'secondary' if status_filter != 'interview' }}" style="padding:4px 10px;">Upcoming interviews ({{ interview_n }})</a>
+    <a href="{{ url_for('recruitment_list', status='interview', viewer=viewer_filter or None) }}" class="btn {{ 'secondary' if status_filter != 'interview' }}" style="padding:4px 10px;">Upcoming interviews ({{ interview_n }})</a>
     <span style="color:var(--muted);">|</span>
-    <a href="{{ url_for('recruitment_list', status='all') }}" class="btn {{ 'secondary' if status_filter != 'all' }}" style="padding:4px 10px;">All ({{ all_n }})</a>
+    <a href="{{ url_for('recruitment_list', status='all', viewer=viewer_filter or None) }}" class="btn {{ 'secondary' if status_filter != 'all' }}" style="padding:4px 10px;">All ({{ all_n }})</a>
   </div>
+  {% if hr_role != "approver" %}
+  <form method="get" action="{{ url_for('recruitment_list') }}" style="margin:0 0 10px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+    {% if status_filter %}<input type="hidden" name="status" value="{{ status_filter }}">{% endif %}
+    <label style="margin:0; font-size:13px; font-weight:600;">Show only what can be viewed by:</label>
+    <select name="viewer" onchange="this.form.submit()" style="min-width:220px;">
+      <option value="">Everyone (all candidates)</option>
+      {% for r in reviewers %}<option value="{{ r.username }}" {% if viewer_filter == r.username %}selected{% endif %}>{{ r.full_name }} ({{ viewer_counts.get(r.username, 0) }} active)</option>{% endfor %}
+      <option value="__none__" {% if viewer_filter == '__none__' %}selected{% endif %}>HR only &mdash; no reviewer ({{ viewer_counts.get('__none__', 0) }} active)</option>
+    </select>
+    {% if viewer_filter %}<a href="{{ url_for('recruitment_list', status=status_filter or None) }}" style="font-size:12px;">clear</a>{% endif %}
+  </form>
+  {% endif %}
   {% if not status_filter %}
   <p style="color:var(--muted); font-size:12px; margin:0 0 8px;">Showing active candidates (New, Reviewed, Shortlisted, Interviewed) in order of progress. Hired and Not Suitable are hidden &mdash; use the buttons above to see them.</p>
   {% endif %}

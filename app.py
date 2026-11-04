@@ -7265,6 +7265,10 @@ def recruitment_list():
     elif viewer_filter:
         where.append("assigned_reviewer_username=?")
         params.append(viewer_filter)
+    position_filter = (request.args.get("position") or "").strip().upper()
+    if position_filter:
+        where.append("UPPER(TRIM(COALESCE(position_applied,'')))=?")
+        params.append(position_filter)
     if status_filter == "all":
         pass
     elif status_filter == "interview":
@@ -7293,6 +7297,10 @@ def recruitment_list():
     reviewers = db.execute(
         "SELECT username, full_name FROM hr_users WHERE role='approver' AND can_review_recruitment='Y' ORDER BY full_name"
     ).fetchall()
+    scope_sql = (" WHERE " + " AND ".join(scope_where)) if scope_where else ""
+    positions = [r[0] for r in db.execute(
+        "SELECT DISTINCT UPPER(TRIM(position_applied)) FROM job_applications" + scope_sql +
+        (" AND" if scope_where else " WHERE") + " TRIM(COALESCE(position_applied,''))<>'' ORDER BY 1", scope_params).fetchall()]
     viewer_counts = {r["u"]: r["n"] for r in db.execute(
         "SELECT COALESCE(NULLIF(assigned_reviewer_username,''), '__none__') AS u, COUNT(*) AS n "
         "FROM job_applications WHERE status IN ('New','Reviewed','Shortlisted','Interviewed') GROUP BY u").fetchall()}
@@ -7310,6 +7318,7 @@ def recruitment_list():
         apply_url=url_for("careers_apply", _external=True), reviewers=reviewers,
         reviewer_names={r["username"]: r["full_name"] for r in reviewers},
         viewer_filter=viewer_filter, viewer_counts=viewer_counts,
+        position_filter=position_filter, positions=positions,
     )
 
 

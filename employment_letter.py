@@ -5,8 +5,8 @@ The template is HR's own sample letter. Fields are found by the wording around
 them (not by paragraph number), so HR can edit clauses in the template in Word
 and keep things working, as long as these anchor phrases stay:
   - first line of the letter               -> letter date
-  - "Name:" ... "Address:"                 -> candidate name / address
-  - "I/C Number:"                          -> IC
+  - "Name"                                 -> candidate name (an Address line is added after it)
+  - "I/C Number"                           -> IC
   - "Dear"                                 -> salutation
   - "RE:" ... "LETTER OF EMPLOYMENT"       -> position
   - "will commence on"                     -> join date
@@ -85,16 +85,12 @@ _SKIP_NAMES = {"MUHAMMAD", "MUHAMAD", "MOHAMMAD", "MOHAMAD", "MOHAMED", "MOHD", 
                "MOHAMMED", "MUHAMMED", "NUR", "NOR", "NURUL", "SITI", "AL", "AL-", "ABDUL", "ABD", "ABD.", "AHMAD"}
 
 
-def default_salutation(full_name, salutation=None, gender=None):
-    """Best guess for the 'Dear ...' line, e.g. 'Mr Safwan' for MUHAMMAD SAFWAN SAFARDIN.
+def default_salutation(full_name=None, salutation=None, gender=None):
+    """Default for the 'Dear ...' line: 'Sir', or 'Madam' for a female candidate.
     HR can overwrite it on the candidate page."""
     title = (salutation or "").strip().rstrip(".")
-    if title not in ("Mr", "Ms", "Mrs", "Mdm", "Miss", "Dr"):
-        title = "Ms" if (gender or "").lower().startswith("f") else "Mr"
-    name = re.split(r"\s+(BIN|BINTI|BT|B\.|A/L|A/P)\s+", (full_name or "").strip().upper())[0]
-    words = name.split()
-    pick = next((w for w in words if w not in _SKIP_NAMES), words[0] if words else "")
-    return f"{title} {pick.title()}".strip()
+    female = title in ("Ms", "Mrs", "Mdm", "Miss") or (gender or "").lower().startswith("f")
+    return "Madam" if female else "Sir"
 
 
 # ---------- docx helpers ----------
@@ -119,6 +115,26 @@ def _set_paragraph(p, segments):
         run.bold = bold
 
 
+def _insert_after(p, segments):
+    """New paragraph right after p, same paragraph style/format, filled with segments."""
+    new = copy.deepcopy(p._p)
+    p._p.addnext(new)
+    from docx.text.paragraph import Paragraph
+    np_ = Paragraph(new, p._parent)
+    _set_paragraph(np_, segments)
+    return np_
+
+
+def _label_layout(p):
+    """'Label<TAB>: value' with the value column lined up and long values wrapping under it."""
+    from docx.shared import Inches
+    pf = p.paragraph_format
+    pf.left_indent = Inches(1.15)
+    pf.first_line_indent = Inches(-1.15)
+    pf.space_after = 0
+    pf.tab_stops.add_tab_stop(Inches(1.0))
+
+
 def _find(paragraphs, pred, start=0):
     for i in range(start, len(paragraphs)):
         if pred(paragraphs[i].text.strip()):
@@ -127,7 +143,7 @@ def _find(paragraphs, pred, start=0):
 
 
 def build_letter(data):
-    """data keys: full_name, address, ic, salutation_line, position, join_date (date),
+    """data keys: ref (optional, e.g. 'TMB/HR/LOE/2026/011'), full_name, address, ic, salutation_line, position, join_date (date),
     letter_date (date), salary (float), schedule ('shift'|'office'), include_overseas (bool).
     Returns the .docx bytes."""
     import docx
@@ -140,16 +156,23 @@ def build_letter(data):
 
     i = _find(P, lambda t: bool(t))
     _set_paragraph(P[i], [(ordinal_date(data["letter_date"]), None)])
+    if data.get("ref"):
+        _insert_after(P[i], [("Ref: " + data["ref"], None)])
+        P = d.paragraphs
 
     i = _find(P, lambda t: t.startswith("Name:"))
-    _set_paragraph(P[i], [("Name:", None), (" " + name, True), ("\n", None),
-                          ("Address:", None), (" " + (address or "________________"), True)])
+    _set_paragraph(P[i], [("Name", None), ("	: ", None), (name, True)])
+    _label_layout(P[i])
+    addr = _insert_after(P[i], [("Address", None), ("	: ", None), (address or "________________", True)])
+    _label_layout(addr)
+    P = d.paragraphs
 
     i = _find(P, lambda t: t.startswith("I/C Number"))
-    _set_paragraph(P[i], [("I/C Number:", None), (" " + (ic or "________________"), True)])
+    _set_paragraph(P[i], [("I/C Number", None), ("	: ", None), (ic or "________________", True)])
+    _label_layout(P[i])
 
     i = _find(P, lambda t: t.startswith("Dear"))
-    _set_paragraph(P[i], [("Dear " + data["salutation_line"], None)])
+    _set_paragraph(P[i], [("Dear " + (data["salutation_line"] or "Sir").strip().rstrip(",") + ",", None)])
 
     i = _find(P, lambda t: t.startswith("RE:") and "LETTER OF EMPLOYMENT" in t.upper())
     _set_paragraph(P[i], [("RE:", True), ("\t", True), ("LETTER OF EMPLOYMENT - " + data["position"], True)])

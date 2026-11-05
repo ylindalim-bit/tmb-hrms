@@ -7614,7 +7614,9 @@ def recruitment_employment_letter_download(app_id):
             return fallback
 
     today = datetime.datetime.now(MYT).date()
+    letter_date = as_date(offer["letter_date"], today)
     data = {
+        "ref": f"TMB/HR/LOE/{letter_date.year}/{app_id:03d}",
         "full_name": application["full_name"], "address": application["address"],
         "ic": application["ic_passport_no"], "salutation_line": offer["salutation_line"],
         "position": offer["position"] or "________________",

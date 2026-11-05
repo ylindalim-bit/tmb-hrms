@@ -1,0 +1,356 @@
+"""Renders the Word Letter of Employment (the bytes from employment_letter.build_letter) as an HTML
+page (for viewing in the browser) and as a PDF (reportlab), so the View / PDF / Word versions of a
+letter always show the same content. Numbering (1., 2.1, (a), bullets) is worked out from the
+document's own numbering definitions."""
+import html
+import io
+import re
+
+import docx
+from docx.oxml.ns import qn
+
+LETTERHEAD_NAME = "TIANMA PRECISION SDN. BHD."
+LETTERHEAD_REG = "202301036641(1530564-X)"
+LETTERHEAD_ADDR = "Plo 192, Jalan Bakau 5, Kawasan Perindustrian Tanjung Langsat, 81700 Pasir Gudang, Johor, Malaysia"
+
+
+def _letters(n):
+    s = ""
+    while n > 0:
+        n, r = divmod(n - 1, 26)
+        s = chr(97 + r) + s
+    return s
+
+
+def _numbering_defs(document):
+    """{numId: {ilvl: {fmt, text, start, left, hanging}}}"""
+    out = {}
+    try:
+        root = document.part.numbering_part.element
+    except Exception:
+        return out
+    abstracts = {}
+    for a in root.findall(qn("w:abstractNum")):
+        aid = a.get(qn("w:abstractNumId"))
+        lv = {}
+        for l in a.findall(qn("w:lvl")):
+            ilvl = int(l.get(qn("w:ilvl")))
+            fmt = l.find(qn("w:numFmt"))
+            txt = l.find(qn("w:lvlText"))
+            st = l.find(qn("w:start"))
+            ind = l.find(qn("w:pPr") + "/" + qn("w:ind")) if l.find(qn("w:pPr")) is not None else None
+            lv[ilvl] = {
+                "fmt": fmt.get(qn("w:val")) if fmt is not None else "decimal",
+                "text": txt.get(qn("w:val")) if txt is not None else "%1.",
+                "start": int(st.get(qn("w:val"))) if st is not None else 1,
+                "left": int(ind.get(qn("w:left"), 0)) / 20 if ind is not None else 36,
+                "hanging": int(ind.get(qn("w:hanging"), 0)) / 20 if ind is not None else 18,
+            }
+        abstracts[aid] = lv
+    for n in root.findall(qn("w:num")):
+        nid = n.get(qn("w:numId"))
+        aid = n.find(qn("w:abstractNumId")).get(qn("w:val"))
+        out[nid] = abstracts.get(aid, {})
+    return out
+
+
+def _runs_of(p):
+    """[(text, bold, underline, italic)] with line breaks as '\n' and tabs as '\t'."""
+    runs = []
+    for r in p.runs:
+        t = r.text
+        if t == "":
+            continue
+        runs.append((t, bool(r.bold), bool(r.underline), bool(r.italic)))
+    return runs
+
+
+def parse(docx_bytes):
+    """-> list of blocks. {'kind':'p', runs, align, heading, label, left, hanging}, {'kind':'table', rows},
+    {'kind':'rule'}, {'kind':'space'}"""
+    d = docx.Document(io.BytesIO(docx_bytes))
+    defs = _numbering_defs(d)
+    counters = {}
+    blocks = []
+    tables = {t._tbl: t for t in d.tables}
+    from docx.text.paragraph import Paragraph
+    for ch in d.element.body.iterchildren():
+        if ch.tag == qn("w:tbl"):
+            t = tables.get(ch)
+            if t is not None:
+                rows = [[c.text.strip() for c in r.cells] for r in t.rows]
+                blocks.append({"kind": "table", "rows": rows})
+            continue
+        if ch.tag != qn("w:p"):
+            continue
+        p = Paragraph(ch, d)
+        text = p.text
+        runs = _runs_of(p)
+        if not text.strip() and not (runs and any(r[2] for r in runs)):
+            blocks.append({"kind": "space"})
+            continue
+        # a line of dashes followed by a title becomes a rule + the title
+        if runs and runs[0][0].strip().startswith("-----"):
+            blocks.append({"kind": "rule"})
+            runs = runs[1:]
+            if not runs:
+                continue
+        # underlined tabs are blanks to sign / fill in
+        if all(r[0].strip("\t ") == "" for r in runs):
+            blocks.append({"kind": "p", "runs": [("_" * 34, False, False, False)], "align": "left",
+                           "heading": False, "label": None, "left": 0, "hanging": 0})
+            continue
+        if text.strip() == "Signature\tDate":
+            runs = [("Signature: " + "_" * 30 + "          Date: " + "_" * 20, False, False, False)]
+        fixed = []
+        for t_, b, u, i in runs:
+            if u and t_.strip("\t") == "" and not text.startswith("RE:"):
+                t_ = "_" * 22
+                u = False
+            fixed.append((t_.replace("\t", "    "), b, u, i))
+        runs = fixed
+
+        label, left, hanging = None, 0.0, 0.0
+        pPr = p._p.pPr
+        if pPr is not None and pPr.numPr is not None and pPr.numPr.numId is not None:
+            nid = str(pPr.numPr.numId.val)
+            ilvl = pPr.numPr.ilvl.val if pPr.numPr.ilvl is not None else 0
+            lv = defs.get(nid, {})
+            cnt = counters.setdefault(nid, [0] * 9)
+            info = lv.get(ilvl, {"fmt": "decimal", "text": "%1.", "start": 1, "left": 36, "hanging": 18})
+            if info["fmt"] == "bullet":
+                label = "•" if ilvl == 0 else "◦" if ilvl == 1 else "▪"
+            else:
+                cnt[ilvl] = (cnt[ilvl] + 1) if cnt[ilvl] else info["start"]
+                for deeper in range(ilvl + 1, 9):
+                    cnt[deeper] = 0
+                label = info["text"]
+                for k in range(3):
+                    lvk = lv.get(k, {"fmt": "decimal"})
+                    val = cnt[k]
+                    s = _letters(val) if lvk["fmt"] == "lowerLetter" else str(val)
+                    label = label.replace(f"%{k + 1}", s)
+            left, hanging = info["left"], info["hanging"]
+        else:
+            li = p.paragraph_format.left_indent
+            if li is None and p.style is not None and p.style.paragraph_format.left_indent is not None:
+                li = p.style.paragraph_format.left_indent
+            left = (li.pt if li is not None else 0)
+        align = "justify" if p.alignment is not None and int(p.alignment) == 3 else "left"
+        heading = bool(p.style is not None and p.style.name.startswith("Heading"))
+        if heading:
+            runs = [(t_, True, u, i) for t_, b, u, i in runs]
+        blocks.append({"kind": "p", "runs": runs, "align": align, "heading": heading,
+                       "label": label, "left": left, "hanging": hanging})
+    return blocks
+
+
+# ---------------- HTML ----------------
+
+def _runs_html(runs):
+    out = []
+    for t, b, u, i in runs:
+        s = html.escape(t).replace("\n", "<br>")
+        if b:
+            s = f"<b>{s}</b>"
+        if u:
+            s = f"<u>{s}</u>"
+        if i:
+            s = f"<i>{s}</i>"
+        out.append(s)
+    return "".join(out)
+
+
+def render_html(docx_bytes, title, pdf_url, word_url, back_url):
+    parts = []
+    prev_space = True
+    for b in parse(docx_bytes):
+        if b["kind"] == "space":
+            if not prev_space:
+                parts.append('<div class="gap"></div>')
+            prev_space = True
+            continue
+        prev_space = False
+        if b["kind"] == "rule":
+            parts.append("<hr>")
+        elif b["kind"] == "table":
+            rows = "".join(
+                "<tr>" + "".join(f"<{'th' if ri == 0 else 'td'}>{html.escape(c)}</{'th' if ri == 0 else 'td'}>" for c in r) + "</tr>"
+                for ri, r in enumerate(b["rows"]))
+            parts.append(f'<table class="grid">{rows}</table>')
+        else:
+            cls = "h" if b["heading"] else ""
+            left = max(b["left"], 0)
+            if b["label"]:
+                hang = max(b["hanging"], 14)
+                parts.append(
+                    f'<div class="p {cls}" style="margin-left:{left:.0f}px; padding-left:0; text-align:{b["align"]}; display:flex;">'
+                    f'<span style="flex:0 0 {hang:.0f}px; margin-left:-{hang:.0f}px; text-align:left;">{html.escape(b["label"])}</span>'
+                    f'<span style="flex:1;">{_runs_html(b["runs"])}</span></div>')
+            else:
+                parts.append(f'<div class="p {cls}" style="margin-left:{left:.0f}px; text-align:{b["align"]};">{_runs_html(b["runs"])}</div>')
+    body = "\n".join(parts)
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{html.escape(title)}</title>
+<style>
+  body {{ margin:0; background:#e5e7eb; font-family: Arial, Helvetica, sans-serif; color:#000; }}
+  .bar {{ position:sticky; top:0; z-index:5; background:#1e293b; padding:8px 16px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }}
+  .bar a, .bar button {{ background:#fff; color:#111827; border:0; border-radius:6px; padding:6px 14px; font-size:14px; text-decoration:none; cursor:pointer; }}
+  .bar a.primary {{ background:#2563eb; color:#fff; }}
+  .bar span {{ color:#cbd5e1; font-size:13px; margin-left:auto; }}
+  .page {{ width:794px; max-width:calc(100% - 24px); box-sizing:border-box; margin:16px auto; background:#fff; padding:40px 56px 56px 72px; box-shadow:0 2px 12px rgba(0,0,0,.2); font-size:13.3px; line-height:1.4; }}
+  .lh {{ display:flex; gap:14px; align-items:center; border-bottom:2px solid #b91c1c; padding-bottom:8px; margin-bottom:18px; }}
+  .lh .logo {{ font-size:34px; font-weight:800; color:#b91c1c; letter-spacing:-1px; }}
+  .lh .co {{ font-size:15px; font-weight:700; }}
+  .lh .small {{ font-size:10.5px; color:#444; }}
+  .p {{ margin:0 0 6px; }}
+  .p.h {{ margin-top:8px; }}
+  .gap {{ height:8px; }}
+  hr {{ border:0; border-top:1px solid #000; margin:14px 0 10px; }}
+  table.grid {{ border-collapse:collapse; margin:4px 0 10px 28px; min-width:60%; }}
+  table.grid th, table.grid td {{ border:1px solid #444; padding:4px 10px; text-align:left; }}
+  table.grid th {{ background:#f1f5f9; }}
+  @media print {{
+    body {{ background:#fff; }} .bar {{ display:none; }}
+    .page {{ box-shadow:none; margin:0; width:auto; max-width:none; padding:0; }}
+    @page {{ size:A4; margin:14mm 12mm 16mm 18mm; }}
+  }}
+</style></head><body>
+<div class="bar">
+  <a href="{html.escape(back_url)}">&laquo; Back to candidate</a>
+  <button type="button" onclick="window.print()">Print</button>
+  <a class="primary" href="{html.escape(pdf_url)}">Download PDF</a>
+  <a href="{html.escape(word_url)}">Download Word</a>
+  <span>Preview &mdash; edit the details on the candidate page, then view again.</span>
+</div>
+<div class="page">
+  <div class="lh"><div class="logo">TMB</div><div><div class="co">{html.escape(LETTERHEAD_NAME)}</div>
+  <div class="small">{html.escape(LETTERHEAD_REG)}</div><div class="small">{html.escape(LETTERHEAD_ADDR)}</div></div></div>
+{body}
+</div></body></html>"""
+
+
+# ---------------- PDF ----------------
+
+def render_pdf(docx_bytes):
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_JUSTIFY, TA_LEFT
+    from reportlab.pdfgen import canvas as pdfcanvas
+    from reportlab.platypus import HRFlowable, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    class Numbered(pdfcanvas.Canvas):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            self._saved = []
+
+        def showPage(self):
+            self._saved.append(dict(self.__dict__))
+            self._startPage()
+
+        def save(self):
+            total = len(self._saved)
+            for st in self._saved:
+                self.__dict__.update(st)
+                self.setFont("Helvetica", 8)
+                self.setFillColor(colors.HexColor("#444444"))
+                self.drawRightString(A4[0] - 46, 30, f"Page {self._pageNumber} of {total}")
+                super().showPage()
+            super().save()
+
+    def header(c, doc):
+        c.saveState()
+        c.setFillColor(colors.HexColor("#b91c1c"))
+        c.setFont("Helvetica-Bold", 26)
+        c.drawString(67, A4[1] - 50, "TMB")
+        c.setFillColor(colors.black)
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(135, A4[1] - 40, LETTERHEAD_NAME)
+        c.setFont("Helvetica", 7.5)
+        c.drawString(135, A4[1] - 50, LETTERHEAD_REG)
+        c.drawString(135, A4[1] - 59, LETTERHEAD_ADDR)
+        c.setStrokeColor(colors.HexColor("#b91c1c"))
+        c.setLineWidth(1.2)
+        c.line(67, A4[1] - 66, A4[0] - 46, A4[1] - 66)
+        c.restoreState()
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=67, rightMargin=46, topMargin=84, bottomMargin=56,
+                            title="Letter of Employment", author="Tianma Precision Sdn. Bhd.")
+
+    def esc(t):
+        return html.escape(t).replace("\n", "<br/>")
+
+    def runs_markup(runs):
+        out = []
+        for t, b, u, i in runs:
+            s = esc(t)
+            if b:
+                s = f"<b>{s}</b>"
+            if u:
+                s = f"<u>{s}</u>"
+            if i:
+                s = f"<i>{s}</i>"
+            out.append(s)
+        return "".join(out)
+
+    story = []
+    prev_space = True
+    avail_w = A4[0] - 67 - 46
+    for b in parse(docx_bytes):
+        if b["kind"] == "space":
+            if not prev_space:
+                story.append(Spacer(1, 6))
+            prev_space = True
+            continue
+        prev_space = False
+        if b["kind"] == "rule":
+            story.append(Spacer(1, 6))
+            story.append(HRFlowable(width="100%", thickness=0.8, color=colors.black))
+            story.append(Spacer(1, 6))
+        elif b["kind"] == "table":
+            data = [[Paragraph(esc(c), ParagraphStyle("c", fontName="Helvetica-Bold" if ri == 0 else "Helvetica", fontSize=9.5, leading=12))
+                     for c in r] for ri, r in enumerate(b["rows"])]
+            ncol = max(len(r) for r in data)
+            t = Table(data, colWidths=[(avail_w - 60) / ncol] * ncol, hAlign="LEFT")
+            t.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.6, colors.HexColor("#444444")),
+                                   ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
+                                   ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+            story.append(Spacer(1, 2))
+            story.append(t)
+            story.append(Spacer(1, 8))
+        else:
+            left = max(b["left"], 0)
+            hang = max(b["hanging"], 14) if b["label"] else 0
+            style = ParagraphStyle(
+                "p", fontName="Helvetica", fontSize=9.6, leading=12.6, spaceAfter=4.5,
+                spaceBefore=6 if b["heading"] else 0,
+                alignment=TA_JUSTIFY if b["align"] == "justify" else TA_LEFT,
+                leftIndent=left, firstLineIndent=0, keepWithNext=1 if b["heading"] else 0)
+            markup = runs_markup(b["runs"])
+            if b["label"]:
+                style.leftIndent = left
+                style.firstLineIndent = -hang
+                markup = f'{esc(b["label"])}  ' + markup
+                # tab-like alignment: place the text after the hanging gap
+                lab_w = hang
+                markup = (f'<font name="Helvetica">{esc(b["label"])}</font>')
+                para = Paragraph(markup, ParagraphStyle("lab", fontName="Helvetica", fontSize=9.6, leading=12.6))
+                body = Paragraph(runs_markup(b["runs"]), ParagraphStyle(
+                    "pb", parent=style, leftIndent=0, firstLineIndent=0, spaceAfter=0, spaceBefore=0))
+                tbl = Table([[para, body]], colWidths=[hang, avail_w - left], hAlign="LEFT")
+                tbl.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                                         ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 4.5),
+                                         ("VALIGN", (0, 0), (-1, -1), "TOP")]))
+                # indent the whole row so the label hangs into the margin
+                wrapper = Table([[tbl]], colWidths=[avail_w], hAlign="LEFT")
+                wrapper.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), max(left - hang, 0)),
+                                             ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                                             ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+                story.append(wrapper)
+            else:
+                story.append(Paragraph(markup, style))
+    doc.build(story, onFirstPage=header, onLaterPages=header, canvasmaker=Numbered)
+    return buf.getvalue()

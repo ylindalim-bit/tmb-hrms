@@ -17,6 +17,7 @@ import zipfile
 import openpyxl
 
 import employment_letter
+import letter_render
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.page import PageMargins
 from xml.sax.saxutils import escape as xml_escape
@@ -7592,13 +7593,15 @@ def recruitment_employment_letter_save(app_id):
     db.commit()
     if f.get("action") == "download":
         return redirect(url_for("recruitment_employment_letter_download", app_id=app_id))
+    if f.get("action") == "view":
+        return redirect(url_for("recruitment_employment_letter_view", app_id=app_id))
+    if f.get("action") == "pdf":
+        return redirect(url_for("recruitment_employment_letter_pdf", app_id=app_id))
     return redirect(url_for("recruitment_detail", app_id=app_id) + "#employment-letter")
 
 
-@app.route("/hr/recruitment/<int:app_id>/employment-letter.docx")
-def recruitment_employment_letter_download(app_id):
-    """Word Letter of Employment built from letter_templates/employment_letter.docx with this
-    candidate's name/IC/address from the application and the saved offer details."""
+def _employment_letter_content(app_id):
+    """(application, docx bytes) for a candidate's Employment Letter built from the saved offer details."""
     if session.get("hr_role") == "approver":
         abort(403)
     db = get_db()
@@ -7614,9 +7617,7 @@ def recruitment_employment_letter_download(app_id):
             return fallback
 
     today = datetime.datetime.now(MYT).date()
-    letter_date = as_date(offer["letter_date"], today)
     data = {
-        "ref": f"TMB/HR/LOE/{letter_date.year}/{app_id:03d}",
         "full_name": application["full_name"], "address": application["address"],
         "ic": application["ic_passport_no"], "salutation_line": offer["salutation_line"],
         "position": offer["position"] or "________________",
@@ -7624,11 +7625,43 @@ def recruitment_employment_letter_download(app_id):
         "salary": float(offer["salary"] or DEFAULT_OFFER_SALARY), "schedule": offer["schedule"],
         "include_overseas": offer["include_overseas"] == "Y",
     }
-    content = employment_letter.build_letter(data)
+    return application, employment_letter.build_letter(data)
+
+
+def _letter_file_stem(application):
     safe_name = re.sub(r"[^A-Za-z0-9 ]+", "", application["full_name"] or "Candidate").strip().replace(" ", "_")
+    return f"Letter_of_Employment_{safe_name}"
+
+
+@app.route("/hr/recruitment/<int:app_id>/employment-letter.docx")
+def recruitment_employment_letter_download(app_id):
+    """Word Letter of Employment built from letter_templates/employment_letter.docx with this
+    candidate's name/IC/address from the application and the saved offer details."""
+    application, content = _employment_letter_content(app_id)
     return send_file(io.BytesIO(content), as_attachment=True,
-                     download_name=f"Letter_of_Employment_{safe_name}.docx",
+                     download_name=f"{_letter_file_stem(application)}.docx",
                      mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
+@app.route("/hr/recruitment/<int:app_id>/employment-letter.pdf")
+def recruitment_employment_letter_pdf(app_id):
+    """The same letter as a PDF (built from the Word letter's content, so the two always match)."""
+    application, content = _employment_letter_content(app_id)
+    pdf = letter_render.render_pdf(content)
+    return send_file(io.BytesIO(pdf), as_attachment=True, download_name=f"{_letter_file_stem(application)}.pdf",
+                     mimetype="application/pdf")
+
+
+@app.route("/hr/recruitment/<int:app_id>/employment-letter/view")
+def recruitment_employment_letter_view(app_id):
+    """The same letter shown in the browser (with Print / Download PDF / Download Word buttons)."""
+    application, content = _employment_letter_content(app_id)
+    page = letter_render.render_html(
+        content, f"Letter of Employment - {application['full_name']}",
+        pdf_url=url_for("recruitment_employment_letter_pdf", app_id=app_id),
+        word_url=url_for("recruitment_employment_letter_download", app_id=app_id),
+        back_url=url_for("recruitment_detail", app_id=app_id) + "#employment-letter")
+    return Response(page, mimetype="text/html")
 
 
 @app.route("/hr/recruitment/<int:app_id>/create-employee")

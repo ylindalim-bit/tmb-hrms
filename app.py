@@ -5686,7 +5686,7 @@ def ocbc_kwsp_file(year, month):
     _content, skipped, count, total_cents = _build_ocbc_kwsp_file(db, year, month, value_date, test_file, consume_tape_id=False)
     if count == 0:
         return "No employees with EPF contribution to pay for this month.", 400
-    return render_template("ocbc_statutory_file_review.html", year=year, month=month, kind="KWSP (EPF)",
+    return render_template("ocbc_statutory_file_review.html", today_iso=datetime.datetime.now(MYT).date().isoformat(), year=year, month=month, kind="KWSP (EPF)",
                             value_date=value_date, skipped=skipped, count=count,
                             total_amount=total_cents / 100, test_file=test_file,
                             download_url=url_for("ocbc_kwsp_file_download", year=year, month=month,
@@ -5722,7 +5722,7 @@ def ocbc_socso_file(year, month):
     _c2, skip_eis, n_eis, amt_eis = _build_ocbc_socso_file(db, year, month, value_date, test_file, "01", consume_tape_id=False)
     if n_socso == 0 and n_eis == 0:
         return "No employees with SOCSO or EIS contribution to pay for this month.", 400
-    return render_template("ocbc_socso_eis_review.html", year=year, month=month, value_date=value_date,
+    return render_template("ocbc_socso_eis_review.html", today_iso=datetime.datetime.now(MYT).date().isoformat(), year=year, month=month, value_date=value_date,
                             test_file=test_file, n_socso=n_socso, amt_socso=amt_socso / 100, skip_socso=skip_socso,
                             n_eis=n_eis, amt_eis=amt_eis / 100, skip_eis=skip_eis,
                             socso_download_url=url_for("ocbc_socso_file_download", year=year, month=month,
@@ -5762,7 +5762,7 @@ def ocbc_lhdn_file(year, month):
     _content, skipped, count, total_cents = _build_ocbc_lhdn_file(db, year, month, value_date, consume_tape_id=False)
     if count == 0:
         return "No employees with PCB deduction to pay for this month.", 400
-    return render_template("ocbc_statutory_file_review.html", year=year, month=month, kind="LHDN (PCB)",
+    return render_template("ocbc_statutory_file_review.html", today_iso=datetime.datetime.now(MYT).date().isoformat(), year=year, month=month, kind="LHDN (PCB)",
                             value_date=value_date, skipped=skipped, count=count,
                             total_amount=total_cents / 100, test_file=False,
                             download_url=url_for("ocbc_lhdn_file_download", year=year, month=month, value_date=value_date),

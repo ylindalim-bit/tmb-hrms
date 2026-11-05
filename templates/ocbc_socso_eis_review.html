@@ -8,6 +8,15 @@
 </p>
 
 <div class="card" style="max-width:560px;">
+  <form method="get" style="margin:8px 0 12px;">
+    {% if test_file %}<input type="hidden" name="test_file" value="1">{% endif %}
+    <label style="font-size:13px; font-weight:600;">Value / debiting date</label>
+    <div style="display:flex; gap:8px; align-items:center;">
+      <input type="date" name="value_date" value="{{ value_date }}" min="{{ today_iso }}" required>
+      <button type="submit" class="btn secondary" style="padding:4px 12px;">Change</button>
+    </div>
+    <p style="color:var(--muted); font-size:12px; margin:4px 0 0;">Statutory payments are due by the 15th of the following month (15 Nov falls on a Sunday, so use Fri 13 Nov or earlier). The date cannot be in the past.</p>
+  </form>
   <form method="get" action="{{ toggle_url }}" style="margin-bottom:12px;">
     <input type="hidden" name="value_date" value="{{ value_date }}">
     <label style="font-size:13px;">

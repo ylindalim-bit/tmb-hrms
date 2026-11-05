@@ -106,6 +106,31 @@ def parse(docx_bytes):
             continue
         if text.strip() == "Signature\tDate":
             runs = [("Signature: " + "_" * 30 + "          Date: " + "_" * 20, False, False, False)]
+        tab_pos = None
+        try:
+            stops = list(p.paragraph_format.tab_stops)
+            if stops and "\t" in text and not text.startswith("Signature"):
+                tab_pos = stops[0].position.pt
+        except Exception:
+            tab_pos = None
+        label_runs, value_runs = None, None
+        if tab_pos:
+            seen = False
+            lr, vr = [], []
+            for t_, b, u, i in runs:
+                if not seen and "\t" in t_ and not (u and t_.strip("\t") == ""):
+                    before, _, after = t_.partition("\t")
+                    if before:
+                        lr.append((before, b, u, i))
+                    if after:
+                        vr.append((after, b, u, i))
+                    seen = True
+                elif seen:
+                    vr.append((t_, b, u, i))
+                else:
+                    lr.append((t_, b, u, i))
+            if seen and lr:
+                label_runs, value_runs = lr, vr
         fixed = []
         for t_, b, u, i in runs:
             if u and t_.strip("\t") == "" and not text.startswith("RE:"):
@@ -140,12 +165,23 @@ def parse(docx_bytes):
             if li is None and p.style is not None and p.style.paragraph_format.left_indent is not None:
                 li = p.style.paragraph_format.left_indent
             left = (li.pt if li is not None else 0)
+            ind = p._p.pPr.ind if p._p.pPr is not None else None
+            if ind is not None and ind.hanging is not None:
+                hanging = ind.hanging.pt
         align = "justify" if p.alignment is not None and int(p.alignment) == 3 else "left"
         heading = bool(p.style is not None and p.style.name.startswith("Heading"))
         if heading:
             runs = [(t_, True, u, i) for t_, b, u, i in runs]
+        if label_runs is not None and not label:
+            x0 = max(left - hanging, 0)
+            if heading:
+                label_runs = [(t_, True, u, i) for t_, b, u, i in label_runs]
+                value_runs = [(t_, True, u, i) for t_, b, u, i in value_runs]
+            blocks.append({"kind": "cols", "label": label_runs, "value": value_runs, "x0": x0,
+                           "tab": tab_pos, "bold_all": heading, "align": align})
+            continue
         blocks.append({"kind": "p", "runs": runs, "align": align, "heading": heading,
-                       "label": label, "left": left, "hanging": hanging})
+                       "label": label, "left": left, "hanging": hanging, "first": -hanging if not label else 0})
     return blocks
 
 
@@ -182,6 +218,13 @@ def render_html(docx_bytes, title, pdf_url, word_url, back_url):
         prev_space = False
         if b["kind"] == "rule":
             parts.append("<hr>")
+        elif b["kind"] == "cols":
+            w = max(b["tab"] - b["x0"], 20)
+            cls = "p h" if b["bold_all"] else "p"
+            pre = f"margin-left:{b['x0']:.0f}px;"
+            parts.append(f'<div class="{cls}" style="{pre} display:flex; text-align:{b["align"]};">'
+                         f'<span style="flex:0 0 {w:.0f}px;">{_runs_html(b["label"])}</span>'
+                         f'<span style="flex:1;">{_runs_html(b["value"])}</span></div>')
         elif b["kind"] == "table":
             if b.get("plain"):
                 rows = "".join("<tr>" + "".join(f"<td>{html.escape(c)}</td>" for c in r) + "</tr>" for r in b["rows"])
@@ -201,7 +244,9 @@ def render_html(docx_bytes, title, pdf_url, word_url, back_url):
                     f'<span style="flex:0 0 {hang:.0f}px; margin-left:-{hang:.0f}px; text-align:left;">{html.escape(b["label"])}</span>'
                     f'<span style="flex:1;">{_runs_html(b["runs"])}</span></div>')
             else:
-                parts.append(f'<div class="p {cls}" style="margin-left:{left:.0f}px; text-align:{b["align"]};">{_runs_html(b["runs"])}</div>')
+                first = b.get("first", 0)
+                ti = f" text-indent:{first:.0f}px;" if first else ""
+                parts.append(f'<div class="p {cls}" style="margin-left:{left:.0f}px;{ti} text-align:{b["align"]};">{_runs_html(b["runs"])}</div>')
     body = "\n".join(parts)
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -310,7 +355,21 @@ def render_pdf(docx_bytes):
             prev_space = True
             continue
         prev_space = False
-        if b["kind"] == "rule":
+        if b["kind"] == "cols":
+            w = max(b["tab"] - b["x0"], 20)
+            base = ParagraphStyle("cl", fontName="Helvetica", fontSize=9.6, leading=12.6,
+                                  alignment=TA_JUSTIFY if b["align"] == "justify" else TA_LEFT)
+            lab = Paragraph(runs_markup(b["label"]), base)
+            val = Paragraph(runs_markup(b["value"]), base)
+            tbl = Table([[lab, val]], colWidths=[w, avail_w - b["x0"] - w], hAlign="LEFT")
+            tbl.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                                     ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 4.5),
+                                     ("VALIGN", (0, 0), (-1, -1), "TOP")]))
+            wrapper = Table([[tbl]], colWidths=[avail_w], hAlign="LEFT")
+            wrapper.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), b["x0"]), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                                         ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+            story.append(wrapper)
+        elif b["kind"] == "rule":
             story.append(Spacer(1, 6))
             story.append(HRFlowable(width="100%", thickness=0.8, color=colors.black))
             story.append(Spacer(1, 6))
@@ -339,7 +398,7 @@ def render_pdf(docx_bytes):
                 "p", fontName="Helvetica", fontSize=9.6, leading=12.6, spaceAfter=4.5,
                 spaceBefore=6 if b["heading"] else 0,
                 alignment=TA_JUSTIFY if b["align"] == "justify" else TA_LEFT,
-                leftIndent=left, firstLineIndent=0, keepWithNext=1 if b["heading"] else 0)
+                leftIndent=left, firstLineIndent=b.get("first", 0), keepWithNext=1 if b["heading"] else 0)
             markup = runs_markup(b["runs"])
             if b["label"]:
                 style.leftIndent = left

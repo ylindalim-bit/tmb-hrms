@@ -5535,16 +5535,18 @@ def _build_ocbc_kwsp_file(db, year, month, value_date, test_file, consume_tape_i
     return content, skipped, len(details), total_er + total_ee
 
 
-def _build_ocbc_socso_file(db, year, month, value_date, test_file, socso_type, consume_tape_id=True):
+def _build_ocbc_socso_file(db, year, month, value_date, test_file, socso_type, consume_tape_id=True, include_skbbk=True):
     """OCBC "SOCSO file upload format 5.0" - one file per submission type:
     socso_type="8A" pays the combined SOCSO employer+employee contribution,
     socso_type="01" pays the combined EIS employer+employee contribution.
     Uses each employee's IC/passport number as the Identification No.,
-    matching the spec's own example (New IC number)."""
+    matching the spec's own example (New IC number).
+    include_skbbk: OCBC's format has no separate SKBBK type, so the SKBBK contribution (PERKESO money, deducted
+    from the employee) is added into the 8A SOCSO amount of each employee."""
     settings = get_ocbc_bank_file_settings(db)
     employer_info = get_employer_info(db)
     if socso_type == "8A":
-        amount_expr = "(pr.socso_employer + pr.socso_employee)"
+        amount_expr = "(pr.socso_employer + pr.socso_employee" + (" + COALESCE(pr.skbbk_employee,0)" if include_skbbk else "") + ")"
     else:
         amount_expr = "(pr.eis_employer + pr.eis_employee)"
     rows = db.execute(
@@ -5579,8 +5581,11 @@ def _build_ocbc_socso_file(db, year, month, value_date, test_file, socso_type, c
     details = []
     total_amount = 0
     for r in rows:
-        amount_cents = int(round((r["socso_employer"] + r["socso_employee"] if socso_type == "8A"
-                                   else r["eis_employer"] + r["eis_employee"]) * 100))
+        if socso_type == "8A":
+            amount = r["socso_employer"] + r["socso_employee"] + ((r["skbbk_employee"] or 0) if include_skbbk else 0)
+        else:
+            amount = r["eis_employer"] + r["eis_employee"]
+        amount_cents = int(round(amount * 100))
         total_amount += amount_cents
         details.append(
             "02"
@@ -5718,15 +5723,20 @@ def ocbc_socso_file(year, month):
                 "Company Account No. under Settings first."), 400
     value_date = request.args.get("value_date") or _default_value_date(year, month)
     test_file = request.args.get("test_file") == "1"
-    _c1, skip_socso, n_socso, amt_socso = _build_ocbc_socso_file(db, year, month, value_date, test_file, "8A", consume_tape_id=False)
+    include_skbbk = request.args.get("skbbk", "1") != "0"
+    skbbk_row = db.execute("SELECT COUNT(*) AS n, COALESCE(SUM(skbbk_employee),0) AS amt FROM payroll_runs WHERE year=? AND month=? AND skbbk_employee>0",
+                           (year, month)).fetchone()
+    _c1, skip_socso, n_socso, amt_socso = _build_ocbc_socso_file(db, year, month, value_date, test_file, "8A", consume_tape_id=False, include_skbbk=include_skbbk)
     _c2, skip_eis, n_eis, amt_eis = _build_ocbc_socso_file(db, year, month, value_date, test_file, "01", consume_tape_id=False)
     if n_socso == 0 and n_eis == 0:
         return "No employees with SOCSO or EIS contribution to pay for this month.", 400
     return render_template("ocbc_socso_eis_review.html", today_iso=datetime.datetime.now(MYT).date().isoformat(), year=year, month=month, value_date=value_date,
                             test_file=test_file, n_socso=n_socso, amt_socso=amt_socso / 100, skip_socso=skip_socso,
                             n_eis=n_eis, amt_eis=amt_eis / 100, skip_eis=skip_eis,
+                            include_skbbk=include_skbbk, skbbk_n=skbbk_row["n"], skbbk_amt=skbbk_row["amt"],
                             socso_download_url=url_for("ocbc_socso_file_download", year=year, month=month,
-                                                        value_date=value_date, test_file="1" if test_file else "0", socso_type="8A"),
+                                                        value_date=value_date, test_file="1" if test_file else "0", socso_type="8A",
+                                                        skbbk="1" if include_skbbk else "0"),
                             eis_download_url=url_for("ocbc_socso_file_download", year=year, month=month,
                                                       value_date=value_date, test_file="1" if test_file else "0", socso_type="01"),
                             toggle_url=url_for("ocbc_socso_file", year=year, month=month))
@@ -5743,7 +5753,8 @@ def ocbc_socso_file_download(year, month):
     socso_type = request.args.get("socso_type")
     if socso_type not in ("8A", "01"):
         return "Invalid socso_type", 400
-    content, _skipped, count, _total = _build_ocbc_socso_file(db, year, month, value_date, test_file, socso_type, consume_tape_id=True)
+    include_skbbk = request.args.get("skbbk", "1") != "0"
+    content, _skipped, count, _total = _build_ocbc_socso_file(db, year, month, value_date, test_file, socso_type, consume_tape_id=True, include_skbbk=include_skbbk)
     if count == 0:
         return "No employees to pay for this file.", 400
     label = "SOCSO" if socso_type == "8A" else "EIS"

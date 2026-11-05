@@ -8,25 +8,27 @@
 </p>
 
 <div class="card" style="max-width:560px;">
-  <form method="get" style="margin:8px 0 12px;">
-    {% if test_file %}<input type="hidden" name="test_file" value="1">{% endif %}
+  <form method="get" action="{{ toggle_url }}" style="margin:8px 0 14px;">
     <label style="font-size:13px; font-weight:600;">Value / debiting date</label>
     <div style="display:flex; gap:8px; align-items:center;">
       <input type="date" name="value_date" value="{{ value_date }}" min="{{ today_iso }}" required>
-      <button type="submit" class="btn secondary" style="padding:4px 12px;">Change</button>
+      <button type="submit" class="btn secondary" style="padding:4px 12px;">Update</button>
     </div>
-    <p style="color:var(--muted); font-size:12px; margin:4px 0 0;">Statutory payments are due by the 15th of the following month (15 Nov falls on a Sunday, so use Fri 13 Nov or earlier). The date cannot be in the past.</p>
-  </form>
-  <form method="get" action="{{ toggle_url }}" style="margin-bottom:12px;">
-    <input type="hidden" name="value_date" value="{{ value_date }}">
-    <label style="font-size:13px;">
-      <input type="checkbox" name="test_file" value="1" onchange="this.form.submit()" {% if test_file %}checked{% endif %}>
+    <p style="color:var(--muted); font-size:12px; margin:4px 0 10px;">Statutory payments are due by the 15th of the following month (15 Nov falls on a Sunday, so use Fri 13 Nov or earlier). The date cannot be in the past.</p>
+    <label style="font-size:13px; display:block; margin-bottom:6px;">
+      <input type="checkbox" name="skbbk" value="1" {% if include_skbbk %}checked{% endif %}>
+      Include SKBBK in the SOCSO amount{% if skbbk_n %} ({{ skbbk_n }} employee{{ "s" if skbbk_n != 1 }}, RM{{ "%.2f"|format(skbbk_amt) }}){% endif %}
+    </label>
+    <input type="hidden" name="skbbk" value="0">
+    <label style="font-size:13px; display:block;">
+      <input type="checkbox" name="test_file" value="1" {% if test_file %}checked{% endif %}>
       This is a test file (first-time submission &mdash; uncheck once PERKESO has confirmed the test file is accepted)
     </label>
+    <p style="color:var(--muted); font-size:12px; margin:8px 0 0;">After changing any of these, click <strong>Update</strong> before downloading.</p>
   </form>
 
   <h2 style="margin-bottom:4px;">SOCSO (Borang 8A)</h2>
-  <p><strong>{{ n_socso }}</strong> employee{{ "s" if n_socso != 1 }}, totalling <strong>RM{{ "%.2f"|format(amt_socso) }}</strong>.</p>
+  <p><strong>{{ n_socso }}</strong> employee{{ "s" if n_socso != 1 }}, totalling <strong>RM{{ "%.2f"|format(amt_socso) }}</strong>{% if include_skbbk and skbbk_n %} (SOCSO + SKBBK){% endif %}.</p>
   {% if skip_socso %}
   <div style="background:#fee2e2; border:1px solid var(--danger); border-radius:6px; padding:10px; margin-bottom:10px; font-size:13px;">
     <strong style="color:var(--danger);">{{ skip_socso|length }} skipped:</strong>

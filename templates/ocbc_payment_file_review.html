@@ -5,7 +5,14 @@
 
 <div class="card" style="max-width:560px;">
   <p><strong>{{ count }}</strong> employee{{ "s" if count != 1 }} will be paid, totalling <strong>RM{{ "%.2f"|format(total_amount) }}</strong>.</p>
-  <p style="color:var(--muted); font-size:13px;">Value/crediting date: {{ value_date }}</p>
+  <form method="get" style="margin:8px 0 12px;">
+    <label style="font-size:13px; font-weight:600;">Value / crediting date</label>
+    <div style="display:flex; gap:8px; align-items:center;">
+      <input type="date" name="value_date" value="{{ value_date }}" min="{{ today_iso }}" required>
+      <button type="submit" class="btn secondary" style="padding:4px 12px;">Change</button>
+    </div>
+    <p style="color:var(--muted); font-size:12px; margin:4px 0 0;">OCBC rejects a date that has already passed (&ldquo;Value Date Is Back Dated&rdquo;), so pick today or a later date.</p>
+  </form>
 
   {% if skipped %}
   <div style="background:#fee2e2; border:1px solid var(--danger); border-radius:6px; padding:12px; margin:12px 0;">

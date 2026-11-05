@@ -441,6 +441,15 @@ def payment_date_for(year, month):
     return datetime.date(pay_year, pay_month, PAYMENT_DAY)
 
 
+def _default_value_date(year, month):
+    """Crediting (value) date for the bank payment files: the usual pay day (the PAYMENT_DAY of the month
+    AFTER the payroll month), but never a date already past - OCBC rejects a back-dated value date - so
+    it falls back to today."""
+    usual = payment_date_for(year, month).isoformat()
+    today = datetime.datetime.now(MYT).date().isoformat()
+    return usual if usual >= today else today
+
+
 def payslip_release_date(db, year, month):
     """The date this month's payslip becomes visible to the employee on the
     Staff Portal - a day-of-month setting HR controls (Settings page),
@@ -5391,13 +5400,13 @@ def ocbc_payment_file(year, month):
     if not settings["ocbc_branch_code"] or not settings["ocbc_company_account_no"]:
         return ("OCBC bank file settings are incomplete - fill in the Branch No. and "
                 "Company Account No. under Settings first."), 400
-    value_date = request.args.get("value_date") or f"{year:04d}-{month:02d}-{PAYMENT_DAY:02d}"
+    value_date = request.args.get("value_date") or _default_value_date(year, month)
     _content, skipped, count, total_cents = _build_ocbc_giro_file(db, year, month, value_date, consume_tape_id=False)
     if count == 0:
         return "No employees with recognised bank details to pay for this month.", 400
     return render_template("ocbc_payment_file_review.html", year=year, month=month,
                             value_date=value_date, skipped=skipped, count=count,
-                            total_amount=total_cents / 100)
+                            total_amount=total_cents / 100, today_iso=datetime.datetime.now(MYT).date().isoformat())
 
 
 @app.route("/payroll/<int:year>/<int:month>/ocbc-payment-file/download")
@@ -5410,7 +5419,7 @@ def ocbc_payment_file_download(year, month):
     if not settings["ocbc_branch_code"] or not settings["ocbc_company_account_no"]:
         return ("OCBC bank file settings are incomplete - fill in the Branch No. and "
                 "Company Account No. under Settings first."), 400
-    value_date = request.args.get("value_date") or f"{year:04d}-{month:02d}-{PAYMENT_DAY:02d}"
+    value_date = request.args.get("value_date") or _default_value_date(year, month)
     content, _skipped, count, _total_cents = _build_ocbc_giro_file(db, year, month, value_date, consume_tape_id=True)
     if count == 0:
         return "No employees with recognised bank details to pay for this month.", 400
@@ -5672,7 +5681,7 @@ def ocbc_kwsp_file(year, month):
     if not _ocbc_settings_ready(db):
         return ("OCBC bank file settings are incomplete - fill in the Branch No. and "
                 "Company Account No. under Settings first."), 400
-    value_date = request.args.get("value_date") or f"{year:04d}-{month:02d}-{PAYMENT_DAY:02d}"
+    value_date = request.args.get("value_date") or _default_value_date(year, month)
     test_file = request.args.get("test_file") == "1"
     _content, skipped, count, total_cents = _build_ocbc_kwsp_file(db, year, month, value_date, test_file, consume_tape_id=False)
     if count == 0:
@@ -5691,7 +5700,7 @@ def ocbc_kwsp_file_download(year, month):
     if not _ocbc_settings_ready(db):
         return ("OCBC bank file settings are incomplete - fill in the Branch No. and "
                 "Company Account No. under Settings first."), 400
-    value_date = request.args.get("value_date") or f"{year:04d}-{month:02d}-{PAYMENT_DAY:02d}"
+    value_date = request.args.get("value_date") or _default_value_date(year, month)
     test_file = request.args.get("test_file") == "1"
     content, _skipped, count, _total = _build_ocbc_kwsp_file(db, year, month, value_date, test_file, consume_tape_id=True)
     if count == 0:
@@ -5707,7 +5716,7 @@ def ocbc_socso_file(year, month):
     if not _ocbc_settings_ready(db):
         return ("OCBC bank file settings are incomplete - fill in the Branch No. and "
                 "Company Account No. under Settings first."), 400
-    value_date = request.args.get("value_date") or f"{year:04d}-{month:02d}-{PAYMENT_DAY:02d}"
+    value_date = request.args.get("value_date") or _default_value_date(year, month)
     test_file = request.args.get("test_file") == "1"
     _c1, skip_socso, n_socso, amt_socso = _build_ocbc_socso_file(db, year, month, value_date, test_file, "8A", consume_tape_id=False)
     _c2, skip_eis, n_eis, amt_eis = _build_ocbc_socso_file(db, year, month, value_date, test_file, "01", consume_tape_id=False)
@@ -5729,7 +5738,7 @@ def ocbc_socso_file_download(year, month):
     if not _ocbc_settings_ready(db):
         return ("OCBC bank file settings are incomplete - fill in the Branch No. and "
                 "Company Account No. under Settings first."), 400
-    value_date = request.args.get("value_date") or f"{year:04d}-{month:02d}-{PAYMENT_DAY:02d}"
+    value_date = request.args.get("value_date") or _default_value_date(year, month)
     test_file = request.args.get("test_file") == "1"
     socso_type = request.args.get("socso_type")
     if socso_type not in ("8A", "01"):
@@ -5749,7 +5758,7 @@ def ocbc_lhdn_file(year, month):
     if not _ocbc_settings_ready(db):
         return ("OCBC bank file settings are incomplete - fill in the Branch No. and "
                 "Company Account No. under Settings first."), 400
-    value_date = request.args.get("value_date") or f"{year:04d}-{month:02d}-{PAYMENT_DAY:02d}"
+    value_date = request.args.get("value_date") or _default_value_date(year, month)
     _content, skipped, count, total_cents = _build_ocbc_lhdn_file(db, year, month, value_date, consume_tape_id=False)
     if count == 0:
         return "No employees with PCB deduction to pay for this month.", 400
@@ -5766,7 +5775,7 @@ def ocbc_lhdn_file_download(year, month):
     if not _ocbc_settings_ready(db):
         return ("OCBC bank file settings are incomplete - fill in the Branch No. and "
                 "Company Account No. under Settings first."), 400
-    value_date = request.args.get("value_date") or f"{year:04d}-{month:02d}-{PAYMENT_DAY:02d}"
+    value_date = request.args.get("value_date") or _default_value_date(year, month)
     content, _skipped, count, _total = _build_ocbc_lhdn_file(db, year, month, value_date, consume_tape_id=True)
     if count == 0:
         return "No employees with PCB deduction to pay for this month.", 400

@@ -142,6 +142,78 @@ def _find(paragraphs, pred, start=0):
     return None
 
 
+def _holidays_to_table(d):
+    """The Public Holidays bullet list becomes a 2-column table (list order runs down the left column,
+    then down the right), keeping each holiday's own formatting."""
+    import docx
+    from docx.oxml.ns import qn
+    from docx.shared import Twips
+    P = d.paragraphs
+    first = _find(P, lambda t: t.startswith("New Year"))
+    if first is None:
+        return
+
+    def num_id(par):
+        pPr = par._p.pPr
+        if pPr is None or pPr.numPr is None or pPr.numPr.numId is None:
+            return None
+        return str(pPr.numPr.numId.val)
+
+    nid = num_id(P[first])
+    if nid is None:
+        return
+    items = []
+    i = first
+    while i < len(P) and num_id(P[i]) == nid and P[i].text.strip():
+        items.append(P[i])
+        i += 1
+    if len(items) < 4:
+        return
+    rows = (len(items) + 1) // 2
+    tbl = d.add_table(rows=rows, cols=2)
+    tbl.autofit = False
+    tblPr = tbl._tbl.tblPr
+    # no borders, table indented to line up with the clause text
+    ind = tblPr.makeelement(qn("w:tblInd"), {qn("w:w"): "820", qn("w:type"): "dxa"})
+    anchor = tblPr.find(qn("w:tblLayout"))
+    if anchor is None:
+        anchor = tblPr.find(qn("w:tblLook"))
+    if anchor is not None:
+        anchor.addprevious(ind)      # keep the schema order Word expects
+    else:
+        tblPr.append(ind)
+    for col, width in zip(tbl.columns, (4300, 4300)):
+        col.width = Twips(width)
+    for k, src in enumerate(items):
+        r, c = (k, 0) if k < rows else (k - rows, 1)
+        cell = tbl.cell(r, c)
+        cell.width = Twips(4300)
+        new_p = copy.deepcopy(src._p)
+        pPr = new_p.pPr
+        if pPr is not None:
+            for tag in ("w:numPr", "w:ind"):
+                el = pPr.find(qn(tag))
+                if el is not None:
+                    pPr.remove(el)
+        # a bullet character in front of the first run
+        runs = new_p.findall(qn("w:r"))
+        if runs:
+            bullet = copy.deepcopy(runs[0])
+            for t in bullet.findall(qn("w:t")):
+                bullet.remove(t)
+            t = bullet.makeelement(qn("w:t"), {})
+            t.text = "\u2022\u00a0\u00a0"
+            t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+            bullet.append(t)
+            runs[0].addprevious(bullet)
+        old_p = cell.paragraphs[0]._p
+        old_p.addprevious(new_p)
+        old_p.getparent().remove(old_p)
+    items[0]._p.addprevious(tbl._tbl)
+    for src in items:
+        src._p.getparent().remove(src._p)
+
+
 def build_letter(data):
     """data keys: ref (optional, e.g. 'TMB/HR/LOE/2026/011'), full_name, address, ic, salutation_line, position, join_date (date),
     letter_date (date), salary (float), schedule ('shift'|'office'), include_overseas (bool).
@@ -205,6 +277,9 @@ def build_letter(data):
             for p in P[start:end]:
                 p._p.getparent().remove(p._p)
             P = d.paragraphs
+
+    _holidays_to_table(d)
+    P = d.paragraphs
 
     i = _find(P, lambda t: t.startswith("I,") and "NRIC" in t)
     _set_paragraph(P[i], [("I, ", None), (name, None), (", NRIC No: ", None), (ic or "________________", None),

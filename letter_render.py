@@ -2,13 +2,16 @@
 page (for viewing in the browser) and as a PDF (reportlab), so the View / PDF / Word versions of a
 letter always show the same content. Numbering (1., 2.1, (a), bullets) is worked out from the
 document's own numbering definitions."""
+import base64
 import html
 import io
+import os
 import re
 
 import docx
 from docx.oxml.ns import qn
 
+LETTERHEAD_PNG = os.path.join(os.path.dirname(__file__), "letter_templates", "letterhead.png")
 LETTERHEAD_NAME = "TIANMA PRECISION SDN. BHD."
 LETTERHEAD_REG = "202301036641(1530564-X)"
 LETTERHEAD_ADDR = "Plo 192, Jalan Bakau 5, Kawasan Perindustrian Tanjung Langsat, 81700 Pasir Gudang, Johor, Malaysia"
@@ -79,7 +82,8 @@ def parse(docx_bytes):
             t = tables.get(ch)
             if t is not None:
                 rows = [[c.text.strip() for c in r.cells] for r in t.rows]
-                blocks.append({"kind": "table", "rows": rows})
+                plain = all(c.startswith("\u2022") for r in rows for c in r if c)
+                blocks.append({"kind": "table", "rows": rows, "plain": plain})
             continue
         if ch.tag != qn("w:p"):
             continue
@@ -161,6 +165,11 @@ def _runs_html(runs):
     return "".join(out)
 
 
+def _letterhead_b64():
+    with open(LETTERHEAD_PNG, "rb") as f:
+        return base64.b64encode(f.read()).decode("ascii")
+
+
 def render_html(docx_bytes, title, pdf_url, word_url, back_url):
     parts = []
     prev_space = True
@@ -174,10 +183,14 @@ def render_html(docx_bytes, title, pdf_url, word_url, back_url):
         if b["kind"] == "rule":
             parts.append("<hr>")
         elif b["kind"] == "table":
-            rows = "".join(
-                "<tr>" + "".join(f"<{'th' if ri == 0 else 'td'}>{html.escape(c)}</{'th' if ri == 0 else 'td'}>" for c in r) + "</tr>"
-                for ri, r in enumerate(b["rows"]))
-            parts.append(f'<table class="grid">{rows}</table>')
+            if b.get("plain"):
+                rows = "".join("<tr>" + "".join(f"<td>{html.escape(c)}</td>" for c in r) + "</tr>" for r in b["rows"])
+                parts.append(f'<table class="plain">{rows}</table>')
+            else:
+                rows = "".join(
+                    "<tr>" + "".join(f"<{'th' if ri == 0 else 'td'}>{html.escape(c)}</{'th' if ri == 0 else 'td'}>" for c in r) + "</tr>"
+                    for ri, r in enumerate(b["rows"]))
+                parts.append(f'<table class="grid">{rows}</table>')
         else:
             cls = "h" if b["heading"] else ""
             left = max(b["left"], 0)
@@ -200,10 +213,7 @@ def render_html(docx_bytes, title, pdf_url, word_url, back_url):
   .bar a.primary {{ background:#2563eb; color:#fff; }}
   .bar span {{ color:#cbd5e1; font-size:13px; margin-left:auto; }}
   .page {{ width:794px; max-width:calc(100% - 24px); box-sizing:border-box; margin:16px auto; background:#fff; padding:40px 56px 56px 72px; box-shadow:0 2px 12px rgba(0,0,0,.2); font-size:13.3px; line-height:1.4; }}
-  .lh {{ display:flex; gap:14px; align-items:center; border-bottom:2px solid #b91c1c; padding-bottom:8px; margin-bottom:18px; }}
-  .lh .logo {{ font-size:34px; font-weight:800; color:#b91c1c; letter-spacing:-1px; }}
-  .lh .co {{ font-size:15px; font-weight:700; }}
-  .lh .small {{ font-size:10.5px; color:#444; }}
+  .lh {{ margin-bottom:16px; }}
   .p {{ margin:0 0 6px; }}
   .p.h {{ margin-top:8px; }}
   .gap {{ height:8px; }}
@@ -211,6 +221,9 @@ def render_html(docx_bytes, title, pdf_url, word_url, back_url):
   table.grid {{ border-collapse:collapse; margin:4px 0 10px 28px; min-width:60%; }}
   table.grid th, table.grid td {{ border:1px solid #444; padding:4px 10px; text-align:left; }}
   table.grid th {{ background:#f1f5f9; }}
+  table.plain {{ border-collapse:collapse; margin:0 0 8px 60px; width:calc(100% - 60px); }}
+  table.plain td {{ padding:1px 8px 1px 0; width:50%; vertical-align:top; }}
+  .lh img {{ display:block; width:100%; height:auto; }}
   @media print {{
     body {{ background:#fff; }} .bar {{ display:none; }}
     .page {{ box-shadow:none; margin:0; width:auto; max-width:none; padding:0; }}
@@ -225,8 +238,7 @@ def render_html(docx_bytes, title, pdf_url, word_url, back_url):
   <span>Preview &mdash; edit the details on the candidate page, then view again.</span>
 </div>
 <div class="page">
-  <div class="lh"><div class="logo">TMB</div><div><div class="co">{html.escape(LETTERHEAD_NAME)}</div>
-  <div class="small">{html.escape(LETTERHEAD_REG)}</div><div class="small">{html.escape(LETTERHEAD_ADDR)}</div></div></div>
+  <div class="lh"><img alt="Tianma Precision Sdn. Bhd." src="data:image/png;base64,{_letterhead_b64()}"></div>
 {body}
 </div></body></html>"""
 
@@ -256,28 +268,20 @@ def render_pdf(docx_bytes):
                 self.__dict__.update(st)
                 self.setFont("Helvetica", 8)
                 self.setFillColor(colors.HexColor("#444444"))
-                self.drawRightString(A4[0] - 46, 30, f"Page {self._pageNumber} of {total}")
+                self.drawCentredString(67 + (A4[0] - 67 - 46) / 2, 34, f"Page {self._pageNumber} of {total}")
                 super().showPage()
             super().save()
 
     def header(c, doc):
+        # the company letterhead exactly as in the Word template (image of its header)
         c.saveState()
-        c.setFillColor(colors.HexColor("#b91c1c"))
-        c.setFont("Helvetica-Bold", 26)
-        c.drawString(67, A4[1] - 50, "TMB")
-        c.setFillColor(colors.black)
-        c.setFont("Helvetica-Bold", 11)
-        c.drawString(135, A4[1] - 40, LETTERHEAD_NAME)
-        c.setFont("Helvetica", 7.5)
-        c.drawString(135, A4[1] - 50, LETTERHEAD_REG)
-        c.drawString(135, A4[1] - 59, LETTERHEAD_ADDR)
-        c.setStrokeColor(colors.HexColor("#b91c1c"))
-        c.setLineWidth(1.2)
-        c.line(67, A4[1] - 66, A4[0] - 46, A4[1] - 66)
+        w_pt = A4[0] - 67 - 46
+        img_h = w_pt * 183 / 1931
+        c.drawImage(LETTERHEAD_PNG, 67, A4[1] - 22 - img_h, width=w_pt, height=img_h)
         c.restoreState()
 
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=67, rightMargin=46, topMargin=84, bottomMargin=56,
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=67, rightMargin=46, topMargin=86, bottomMargin=56,
                             title="Letter of Employment", author="Tianma Precision Sdn. Bhd.")
 
     def esc(t):
@@ -311,13 +315,20 @@ def render_pdf(docx_bytes):
             story.append(HRFlowable(width="100%", thickness=0.8, color=colors.black))
             story.append(Spacer(1, 6))
         elif b["kind"] == "table":
-            data = [[Paragraph(esc(c), ParagraphStyle("c", fontName="Helvetica-Bold" if ri == 0 else "Helvetica", fontSize=9.5, leading=12))
+            plain = b.get("plain")
+            data = [[Paragraph(esc(c), ParagraphStyle("c", fontName="Helvetica-Bold" if (ri == 0 and not plain) else "Helvetica",
+                                                      fontSize=9.6 if plain else 9.5, leading=12.6 if plain else 12))
                      for c in r] for ri, r in enumerate(b["rows"])]
             ncol = max(len(r) for r in data)
-            t = Table(data, colWidths=[(avail_w - 60) / ncol] * ncol, hAlign="LEFT")
-            t.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.6, colors.HexColor("#444444")),
-                                   ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
-                                   ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+            if plain:
+                t = Table(data, colWidths=[(avail_w - 41) / ncol] * ncol, hAlign="RIGHT")
+                t.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 1),
+                                       ("BOTTOMPADDING", (0, 0), (-1, -1), 1), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
+            else:
+                t = Table(data, colWidths=[(avail_w - 60) / ncol] * ncol, hAlign="LEFT")
+                t.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.6, colors.HexColor("#444444")),
+                                       ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
+                                       ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
             story.append(Spacer(1, 2))
             story.append(t)
             story.append(Spacer(1, 8))

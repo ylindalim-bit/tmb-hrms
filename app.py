@@ -336,6 +336,10 @@ try:
         application_id INTEGER PRIMARY KEY, position TEXT, join_date TEXT, salary REAL,
         schedule TEXT, include_overseas TEXT, letter_date TEXT, salutation_line TEXT,
         saved_by TEXT, saved_at TEXT)""")
+    # Letter of Employment reference numbers: TMB/HR/LOE/<year>-<seq>, running from 01 each year in the
+    # order letters are first issued (see _loe_ref).
+    _ensure_conn.execute("""CREATE TABLE IF NOT EXISTS loe_refs (
+        application_id INTEGER PRIMARY KEY, year INTEGER, seq INTEGER, ref_no TEXT)""")
     for _col, _decl in (("oversea_override", "REAL"), ("oversea_override_reason", "TEXT")):
         _pr_cols = [_r[1] for _r in _ensure_conn.execute("PRAGMA table_info(payroll_runs)").fetchall()]
         if _pr_cols and _col not in _pr_cols:
@@ -7535,6 +7539,23 @@ def recruitment_interview_sheet(app_id):
 DEFAULT_OFFER_SALARY = 2000.0
 
 
+def _loe_ref(db, app_id, letter_year, assign=True):
+    """The candidate's Letter of Employment Ref, e.g. TMB/HR/LOE/2026-01. A candidate keeps the same number
+    every time; the first time a letter is produced they get the next number of that year (01, 02, ...)."""
+    db.execute("""CREATE TABLE IF NOT EXISTS loe_refs (
+        application_id INTEGER PRIMARY KEY, year INTEGER, seq INTEGER, ref_no TEXT)""")
+    row = db.execute("SELECT ref_no FROM loe_refs WHERE application_id=?", (app_id,)).fetchone()
+    if row:
+        return row["ref_no"]
+    if not assign:
+        return ""
+    seq = (db.execute("SELECT COALESCE(MAX(seq),0) FROM loe_refs WHERE year=?", (letter_year,)).fetchone()[0] or 0) + 1
+    ref = f"TMB/HR/LOE/{letter_year}-{seq:02d}"
+    db.execute("INSERT INTO loe_refs (application_id, year, seq, ref_no) VALUES (?,?,?,?)", (app_id, letter_year, seq, ref))
+    db.commit()
+    return ref
+
+
 def _load_offer(db, application):
     """The saved Employment Letter details for a candidate, or sensible defaults if HR
     hasn't saved any yet (position from the application, RM2,000, shift, overseas clauses on)."""
@@ -7552,6 +7573,10 @@ def _load_offer(db, application):
             application["full_name"], application["salutation"], application["gender"]),
         "saved": False, "saved_by": None, "saved_at": None,
     }
+    try:
+        offer["ref_no"] = _loe_ref(db, application["id"], 0, assign=False)
+    except sqlite3.OperationalError:
+        offer["ref_no"] = ""
     if row:
         for k in ("position", "join_date", "salary", "schedule", "include_overseas", "letter_date",
                   "salutation_line", "saved_by", "saved_at"):
@@ -7590,6 +7615,13 @@ def recruitment_employment_letter_save(app_id):
          (f.get("salutation_line") or "").strip() or None,
          session.get("hr_username"), datetime.datetime.now(MYT).isoformat(timespec="seconds")),
     )
+    new_ref = (f.get("ref_no") or "").strip()
+    if new_ref:
+        m = re.search(r"(\d{4})[-/](\d+)$", new_ref)
+        db.execute(
+            """INSERT INTO loe_refs (application_id, year, seq, ref_no) VALUES (?,?,?,?)
+               ON CONFLICT(application_id) DO UPDATE SET year=excluded.year, seq=excluded.seq, ref_no=excluded.ref_no""",
+            (app_id, int(m.group(1)) if m else None, int(m.group(2)) if m else 0, new_ref))
     db.commit()
     if f.get("action") == "download":
         return redirect(url_for("recruitment_employment_letter_download", app_id=app_id))
@@ -7619,7 +7651,7 @@ def _employment_letter_content(app_id):
     today = datetime.datetime.now(MYT).date()
     letter_date = as_date(offer["letter_date"], today)
     data = {
-        "ref": f"TMB/HR/LOE/{letter_date.year}/{app_id:03d}",
+        "ref": _loe_ref(db, app_id, letter_date.year),
         "full_name": application["full_name"], "address": application["address"],
         "ic": application["ic_passport_no"], "salutation_line": offer["salutation_line"],
         "position": offer["position"] or "________________",

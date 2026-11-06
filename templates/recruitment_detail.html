@@ -178,6 +178,8 @@
         <input type="text" name="salutation_line" value="{{ offer.salutation_line }}" placeholder="e.g. Sir"></div>
       <div><label>Letter Date</label>
         <input type="date" name="letter_date" value="{{ offer.letter_date }}"></div>
+      <div><label>Letter Ref</label>
+        <input type="text" name="ref_no" value="{{ offer.ref_no }}" placeholder="auto: next number, e.g. TMB/HR/LOE/2026-01"></div>
       <div style="grid-column:1 / -1;">
         <label style="display:flex; gap:6px; align-items:center; font-weight:normal;">
           <input type="checkbox" name="include_overseas" value="Y" {{ "checked" if offer.include_overseas == "Y" }}>

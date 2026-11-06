@@ -7672,8 +7672,18 @@ def _employment_letter_content(app_id):
 
 
 def _letter_file_stem(application):
-    safe_name = re.sub(r"[^A-Za-z0-9 ]+", "", application["full_name"] or "Candidate").strip().replace(" ", "_")
-    return f"Letter_of_Employment_{safe_name}"
+    """File name for the letter: Ref number first, then the staff's short name, e.g.
+    LOE_2026-01_Ahmad_Aiman_Haziq (no BIN / BINTI / A/L part, no slashes)."""
+    try:
+        ref = _loe_ref(get_db(), application["id"], 0, assign=False) or ""
+    except sqlite3.OperationalError:
+        ref = ""
+    ref = ref.split("LOE/")[-1] if "LOE/" in ref else ref
+    ref = re.sub(r"[^A-Za-z0-9-]+", "-", ref).strip("-")
+    name = (application["full_name"] or "Candidate").strip()
+    name = re.split(r"\s+(?:BIN|BINTI|BT|B\.|A/L|A/P|ANAK)\s+", name, flags=re.I)[0]
+    name = re.sub(r"[^A-Za-z ]+", "", name).strip().title().replace(" ", "_")
+    return "_".join(x for x in ("LOE", ref, name) if x)
 
 
 @app.route("/hr/recruitment/<int:app_id>/employment-letter.docx")

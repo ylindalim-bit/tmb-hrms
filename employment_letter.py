@@ -214,6 +214,27 @@ def _holidays_to_table(d):
         src._p.getparent().remove(src._p)
 
 
+def _keep_titles_with_text(d):
+    """A clause title (SALARY, Transport Allowance, 9.1 Performance Bonus ...) must never be left alone at the
+    bottom of a page: mark every short all-bold title, and every lead-in line ending with ':', 'keep with next'
+    so Word moves the title to the next page together with its text."""
+    from docx.oxml.ns import qn
+    for p in d.paragraphs:
+        t = p.text.strip()
+        runs = [r for r in p.runs if r.text.strip()]
+        if not t or not runs:
+            continue
+        is_title = len(t) < 80 and all(r.bold for r in runs) and not t.endswith(".")
+        is_lead_in = t.endswith(":") and len(t) < 160
+        if is_title or is_lead_in or p.style.name.startswith("Heading"):
+            p.paragraph_format.keep_with_next = True
+    for tbl in d.tables:
+        for row in tbl.rows:
+            trPr = row._tr.get_or_add_trPr()
+            if trPr.find(qn("w:cantSplit")) is None:
+                trPr.append(trPr.makeelement(qn("w:cantSplit"), {}))
+
+
 def build_letter(data):
     """data keys: ref (optional, e.g. 'TMB/HR/LOE/2026/011'), full_name, address, ic, salutation_line, position, join_date (date),
     letter_date (date), salary (float), schedule ('shift'|'office'), include_overseas (bool).
@@ -287,6 +308,8 @@ def build_letter(data):
     _set_paragraph(P[i], [("I, ", None), (name, None), (", NRIC No: ", None), (ic or "________________", None),
                           (", do hereby agree to, and fully understand and will abide by, the terms and conditions "
                            "as set out in this offer of employment.", None)])
+
+    _keep_titles_with_text(d)
 
     buf = io.BytesIO()
     d.save(buf)

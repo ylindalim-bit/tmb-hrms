@@ -170,6 +170,8 @@ def parse(docx_bytes):
                 hanging = ind.hanging.pt
         align = "justify" if p.alignment is not None and int(p.alignment) == 3 else "left"
         heading = bool(p.style is not None and p.style.name.startswith("Heading"))
+        _rr = [r for r in runs if r[0].strip()]
+        keep_next = heading or (bool(_rr) and len(text.strip()) < 80 and all(r[1] for r in _rr) and not text.strip().endswith("."))             or (text.strip().endswith(":") and len(text.strip()) < 160)
         if heading:
             runs = [(t_, True, u, i) for t_, b, u, i in runs]
         if label_runs is not None and not label:
@@ -181,7 +183,8 @@ def parse(docx_bytes):
                            "tab": tab_pos, "bold_all": heading, "align": align})
             continue
         blocks.append({"kind": "p", "runs": runs, "align": align, "heading": heading,
-                       "label": label, "left": left, "hanging": hanging, "first": -hanging if not label else 0})
+                       "label": label, "left": left, "hanging": hanging, "first": -hanging if not label else 0,
+                       "keep_next": keep_next})
     return blocks
 
 
@@ -398,7 +401,7 @@ def render_pdf(docx_bytes):
                 "p", fontName="Helvetica", fontSize=9.6, leading=12.6, spaceAfter=4.5,
                 spaceBefore=6 if b["heading"] else 0,
                 alignment=TA_JUSTIFY if b["align"] == "justify" else TA_LEFT,
-                leftIndent=left, firstLineIndent=b.get("first", 0), keepWithNext=1 if b["heading"] else 0)
+                leftIndent=left, firstLineIndent=b.get("first", 0), keepWithNext=1 if (b["heading"] or b.get("keep_next")) else 0)
             markup = runs_markup(b["runs"])
             if b["label"]:
                 style.leftIndent = left
@@ -419,6 +422,7 @@ def render_pdf(docx_bytes):
                 wrapper.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), max(left - hang, 0)),
                                              ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                                              ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+                wrapper.keepWithNext = 1 if (b["heading"] or b.get("keep_next")) else 0
                 story.append(wrapper)
             else:
                 story.append(Paragraph(markup, style))

@@ -244,7 +244,9 @@ def build_letter(data):
     _label_layout(P[i])
 
     i = _find(P, lambda t: t.startswith("Dear"))
-    _set_paragraph(P[i], [("Dear " + (data["salutation_line"] or "Sir").strip().rstrip(",") + ",", None)])
+    greeting = re.sub(r"^\s*dear\b\s*", "", data.get("salutation_line") or "", flags=re.I).strip().rstrip(",")
+    greeting = (greeting[:1].upper() + greeting[1:]) if greeting else "Sir"
+    _set_paragraph(P[i], [("Dear " + greeting + ",", None)])
 
     i = _find(P, lambda t: t.startswith("RE:") and "LETTER OF EMPLOYMENT" in t.upper())
     _set_paragraph(P[i], [("RE:", True), ("\t", True), ("LETTER OF EMPLOYMENT - " + data["position"], True)])

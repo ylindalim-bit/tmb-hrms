@@ -7617,11 +7617,13 @@ def _employment_letter_content(app_id):
             return fallback
 
     today = datetime.datetime.now(MYT).date()
+    letter_date = as_date(offer["letter_date"], today)
     data = {
+        "ref": f"TMB/HR/LOE/{letter_date.year}/{app_id:03d}",
         "full_name": application["full_name"], "address": application["address"],
         "ic": application["ic_passport_no"], "salutation_line": offer["salutation_line"],
         "position": offer["position"] or "________________",
-        "join_date": as_date(offer["join_date"], today), "letter_date": as_date(offer["letter_date"], today),
+        "join_date": as_date(offer["join_date"], today), "letter_date": letter_date,
         "salary": float(offer["salary"] or DEFAULT_OFFER_SALARY), "schedule": offer["schedule"],
         "include_overseas": offer["include_overseas"] == "Y",
     }

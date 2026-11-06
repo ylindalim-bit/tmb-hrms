@@ -98,7 +98,7 @@
   <table>
     <thead>
       <tr>{% if can_assign %}<th class="text" style="width:34px;"><input type="checkbox" id="assign-all" title="Tick / untick all shown"></th>{% endif %}
-          <th class="text">Name</th><th class="text">Position Applied For</th><th class="text">Contact</th>
+          <th class="text" title="Application number - the last 3 digits of the letter Ref (e.g. TMB/HR/LOE/2026/009)">No.</th><th class="text">Name</th><th class="text">Position Applied For</th><th class="text">Contact</th>
           <th class="text">Status</th><th class="text">Interview</th><th class="text">Comments</th>
           {% if can_assign %}<th class="text">Can be viewed by</th>{% endif %}<th class="text">Submitted</th></tr>
     </thead>
@@ -106,6 +106,7 @@
       {% for a in applications %}
       <tr>
         {% if can_assign %}<td class="text"><input type="checkbox" form="assign-form" name="app_ids" value="{{ a.id }}" class="assign-box"></td>{% endif %}
+        <td class="text" style="color:var(--muted);">{{ "%03d"|format(a.id) }}</td>
         <td class="text"><a href="{{ url_for('recruitment_detail', app_id=a.id) }}">{{ a.full_name }}</a></td>
         <td class="text">{{ a.position_applied or "" }}</td>
         <td class="text">{{ a.handphone_no or a.email or "" }}</td>
@@ -118,7 +119,7 @@
         <td class="text">{{ a.submitted_at.replace('T', ' ')[:16] if a.submitted_at else "" }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="9" class="text" style="color:var(--muted);">No applications yet.</td></tr>
+      <tr><td colspan="10" class="text" style="color:var(--muted);">No applications yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

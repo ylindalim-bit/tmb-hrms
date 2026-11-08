@@ -8717,6 +8717,7 @@ def portal_clock():
         locations = []
 
     error = None
+    event_logged = False
     if request.method == "POST":
         action = request.form.get("action")
         lat_raw = request.form.get("lat")
@@ -8767,6 +8768,7 @@ def portal_clock():
                 (emp["emp_id"], action, now.isoformat(timespec="seconds"), "Y" if accepted else "N",
                  lat, lng, round(distance, 1)),
             )
+            event_logged = True
             if not accepted:
                 error = f"You're about {round(distance)}m from {nearest['label'] or 'your nearest work site'} - move closer and try again (allowed: {int(nearest['radius_meters'])}m)."
             elif action == "in":
@@ -8789,6 +8791,19 @@ def portal_clock():
             if accepted:
                 return redirect(url_for("portal_clock"))
 
+    if request.method == "POST" and error and not event_logged:
+        # Attempts turned away before a location was checked (phone location not read, "already clocked in",
+        # tapped twice ...) used to leave no trace, so a missing Clock Out could not be explained later.
+        try:
+            db.execute("""CREATE TABLE IF NOT EXISTS clockin_failures (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL, event_type TEXT, event_at TEXT NOT NULL,
+                reason TEXT, user_agent TEXT)""")
+            db.execute("INSERT INTO clockin_failures (emp_id, event_type, event_at, reason, user_agent) VALUES (?,?,?,?,?)",
+                       (emp["emp_id"], request.form.get("action"), datetime.datetime.now(MYT).isoformat(timespec="seconds"),
+                        error, (request.headers.get("User-Agent") or "")[:200]))
+            db.commit()
+        except sqlite3.Error:
+            pass
     today_str = datetime.datetime.now(MYT).date().isoformat()
     today_row = db.execute(
         "SELECT * FROM attendance_daily WHERE emp_id=? AND date=?", (emp["emp_id"], today_str)

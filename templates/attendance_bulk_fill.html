@@ -18,15 +18,27 @@
 <div class="card">
 <form method="post">
   <div class="form-grid">
+    <div><label>Base</label>
+      <select name="base" id="bf-base">
+        <option value="" {% if not form.base %}selected{% endif %}>All bases</option>
+        {% for b in base_options %}
+        <option value="{{ b }}" {% if form.base == b %}selected{% endif %}>{{ b }}</option>
+        {% endfor %}
+      </select>
+    </div>
     <div><label>From</label><input type="date" name="date_from" value="{{ form.date_from }}" required></div>
     <div><label>To</label><input type="date" name="date_to" value="{{ form.date_to }}" required></div>
     <div><label>Time In</label><input type="time" name="time_in" value="{{ form.time_in }}" required></div>
     <div><label>Time Out</label><input type="time" name="time_out" value="{{ form.time_out }}" required></div>
   </div>
-  <label style="display:block; font-size:12px; color:var(--muted); font-weight:600; margin:14px 0 6px;">Employees</label>
+  <label style="display:block; font-size:12px; color:var(--muted); font-weight:600; margin:14px 0 6px;">
+    Employees <span id="bf-count"></span>
+    <a href="#" id="bf-all" style="margin-left:12px; font-weight:400;">Tick all shown</a>
+    <a href="#" id="bf-none" style="margin-left:8px; font-weight:400;">Untick all</a>
+  </label>
   <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:4px 18px;">
     {% for e in employees %}
-    <label style="display:flex; gap:8px; align-items:center; font-weight:400;">
+    <label class="bf-emp" data-base="{{ e.base or '' }}" style="display:flex; gap:8px; align-items:center; font-weight:400;">
       <input type="checkbox" name="emp_ids" value="{{ e.emp_id }}" style="width:auto;" {% if e.emp_id in form.emp_ids %}checked{% endif %}>
       {{ e.emp_id }} &mdash; {{ e.full_name }} <span style="color:var(--muted); font-size:11px;">({{ e.standard_start or '-' }}&ndash;{{ e.standard_end or '-' }})</span>
     </label>
@@ -37,6 +49,32 @@
   </div>
 </form>
 </div>
+<script>
+(function () {
+  var sel = document.getElementById('bf-base');
+  var rows = document.querySelectorAll('.bf-emp');
+  function apply() {
+    var b = sel.value, shown = 0;
+    rows.forEach(function (r) {
+      var show = !b || r.dataset.base === b;
+      r.style.display = show ? '' : 'none';
+      if (!show) r.querySelector('input').checked = false;  // hidden staff never get filled
+      if (show) shown++;
+    });
+    document.getElementById('bf-count').textContent = '(' + shown + ')';
+  }
+  function tick(on) {
+    return function (ev) {
+      ev.preventDefault();
+      rows.forEach(function (r) { if (r.style.display !== 'none') r.querySelector('input').checked = on; });
+    };
+  }
+  sel.addEventListener('change', apply);
+  document.getElementById('bf-all').addEventListener('click', tick(true));
+  document.getElementById('bf-none').addEventListener('click', tick(false));
+  apply();
+})();
+</script>
 
 {% if plans is not none %}
 <div class="card">
@@ -80,6 +118,7 @@
   {% endfor %}
   {% if written is none and ns.adds %}
   <form method="post">
+    <input type="hidden" name="base" value="{{ form.base }}">
     <input type="hidden" name="date_from" value="{{ form.date_from }}">
     <input type="hidden" name="date_to" value="{{ form.date_to }}">
     <input type="hidden" name="time_in" value="{{ form.time_in }}">

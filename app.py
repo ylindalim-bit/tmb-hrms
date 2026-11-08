@@ -824,6 +824,9 @@ def employed_this_month(db, year, month, select_cols="emp_id"):
     for attendance/payroll for the month they actually worked part of.
     Someone with no last_working_day recorded is only included via Active
     status, since there's nothing to say they were still here this month.
+    A recorded last_working_day always wins over status: if it's before this
+    month they're excluded even if HR forgot to flip status to Inactive
+    (same rule as the daily attendance view).
     Excludes anyone whose Date Joined is after the end of this month, so a
     new hire doesn't show up on attendance/payroll for months before they
     actually started (mirrors the Staff Portal's own _was_employed check)."""
@@ -831,8 +834,8 @@ def employed_this_month(db, year, month, select_cols="emp_id"):
     last_of_month = f"{year:04d}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"
     return db.execute(
         f"""SELECT {select_cols} FROM employees
-            WHERE (status='Active'
-                   OR (last_working_day IS NOT NULL AND last_working_day != '' AND last_working_day >= ?))
+            WHERE ((last_working_day IS NOT NULL AND last_working_day != '' AND last_working_day >= ?)
+                   OR ((last_working_day IS NULL OR last_working_day = '') AND status='Active'))
               AND (date_joined IS NULL OR date_joined = '' OR date_joined <= ?)
             ORDER BY emp_id""",
         (first_of_month, last_of_month),
@@ -3512,16 +3515,23 @@ def attendance_bulk_fill():
     db = get_db()
     today_iso = datetime.datetime.now(MYT).date().isoformat()
     employees = db.execute(
-        "SELECT emp_id, full_name, standard_start, standard_end FROM employees WHERE status='Active' ORDER BY emp_id"
+        "SELECT emp_id, full_name, base, standard_start, standard_end FROM employees WHERE status='Active' ORDER BY emp_id"
     ).fetchall()
     src = request.form if request.method == "POST" else request.args
     form = {
+        "base": src.get("base") or "",
         "emp_ids": src.getlist("emp_ids") or [e for e in (src.get("emps") or "").split(",") if e],
         "date_from": src.get("date_from") or today_iso[:8] + "01",
         "date_to": src.get("date_to") or today_iso,
         "time_in": src.get("time_in") or "08:30",
         "time_out": src.get("time_out") or "17:30",
     }
+    if form["base"] in BASE_OPTIONS:
+        # Only keep ticked staff from the chosen base, so a hidden tick can't slip through
+        in_base = {e["emp_id"] for e in employees if (e["base"] or "") == form["base"]}
+        form["emp_ids"] = [e for e in form["emp_ids"] if e in in_base]
+    else:
+        form["base"] = ""
     plans, error, written = None, None, None
     if request.method == "POST":
         in_min, out_min = _hhmm_to_minutes(form["time_in"]), _hhmm_to_minutes(form["time_out"])
@@ -3545,7 +3555,7 @@ def attendance_bulk_fill():
                 db.commit()
                 plans = _bulk_fill_plan(db, form["emp_ids"], form["date_from"], form["date_to"])
     return render_template("attendance_bulk_fill.html", employees=employees, form=form, plans=plans,
-                           error=error, written=written)
+                           error=error, written=written, base_options=BASE_OPTIONS)
 
 
 LATE_EARLY_GRACE_MINUTES = 5

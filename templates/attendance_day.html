@@ -72,7 +72,9 @@
 
 <form method="post" action="{{ url_for('attendance_day_save', date_str=date_iso) }}" id="day-form">
 <input type="hidden" name="base" id="day-form-base" value="{{ start_base }}">
-{% if hr_role != "approver" %}<div style="margin-bottom:8px;"><button class="btn" type="submit">Save changes</button> <span id="dirty-note" style="color:var(--muted); font-size:12px; margin-left:8px;"></span></div>{% endif %}
+{% if hr_role != "approver" %}<div style="margin-bottom:8px;"><button class="btn" type="submit">Save changes</button>
+  <button class="btn secondary" type="button" id="save-rest-btn" style="display:none;" title="Saves Rest / Off day for everyone shown whose rest day has not been saved yet. Workdays and public holidays are not touched.">Save all unsaved rest days</button>
+  <span id="dirty-note" style="color:var(--muted); font-size:12px; margin-left:8px;"></span></div>{% endif %}
 <div class="card table-wrap frozen-header">
 <table id="day-table">
 <thead>
@@ -84,7 +86,7 @@
 </thead>
 <tbody>
 {% for r in rows %}
-<tr data-base="{{ r.emp.base or '' }}" data-category="{{ r.category }}"{% if r.category == 'none' %} style="background:#fef3c7;"{% elif r.category == 'incomplete' %} style="background:#fee2e2;"{% endif %}>
+<tr data-base="{{ r.emp.base or '' }}" data-category="{{ r.category }}" data-unsaved-rest="{{ '1' if (r.category == 'rest' and not r.has_row) else '0' }}"{% if r.category == 'none' %} style="background:#fef3c7;"{% elif r.category == 'incomplete' %} style="background:#fee2e2;"{% endif %}>
   <td class="text">{{ r.emp.emp_id }}</td>
   <td class="text">{{ r.emp.full_name }}</td>
   <td class="text">{{ r.emp.base or "-" }}</td>
@@ -171,6 +173,26 @@ function filterByBase(base) {
     el.addEventListener('input', function () { mark(el.dataset.emp); });
     el.addEventListener('change', function () { mark(el.dataset.emp); });
   });
+  // "Save all unsaved rest days": marks every shown row whose Rest / Off day is only the default, then submits.
+  var restBtn = document.getElementById('save-rest-btn');
+  function unsavedRestRows() {
+    return Array.prototype.filter.call(document.querySelectorAll('#day-table tbody tr'), function (tr) {
+      return tr.dataset.unsavedRest === '1' && tr.style.display !== 'none';
+    });
+  }
+  if (restBtn) {
+    if (document.querySelector('#day-table tbody tr[data-unsaved-rest="1"]')) { restBtn.style.display = ''; }
+    restBtn.addEventListener('click', function () {
+      var rows = unsavedRestRows();
+      if (!rows.length) { alert('No unsaved rest days are shown.'); return; }
+      if (!confirm('Save Rest / Off day for ' + rows.length + ' staff shown?')) return;
+      rows.forEach(function (tr) {
+        var el = tr.querySelector('.day-edit');
+        if (el) mark(el.dataset.emp);
+      });
+      form.submit();
+    });
+  }
 })();
 var startBase = {{ start_base|tojson }};
 if (!startBase) { try { startBase = localStorage.getItem('tmbAttendanceBase') || ''; } catch (e) {} }

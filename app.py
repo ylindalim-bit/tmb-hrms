@@ -4117,6 +4117,96 @@ def attendance_day_save(date_str):
     return redirect(url_for("attendance_day", date_str=date_str, saved=saved, base=f.get("base", "")))
 
 
+def _rest_fill_plan(db, base, d_from, d_to):
+    """Rest days / off days / public holidays that have nothing saved yet, for the chosen base (blank = all) and
+    date range. Never touches a working day, a day with a record, leave (approved or pending), a movement notice,
+    or a day before the person joined / after their last working day. Returns [(emp_row, date_iso, day_type)]."""
+    emps = db.execute(
+        """SELECT emp_id, full_name, base, work_pattern, date_joined, last_working_day, status
+           FROM employees
+           WHERE status='Active' OR (last_working_day IS NOT NULL AND last_working_day != '')
+           ORDER BY base, emp_id""").fetchall()
+    if base:
+        emps = [e for e in emps if (e["base"] or "MY") == base]
+    saved = {(r["emp_id"], r["date"]) for r in db.execute(
+        "SELECT emp_id, date FROM attendance_daily WHERE date BETWEEN ? AND ?", (d_from.isoformat(), d_to.isoformat())).fetchall()}
+    holidays = {(r["state"], r["date"]): r["name"] for r in db.execute(
+        "SELECT state, date, name FROM public_holidays WHERE date BETWEEN ? AND ?", (d_from.isoformat(), d_to.isoformat())).fetchall()}
+    leave_days = set()
+    for r in db.execute(
+            """SELECT emp_id, start_date, end_date FROM leave_requests
+               WHERE status IN ('Approved','Pending') AND end_date>=? AND start_date<=?""",
+            (d_from.isoformat(), d_to.isoformat())).fetchall():
+        d = max(datetime.date.fromisoformat(r["start_date"]), d_from)
+        end = min(datetime.date.fromisoformat(r["end_date"]), d_to)
+        while d <= end:
+            leave_days.add((r["emp_id"], d.isoformat()))
+            d += datetime.timedelta(days=1)
+    trips = {}
+    y, m = d_from.year, d_from.month
+    while (y, m) <= (d_to.year, d_to.month):
+        trips.update(_trip_labels_for_month(db, y, m))
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    plan = []
+    for e in emps:
+        d = d_from
+        while d <= d_to:
+            di = d.isoformat()
+            skip = (
+                (e["emp_id"], di) in saved or (e["emp_id"], di) in leave_days or (e["emp_id"], di) in trips
+                or (e["date_joined"] and di < e["date_joined"])
+                or (e["last_working_day"] and di > e["last_working_day"])
+            )
+            if not skip:
+                dt = _default_day_type_for_pattern(e["work_pattern"], d.weekday(), (e["base"] or "MY", di) in holidays)
+                if dt in ("REST", "OFF", "PH"):
+                    plan.append((e, di, dt))
+            d += datetime.timedelta(days=1)
+    return plan
+
+
+@app.route("/attendance-rest-fill", methods=["GET", "POST"])
+def attendance_rest_fill():
+    """Saves Rest / Off / Public-holiday days in one go for a base (or everyone) over a date range, instead of
+    day by day. Only days with nothing saved are written; working days are never touched."""
+    if session.get("hr_role") == "approver":
+        abort(403)
+    db = get_db()
+    today = datetime.datetime.now(MYT).date()
+    src = request.form if request.method == "POST" else request.args
+    base = src.get("base") or ""
+    if base not in BASE_OPTIONS:
+        base = ""
+    try:
+        d_from = datetime.date.fromisoformat(src.get("date_from") or today.replace(day=1).isoformat())
+        d_to = datetime.date.fromisoformat(src.get("date_to") or today.isoformat())
+    except ValueError:
+        return "Please choose valid dates.", 400
+    if d_to < d_from or (d_to - d_from).days > 62:
+        return "Choose a range of at most about two months, with From before To.", 400
+    plan = _rest_fill_plan(db, base, d_from, d_to)
+    saved_count = None
+    if request.method == "POST" and request.form.get("confirm") == "1":
+        months = set()
+        for e, di, dt in plan:
+            db.execute(
+                """INSERT OR IGNORE INTO attendance_daily (emp_id, date, day_type, meal_allowance_flag, cewi_flag,
+                       ot_hours_1_5, ot_hours_2_0, ot_hours_3_0) VALUES (?,?,?,'N','N',0,0,0)""",
+                (e["emp_id"], di, dt))
+            months.add((e["emp_id"], int(di[:4]), int(di[5:7])))
+        for emp_id, yy, mm in months:
+            _sync_daily_to_monthly(db, emp_id, yy, mm)
+        db.commit()
+        saved_count = len(plan)
+        plan = _rest_fill_plan(db, base, d_from, d_to)
+    per_emp = {}
+    for e, di, dt in plan:
+        per_emp.setdefault(e["emp_id"], {"emp": e, "days": []})["days"].append((di, dt))
+    return render_template("attendance_rest_fill.html", base=base, d_from=d_from.isoformat(), d_to=d_to.isoformat(),
+                           base_options=BASE_OPTIONS, per_emp=list(per_emp.values()), total=len(plan),
+                           saved_count=saved_count)
+
+
 @app.route("/attendance-multi")
 def attendance_multi():
     """Pick any staff (one or several) and any date range, and fix their attendance for all those days in one

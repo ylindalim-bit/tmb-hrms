@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Save Rest Days - TMB Payroll{% endblock %}
+{% block content %}
+<h1>Save Rest Days &amp; Holidays for a Date Range</h1>
+<p style="color:var(--muted); font-size:13px; max-width:760px;">
+  Saves <strong>Rest / Off day</strong> and <strong>Public Holiday</strong> for everyone in one go &mdash; so Saturdays, Sundays and holidays no longer show as
+  &ldquo;unrecorded&rdquo;. Only days with <u>nothing saved</u> are written. Working days, leave, movement notices and days before someone joined or after their
+  last working day are never touched. It does not change anyone's pay.
+</p>
+{% if saved_count is not none %}
+<div class="card" style="background:#dcfce7; border-color:#16a34a; max-width:760px;">&#10003; Saved <strong>{{ saved_count }}</strong> day{{ "s" if saved_count != 1 }}.</div>
+{% endif %}
+<form method="get" class="card" style="max-width:760px; display:flex; gap:12px; flex-wrap:wrap; align-items:end;">
+  <div><label>Base</label>
+    <select name="base"><option value="">All bases</option>{% for b in base_options %}<option value="{{ b }}" {{ "selected" if b == base }}>{{ b }}</option>{% endfor %}</select></div>
+  <div><label>From</label><input type="date" name="date_from" value="{{ d_from }}" required></div>
+  <div><label>To</label><input type="date" name="date_to" value="{{ d_to }}" required></div>
+  <button class="btn secondary" type="submit">Preview</button>
+</form>
+
+{% if total %}
+<form method="post" class="card" style="max-width:760px;">
+  <input type="hidden" name="base" value="{{ base }}"><input type="hidden" name="date_from" value="{{ d_from }}"><input type="hidden" name="date_to" value="{{ d_to }}">
+  <input type="hidden" name="confirm" value="1">
+  <p><strong>{{ total }}</strong> day{{ "s" if total != 1 }} will be saved for <strong>{{ per_emp|length }}</strong> staff.</p>
+  <button class="btn" type="submit" onclick="return confirm('Save {{ total }} rest / holiday days?');">Save all {{ total }} days</button>
+</form>
+<div class="card table-wrap" style="max-width:760px;">
+<table>
+  <thead><tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Base</th><th>Days</th><th class="text">Which days</th></tr></thead>
+  <tbody>
+  {% for p in per_emp %}
+  <tr><td class="text">{{ p.emp.emp_id }}</td><td class="text">{{ p.emp.full_name }}</td><td class="text">{{ p.emp.base or "-" }}</td>
+      <td>{{ p.days|length }}</td>
+      <td class="text" style="font-size:12px; white-space:normal;">{% for di, dt in p.days %}{{ di[8:10] }}/{{ di[5:7] }} {{ dt }}{{ ", " if not loop.last }}{% endfor %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% elif saved_count is none %}
+<p>Nothing to save &mdash; every rest day and holiday in this range already has a record.</p>
+{% endif %}
+{% endblock %}

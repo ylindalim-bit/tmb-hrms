@@ -37,19 +37,36 @@ function doClock(action) {
   var btn = document.getElementById('clock-btn');
   if (!navigator.geolocation) {
     statusEl.textContent = 'Your browser does not support location - cannot clock in/out.';
+    reportLocationError(action, 'browser has no geolocation');
     return;
   }
   btn.disabled = true;
-  statusEl.textContent = 'Checking your location...';
-  navigator.geolocation.getCurrentPosition(function (pos) {
+  statusEl.textContent = 'Checking your location... (up to 20 seconds, please wait)';
+  function send(pos) {
     document.getElementById('clock-action').value = action;
     document.getElementById('clock-lat').value = pos.coords.latitude;
     document.getElementById('clock-lng').value = pos.coords.longitude;
     document.getElementById('clock-form').submit();
-  }, function (err) {
+  }
+  function giveUp(err) {
     btn.disabled = false;
-    statusEl.textContent = 'Could not get your location: ' + err.message + '. Please allow location access.';
-  }, { enableHighAccuracy: true, timeout: 10000 });
+    var why = (err && err.message) ? err.message : 'unknown';
+    statusEl.textContent = 'Could not get your location (' + why + '). Please turn ON Location/GPS (High accuracy), allow location for this browser, go near a window or outside, wait 30 seconds, then tap again. Do not use a VPN.';
+    reportLocationError(action, 'code ' + (err && err.code) + ': ' + why);
+  }
+  // GPS first; if that is slow or fails, try the network (Wi-Fi / mobile) location before giving up.
+  navigator.geolocation.getCurrentPosition(send, function () {
+    statusEl.textContent = 'GPS is slow - trying network location...';
+    navigator.geolocation.getCurrentPosition(send, giveUp, { enableHighAccuracy: false, timeout: 15000, maximumAge: 120000 });
+  }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 });
+}
+// Tell the server when the phone could not give a location, so HR can see why a Clock In/Out is missing.
+function reportLocationError(action, reason) {
+  try {
+    var fd = new FormData();
+    fd.append('action', action); fd.append('reason', reason);
+    fetch({{ url_for('portal_clock_location_error')|tojson }}, { method: 'POST', body: fd, credentials: 'same-origin' });
+  } catch (e) {}
 }
 </script>
 {% endblock %}

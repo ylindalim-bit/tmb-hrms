@@ -8812,6 +8812,27 @@ def portal_clock():
                            accidental_out=_accidental_clock_out(today_row))
 
 
+@app.route("/portal/clock/location-error", methods=["POST"])
+@portal_login_required
+def portal_clock_location_error():
+    """The phone could not give a location, so nothing was sent to /portal/clock. The page reports it here so
+    a missing Clock In/Out can be explained later (see the clockin_failures table)."""
+    db = get_db()
+    try:
+        db.execute("""CREATE TABLE IF NOT EXISTS clockin_failures (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL, event_type TEXT, event_at TEXT NOT NULL,
+            reason TEXT, user_agent TEXT)""")
+        db.execute("INSERT INTO clockin_failures (emp_id, event_type, event_at, reason, user_agent) VALUES (?,?,?,?,?)",
+                   (session["portal_emp_id"], request.form.get("action"),
+                    datetime.datetime.now(MYT).isoformat(timespec="seconds"),
+                    "Phone location error - " + (request.form.get("reason") or "")[:200],
+                    (request.headers.get("User-Agent") or "")[:200]))
+        db.commit()
+    except sqlite3.Error:
+        pass
+    return ("", 204)
+
+
 LEAVE_HALF_DAY_SESSIONS = ("AM", "PM")
 
 

@@ -5580,7 +5580,7 @@ def _build_ocbc_kwsp_file(db, year, month, value_date, test_file, consume_tape_i
     settings = get_ocbc_bank_file_settings(db)
     employer_info = get_employer_info(db)
     rows = db.execute(
-        """SELECT pr.*, e.full_name, e.epf_no
+        """SELECT pr.*, e.full_name, e.epf_no, e.ic_passport_no
            FROM payroll_runs pr JOIN employees e ON e.emp_id = pr.emp_id
            WHERE pr.year=? AND pr.month=? AND (pr.epf_employer + pr.epf_employee) > 0
            ORDER BY pr.emp_id""",
@@ -5588,7 +5588,9 @@ def _build_ocbc_kwsp_file(db, year, month, value_date, test_file, consume_tape_i
     ).fetchall()
     skipped = [{"emp_id": r["emp_id"], "full_name": r["full_name"], "reason": "no EPF No. on file"}
                for r in rows if not r["epf_no"]]
-    rows = [r for r in rows if r["epf_no"]]
+    skipped += [{"emp_id": r["emp_id"], "full_name": r["full_name"], "reason": "no IC/passport No. on file"}
+                for r in rows if r["epf_no"] and not (r["ic_passport_no"] or "").strip()]
+    rows = [r for r in rows if r["epf_no"] and (r["ic_passport_no"] or "").strip()]
 
     tape_id = _next_ocbc_tape_id(db, "ocbc_next_tape_id_kwsp", consume_tape_id)
     vd_year, vd_month, vd_day = value_date.split("-")
@@ -5619,7 +5621,7 @@ def _build_ocbc_kwsp_file(db, year, month, value_date, test_file, consume_tape_i
         details.append(
             "02"
             + str(r["epf_no"]).strip().rjust(19, "0")[-19:]
-            + _pad_left("", 15)               # Employee's Identification No. (with KWSP) - not tracked
+            + _pad_left(str(r["ic_passport_no"] or "").replace("-", "").replace(" ", ""), 15)  # Employee's Identification No. - OCBC rejects it blank ("Employee Id is mandatory")
             + _pad_left(r["full_name"], 40)
             + _pad_left("", 40)                # Name line 2
             + _pad_left(r["emp_id"], 20)        # Employee's Staff ID No.

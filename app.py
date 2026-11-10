@@ -7392,6 +7392,49 @@ def recruitment_photo_upload(app_id):
     return redirect(url_for("recruitment_detail", app_id=app_id))
 
 
+@app.route("/hr/recruitment/<int:app_id>/documents/upload", methods=["POST"])
+def recruitment_document_upload(app_id):
+    """HR adds one or more files (resume, certificate, offer reply, etc.) to a
+    candidate after the fact - they show under Supporting Documents."""
+    db = get_db()
+    application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
+    if application is None:
+        abort(404)
+    if session.get("hr_role") == "approver":
+        abort(403)
+    doc_type = (request.form.get("doc_type") or "").strip() or "Other Supporting Document"
+    custom = (request.form.get("doc_type_other") or "").strip()
+    if doc_type == "Other" and custom:
+        doc_type = custom[:80]
+    files = [f for f in request.files.getlist("files") if f and f.filename]
+    if not files:
+        return redirect(url_for("recruitment_detail", app_id=app_id))
+    app_dir = os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(app_id))
+    now = datetime.datetime.now(MYT).isoformat(timespec="seconds")
+    bad = []
+    for f in files:
+        original_name = secure_filename(f.filename)
+        ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+        if ext not in ALLOWED_DOC_EXTENSIONS:
+            bad.append(f.filename)
+            continue
+        os.makedirs(app_dir, exist_ok=True)
+        stored_name = f"{uuid.uuid4().hex}_{original_name}"
+        f.save(os.path.join(app_dir, stored_name))
+        db.execute(
+            """INSERT INTO job_application_documents (application_id, doc_type, original_name, stored_name, uploaded_at)
+               VALUES (?,?,?,?,?)""",
+            (app_id, doc_type, original_name, stored_name, now),
+        )
+    db.commit()
+    if bad:
+        from markupsafe import escape
+        return ("These files were NOT uploaded (only PDF, Word, JPG or PNG are allowed): "
+                + ", ".join(str(escape(b)) for b in bad)
+                + f'. Any other files were saved. <a href="{url_for("recruitment_detail", app_id=app_id)}">Back to candidate</a>')
+    return redirect(url_for("recruitment_detail", app_id=app_id))
+
+
 def _loe_refs_map(db):
     """{application_id: Letter of Employment Ref} for the recruitment list."""
     try:

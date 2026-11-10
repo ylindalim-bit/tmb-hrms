@@ -5561,13 +5561,23 @@ def _ocbc_statutory_header_common(db, settings, tape_id, app_id, debiting_date):
 
 
 def _next_ocbc_tape_id(db, key, consume):
-    seq_row = db.execute("SELECT value FROM payroll_settings WHERE key=?", (key,)).fetchone()
-    tape_id = (int(seq_row["value"]) if seq_row else 0) + 1
+    # SOCSO 8A and EIS are both the "SOCSO Contribution Payment" format at OCBC,
+    # which rejects a Tape Id it has already seen in that format ("Duplicate
+    # Tape Id"). So the two share one counter, kept in sync under both keys.
+    keys = [key]
+    if key in ("ocbc_next_tape_id_socso", "ocbc_next_tape_id_eis"):
+        keys = ["ocbc_next_tape_id_socso", "ocbc_next_tape_id_eis"]
+    last = 0
+    for k in keys:
+        seq_row = db.execute("SELECT value FROM payroll_settings WHERE key=?", (k,)).fetchone()
+        last = max(last, int(seq_row["value"]) if seq_row else 0)
+    tape_id = last + 1
     if consume:
-        db.execute(
-            "INSERT INTO payroll_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-            (key, str(tape_id)),
-        )
+        for k in keys:
+            db.execute(
+                "INSERT INTO payroll_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (k, str(tape_id)),
+            )
         db.commit()
     return tape_id
 

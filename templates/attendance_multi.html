@@ -78,7 +78,8 @@
       <select id="qf-status" style="width:auto;">{% for d in day_types %}<option value="{{ d }}">{{ d }}</option>{% endfor %}</select>
       <label style="font-size:12px; margin:0;">Time In</label><input type="time" id="qf-in" style="width:105px;">
       <label style="font-size:12px; margin:0;">Time Out</label><input type="time" id="qf-out" style="width:105px;">
-      <button type="button" class="btn" onclick="qfApply()">Apply to ticked rows</button>
+      <button type="button" class="btn secondary" onclick="qfApply()">Apply to ticked rows</button>
+      <button type="button" class="btn" onclick="qfApply(true)" title="Sets the ticked rows and saves them in one click">Apply &amp; Save</button>
       <span style="font-size:12px; color:var(--muted);">Then click <strong>Save changes</strong>. Times are only used for WORKED; other statuses clear the times.</span>
     </div>
   </div>
@@ -164,7 +165,7 @@ function tickBase(base, on) {
   var allBox = document.getElementById('qf-all');
   if (allBox) allBox.addEventListener('change', function () { qfTick(allBox.checked ? 'all' : 'clear'); });
   picks().forEach(function (tr) { tr.querySelector('.qf-pick').addEventListener('change', count); });
-  window.qfApply = function () {
+  window.qfApply = function (andSave) {
     var status = document.getElementById('qf-status').value;
     var tin = document.getElementById('qf-in').value, tout = document.getElementById('qf-out').value;
     var rows = picks().filter(function (tr) { return tr.querySelector('.qf-pick').checked; });
@@ -179,8 +180,16 @@ function tickBase(base, on) {
       else { if (ti) ti.value = ''; if (to) to.value = ''; }
       mark(key);
     });
-    document.getElementById('qf-count').textContent = rows.length + ' rows set to ' + status + ' - now click Save changes';
+    document.getElementById('qf-count').textContent = rows.length + ' rows set to ' + status + (andSave ? ' - saving...' : ' - now click Save changes');
+    if (andSave) { form.submit(); }
   };
+  // Saving with nothing changed used to say "Saved 0 changes" with no hint why.
+  form.addEventListener('submit', function (e) {
+    if (!Object.keys(changed).length) {
+      e.preventDefault();
+      alert('Nothing has been changed yet.\n\nTick the rows in Quick fill, choose the status, then click "Apply & Save" (or change a row yourself and click Save changes).');
+    }
+  });
 })();
 </script>
 {% endblock %}

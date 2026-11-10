@@ -58,16 +58,38 @@
   <input type="hidden" name="date_to" value="{{ date_to }}">
   {% for e in picked %}<input type="hidden" name="emps" value="{{ e }}">{% endfor %}
   <div style="margin-bottom:8px;"><button class="btn" type="submit">Save changes</button> <span id="dirty-note" style="color:var(--muted); font-size:12px; margin-left:8px;">{{ rows|length }} rows</span></div>
+  <div class="card" id="quick-fill" style="background:#eff6ff; border-color:#93c5fd;">
+    <strong>Quick fill</strong> <span style="color:var(--muted); font-size:12px;">&mdash; set a whole group at once instead of row by row</span>
+    <div style="margin:8px 0; display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+      <span style="font-size:13px; font-weight:600;">1. Tick the rows:</span>
+      <button type="button" class="btn secondary" style="padding:3px 10px;" onclick="qfTick('all')">All</button>
+      <button type="button" class="btn secondary" style="padding:3px 10px;" onclick="qfTick('none')">No record</button>
+      <button type="button" class="btn secondary" style="padding:3px 10px;" onclick="qfTick('Sat')">Saturdays</button>
+      <button type="button" class="btn secondary" style="padding:3px 10px;" onclick="qfTick('Sun')">Sundays</button>
+      <button type="button" class="btn secondary" style="padding:3px 10px;" onclick="qfTick('clear')">Clear ticks</button>
+      <span id="qf-count" style="font-size:12px; color:var(--muted);">0 ticked</span>
+      <span style="font-size:12px; color:var(--muted);">(or tick rows yourself in the first column)</span>
+    </div>
+    <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+      <span style="font-size:13px; font-weight:600;">2. Set them to:</span>
+      <select id="qf-status" style="width:auto;">{% for d in day_types %}<option value="{{ d }}">{{ d }}</option>{% endfor %}</select>
+      <label style="font-size:12px; margin:0;">Time In</label><input type="time" id="qf-in" style="width:105px;">
+      <label style="font-size:12px; margin:0;">Time Out</label><input type="time" id="qf-out" style="width:105px;">
+      <button type="button" class="btn" onclick="qfApply()">Apply to ticked rows</button>
+      <span style="font-size:12px; color:var(--muted);">Then click <strong>Save changes</strong>. Times are only used for WORKED; other statuses clear the times.</span>
+    </div>
+  </div>
   <div class="card table-wrap frozen-header">
   <table id="multi-table">
     <thead>
-      <tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Date</th><th class="text">Day</th><th class="text">Status</th><th class="text">Change to</th>
+      <tr><th class="text" style="width:28px;"><input type="checkbox" id="qf-all" title="Tick / untick all rows" style="width:auto;"></th><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Date</th><th class="text">Day</th><th class="text">Status</th><th class="text">Change to</th>
           <th class="text">Time In</th><th class="text">Time Out</th><th class="text">Late / Early</th><th class="text">Note</th></tr>
     </thead>
     <tbody>
       {% for r in rows %}
       {% set key = r.emp.emp_id ~ '|' ~ r.date %}
-      <tr data-key="{{ key }}"{% if r.category == 'none' %} style="background:#fef3c7;"{% elif r.category == 'incomplete' %} style="background:#fee2e2;"{% endif %}>
+      <tr data-key="{{ key }}" data-cat="{{ r.category }}" data-wd="{{ r.weekday }}"{% if r.category == 'none' %} style="background:#fef3c7;"{% elif r.category == 'incomplete' %} style="background:#fee2e2;"{% endif %}>
+        <td class="text"><input type="checkbox" class="qf-pick" style="width:auto;"></td>
         <td class="text">{{ r.emp.emp_id }}</td>
         <td class="text">{{ r.emp.full_name }}</td>
         <td class="text">{{ r.date }}</td>
@@ -119,6 +141,42 @@ function tickBase(base, on) {
     el.addEventListener('input', function () { mark(el.dataset.key); });
     el.addEventListener('change', function () { mark(el.dataset.key); });
   });
+  // ---- Quick fill: tick a group of rows, set Status / times once, apply ----
+  function picks() { return Array.prototype.slice.call(document.querySelectorAll('#multi-table tbody tr')); }
+  function count() {
+    var n = picks().filter(function (tr) { return tr.querySelector('.qf-pick').checked; }).length;
+    document.getElementById('qf-count').textContent = n + ' ticked';
+  }
+  window.qfTick = function (what) {
+    picks().forEach(function (tr) {
+      var box = tr.querySelector('.qf-pick');
+      if (what === 'all') box.checked = true;
+      else if (what === 'clear') box.checked = false;
+      else if (what === 'none') box.checked = (tr.dataset.cat === 'none');
+      else box.checked = (tr.dataset.wd === what);
+    });
+    count();
+  };
+  var allBox = document.getElementById('qf-all');
+  if (allBox) allBox.addEventListener('change', function () { qfTick(allBox.checked ? 'all' : 'clear'); });
+  picks().forEach(function (tr) { tr.querySelector('.qf-pick').addEventListener('change', count); });
+  window.qfApply = function () {
+    var status = document.getElementById('qf-status').value;
+    var tin = document.getElementById('qf-in').value, tout = document.getElementById('qf-out').value;
+    var rows = picks().filter(function (tr) { return tr.querySelector('.qf-pick').checked; });
+    if (!rows.length) { alert('Tick at least one row first.'); return; }
+    rows.forEach(function (tr) {
+      var key = tr.dataset.key;
+      var sel = tr.querySelector('select[name="day_type__' + key + '"]');
+      var ti = tr.querySelector('input[name="time_in__' + key + '"]');
+      var to = tr.querySelector('input[name="time_out__' + key + '"]');
+      if (sel) sel.value = status;
+      if (status === 'WORKED') { if (tin && ti) ti.value = tin; if (tout && to) to.value = tout; }
+      else { if (ti) ti.value = ''; if (to) to.value = ''; }
+      mark(key);
+    });
+    document.getElementById('qf-count').textContent = rows.length + ' rows set to ' + status + ' - now click Save changes';
+  };
 })();
 </script>
 {% endblock %}

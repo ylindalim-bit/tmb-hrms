@@ -26,6 +26,18 @@
         {% endfor %}
       </select>
     </div>
+    <div><label>Department</label>
+      <select name="dept" id="bf-dept">
+        <option value="" {% if not form.dept %}selected{% endif %}>All departments</option>
+        {% for d in depts %}<option value="{{ d }}" {% if form.dept == d %}selected{% endif %}>{{ d }}</option>{% endfor %}
+      </select>
+    </div>
+    <div><label>Position</label>
+      <select name="position" id="bf-pos">
+        <option value="" {% if not form.position %}selected{% endif %}>All positions</option>
+        {% for k, label in positions %}<option value="{{ k }}" {% if form.position == k %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
     <div><label>From</label><input type="date" name="date_from" value="{{ form.date_from }}" required></div>
     <div><label>To</label><input type="date" name="date_to" value="{{ form.date_to }}" required></div>
     <div><label>Time In</label><input type="time" name="time_in" value="{{ form.time_in }}" required></div>
@@ -38,9 +50,10 @@
   </label>
   <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:4px 18px;">
     {% for e in employees %}
-    <label class="bf-emp" data-base="{{ e.base or '' }}" style="display:flex; gap:8px; align-items:center; font-weight:400;">
+    <label class="bf-emp" data-base="{{ e.base or '' }}" data-dept="{{ e.department or '' }}" data-pos="{{ (e.position or '')|trim|lower }}" style="display:flex; gap:8px; align-items:center; font-weight:400;">
       <input type="checkbox" name="emp_ids" value="{{ e.emp_id }}" style="width:auto;" {% if e.emp_id in form.emp_ids %}checked{% endif %}>
-      {{ e.emp_id }} &mdash; {{ e.full_name }} <span style="color:var(--muted); font-size:11px;">({{ e.standard_start or '-' }}&ndash;{{ e.standard_end or '-' }})</span>
+      <span>{{ e.emp_id }} &mdash; {{ e.full_name }} <span style="color:var(--muted); font-size:11px;">({{ e.standard_start or '-' }}&ndash;{{ e.standard_end or '-' }})</span>
+      {% if e.department or e.position %}<br><span style="color:var(--muted); font-size:11px;">{{ e.department or '' }}{% if e.department and e.position %} &middot; {% endif %}{{ e.position or '' }}</span>{% endif %}</span>
     </label>
     {% endfor %}
   </div>
@@ -52,11 +65,12 @@
 <script>
 (function () {
   var sel = document.getElementById('bf-base');
+  var dsel = document.getElementById('bf-dept'), psel = document.getElementById('bf-pos');
   var rows = document.querySelectorAll('.bf-emp');
   function apply() {
-    var b = sel.value, shown = 0;
+    var b = sel.value, d = dsel.value, p = psel.value, shown = 0;
     rows.forEach(function (r) {
-      var show = !b || r.dataset.base === b;
+      var show = (!b || r.dataset.base === b) && (!d || r.dataset.dept === d) && (!p || r.dataset.pos === p);
       r.style.display = show ? '' : 'none';
       if (!show) r.querySelector('input').checked = false;  // hidden staff never get filled
       if (show) shown++;
@@ -70,6 +84,8 @@
     };
   }
   sel.addEventListener('change', apply);
+  dsel.addEventListener('change', apply);
+  psel.addEventListener('change', apply);
   document.getElementById('bf-all').addEventListener('click', tick(true));
   document.getElementById('bf-none').addEventListener('click', tick(false));
   apply();
@@ -119,6 +135,8 @@
   {% if written is none and ns.adds %}
   <form method="post">
     <input type="hidden" name="base" value="{{ form.base }}">
+    <input type="hidden" name="dept" value="{{ form.dept }}">
+    <input type="hidden" name="position" value="{{ form.position }}">
     <input type="hidden" name="date_from" value="{{ form.date_from }}">
     <input type="hidden" name="date_to" value="{{ form.date_to }}">
     <input type="hidden" name="time_in" value="{{ form.time_in }}">

@@ -3515,10 +3515,19 @@ def attendance_bulk_fill():
     db = get_db()
     today_iso = datetime.datetime.now(MYT).date().isoformat()
     employees = db.execute(
-        "SELECT emp_id, full_name, base, standard_start, standard_end FROM employees WHERE status='Active' ORDER BY emp_id"
+        "SELECT emp_id, full_name, base, department, position, standard_start, standard_end FROM employees WHERE status='Active' ORDER BY emp_id"
     ).fetchall()
+    depts = sorted({e["department"] for e in employees if e["department"]})
+    # Positions are typed free-hand ("MACHINIST " vs "Machinist"), so group them ignoring case/spaces.
+    pos_map = {}
+    for e in employees:
+        if (e["position"] or "").strip():
+            pos_map.setdefault(e["position"].strip().lower(), e["position"].strip())
+    positions = sorted(pos_map.items(), key=lambda kv: kv[1].lower())  # [(key, label)]
     src = request.form if request.method == "POST" else request.args
     form = {
+        "dept": src.get("dept") if src.get("dept") in depts else "",
+        "position": src.get("position") if src.get("position") in pos_map else "",
         "base": src.get("base") or "",
         "emp_ids": src.getlist("emp_ids") or [e for e in (src.get("emps") or "").split(",") if e],
         "date_from": src.get("date_from") or today_iso[:8] + "01",
@@ -3532,6 +3541,12 @@ def attendance_bulk_fill():
         form["emp_ids"] = [e for e in form["emp_ids"] if e in in_base]
     else:
         form["base"] = ""
+    if form["dept"]:
+        ok = {e["emp_id"] for e in employees if (e["department"] or "") == form["dept"]}
+        form["emp_ids"] = [e for e in form["emp_ids"] if e in ok]
+    if form["position"]:
+        ok = {e["emp_id"] for e in employees if (e["position"] or "").strip().lower() == form["position"]}
+        form["emp_ids"] = [e for e in form["emp_ids"] if e in ok]
     plans, error, written = None, None, None
     if request.method == "POST":
         in_min, out_min = _hhmm_to_minutes(form["time_in"]), _hhmm_to_minutes(form["time_out"])
@@ -3555,7 +3570,8 @@ def attendance_bulk_fill():
                 db.commit()
                 plans = _bulk_fill_plan(db, form["emp_ids"], form["date_from"], form["date_to"])
     return render_template("attendance_bulk_fill.html", employees=employees, form=form, plans=plans,
-                           error=error, written=written, base_options=BASE_OPTIONS)
+                           error=error, written=written, base_options=BASE_OPTIONS,
+                           depts=depts, positions=positions)
 
 
 LATE_EARLY_GRACE_MINUTES = 5

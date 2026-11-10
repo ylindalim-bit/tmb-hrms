@@ -66,6 +66,9 @@
       <button type="button" class="btn secondary" style="padding:3px 10px;" onclick="qfTick('none')">No record</button>
       <button type="button" class="btn secondary" style="padding:3px 10px;" onclick="qfTick('Sat')">Saturdays</button>
       <button type="button" class="btn secondary" style="padding:3px 10px;" onclick="qfTick('Sun')">Sundays</button>
+      <span style="color:var(--muted);">|</span><span style="font-size:12px; color:var(--muted);">By base:</span>
+      {% for b in bases %}<button type="button" class="btn secondary" style="padding:3px 10px;" onclick="qfTick('base:{{ b }}')">{{ b }}</button>{% endfor %}
+      <span style="color:var(--muted);">|</span>
       <button type="button" class="btn secondary" style="padding:3px 10px;" onclick="qfTick('clear')">Clear ticks</button>
       <span id="qf-count" style="font-size:12px; color:var(--muted);">0 ticked</span>
       <span style="font-size:12px; color:var(--muted);">(or tick rows yourself in the first column)</span>
@@ -88,7 +91,7 @@
     <tbody>
       {% for r in rows %}
       {% set key = r.emp.emp_id ~ '|' ~ r.date %}
-      <tr data-key="{{ key }}" data-cat="{{ r.category }}" data-wd="{{ r.weekday }}"{% if r.category == 'none' %} style="background:#fef3c7;"{% elif r.category == 'incomplete' %} style="background:#fee2e2;"{% endif %}>
+      <tr data-key="{{ key }}" data-cat="{{ r.category }}" data-wd="{{ r.weekday }}" data-base="{{ r.emp.base or '' }}"{% if r.category == 'none' %} style="background:#fef3c7;"{% elif r.category == 'incomplete' %} style="background:#fee2e2;"{% endif %}>
         <td class="text"><input type="checkbox" class="qf-pick" style="width:auto;"></td>
         <td class="text">{{ r.emp.emp_id }}</td>
         <td class="text">{{ r.emp.full_name }}</td>
@@ -153,6 +156,7 @@ function tickBase(base, on) {
       if (what === 'all') box.checked = true;
       else if (what === 'clear') box.checked = false;
       else if (what === 'none') box.checked = (tr.dataset.cat === 'none');
+      else if (what.indexOf('base:') === 0) box.checked = (tr.dataset.base === what.slice(5));
       else box.checked = (tr.dataset.wd === what);
     });
     count();

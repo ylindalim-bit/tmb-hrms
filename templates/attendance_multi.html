@@ -57,7 +57,7 @@
   <input type="hidden" name="date_from" value="{{ date_from }}">
   <input type="hidden" name="date_to" value="{{ date_to }}">
   {% for e in picked %}<input type="hidden" name="emps" value="{{ e }}">{% endfor %}
-  <div style="margin-bottom:8px;"><button class="btn" type="submit">Save changes</button> <span id="dirty-note" style="color:var(--muted); font-size:12px; margin-left:8px;">{{ rows|length }} rows</span></div>
+  <div style="margin-bottom:8px;"><button class="btn secondary" type="submit" title="Saves rows you changed by hand in the table below">Save changes</button> <span id="dirty-note" style="color:var(--muted); font-size:12px; margin-left:8px;">{{ rows|length }} rows</span></div>
   <div class="card" id="quick-fill" style="background:#eff6ff; border-color:#93c5fd;">
     <strong>Quick fill</strong> <span style="color:var(--muted); font-size:12px;">&mdash; set a whole group at once instead of row by row</span>
     <div style="margin:8px 0; display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
@@ -78,9 +78,8 @@
       <select id="qf-status" style="width:auto;">{% for d in day_types %}<option value="{{ d }}">{{ d }}</option>{% endfor %}</select>
       <label style="font-size:12px; margin:0;">Time In</label><input type="time" id="qf-in" style="width:105px;">
       <label style="font-size:12px; margin:0;">Time Out</label><input type="time" id="qf-out" style="width:105px;">
-      <button type="button" class="btn secondary" onclick="qfApply()">Apply to ticked rows</button>
       <button type="button" class="btn" onclick="qfApply(true)" title="Sets the ticked rows and saves them in one click">Apply &amp; Save</button>
-      <span style="font-size:12px; color:var(--muted);">Then click <strong>Save changes</strong>. Times are only used for WORKED; other statuses clear the times.</span>
+      <span style="font-size:12px; color:var(--muted);">Sets the ticked rows and saves. Times are only used for WORKED; other statuses clear the times.</span>
     </div>
   </div>
   <div class="card table-wrap frozen-header">
@@ -118,7 +117,6 @@
     </tbody>
   </table>
   </div>
-  <div style="margin:8px 0;"><button class="btn" type="submit">Save changes</button></div>
 </form>
 {% endif %}
 {% endif %}

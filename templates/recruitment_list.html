@@ -100,7 +100,16 @@
       <tr>{% if can_assign %}<th class="text" style="width:34px;"><input type="checkbox" id="assign-all" title="Tick / untick all shown"></th>{% endif %}
           <th class="text" title="Application number - the last 3 digits of the letter Ref (e.g. TMB/HR/LOE/2026/009)">No.</th><th class="text">Letter Ref No.</th><th class="text">Name</th><th class="text">Position Applied For</th><th class="text">Contact</th>
           <th class="text">Status</th><th class="text">Interview</th><th class="text">Comments</th>
-          {% if can_assign %}<th class="text">Can be viewed by</th>{% endif %}<th class="text">Submitted</th></tr>
+          {% if can_assign %}<th class="text">Can be viewed by
+            <form method="get" action="{{ url_for('recruitment_list') }}" style="margin:4px 0 0;">
+              {% if status_filter %}<input type="hidden" name="status" value="{{ status_filter }}">{% endif %}
+              {% for p in position_filter %}<input type="hidden" name="position" value="{{ p }}">{% endfor %}
+              <select name="viewer" onchange="this.form.submit()" style="font-size:12px; padding:2px 4px; font-weight:400; max-width:160px;">
+                <option value="">All</option>
+                {% for r in reviewers %}<option value="{{ r.username }}" {% if viewer_filter == r.username %}selected{% endif %}>{{ r.full_name }}</option>{% endfor %}
+                <option value="__none__" {% if viewer_filter == '__none__' %}selected{% endif %}>HR only</option>
+              </select>
+            </form></th>{% endif %}<th class="text">Submitted</th></tr>
     </thead>
     <tbody>
       {% for a in applications %}

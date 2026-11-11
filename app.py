@@ -7475,11 +7475,11 @@ def recruitment_document_upload(app_id):
 
 
 def _offers_map(db):
-    """{application_id: (position, salary)} saved in each candidate's Employment Letter box -
+    """{application_id: (position, salary, join_date)} saved in each candidate's Employment Letter box -
     what we actually offered, shown on the recruitment list."""
     try:
-        return {r["application_id"]: (r["position"], r["salary"])
-                for r in db.execute("SELECT application_id, position, salary FROM job_application_offers").fetchall()}
+        return {r["application_id"]: (r["position"], r["salary"], r["join_date"])
+                for r in db.execute("SELECT application_id, position, salary, join_date FROM job_application_offers").fetchall()}
     except sqlite3.OperationalError:
         return {}
 

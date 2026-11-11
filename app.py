@@ -9875,10 +9875,39 @@ def _prorated_medical_claim_limit(e, year):
     return prorated if prorated is not None else (e["medical_claim_limit"] or 0), note
 
 
+def _al_entitlement_as_at(e, year, month):
+    """Annual Leave entitlement earned from 1 Jan (or Date Joined, if later) up to the
+    END of `month` (or Last Working Day, if earlier), by calendar days:
+    full-year entitlement x days / days-in-year. month=12 gives exactly what the
+    full-year proration gives. Returns (amount, note)."""
+    full = e["annual_leave_entitlement"] or 0
+    if month >= 12:
+        p, note = _prorated_al_note(e, year)
+        return (full if p is None else p), note
+    start_of_year = datetime.date(year, 1, 1)
+    days_in_year = (datetime.date(year, 12, 31) - start_of_year).days + 1
+    cutoff = datetime.date(year, month, calendar.monthrange(year, month)[1])
+    dj, lwd = e["date_joined"], e["last_working_day"]
+    start = start_of_year
+    if dj and dj.startswith(str(year)):
+        start = max(datetime.date.fromisoformat(dj), start_of_year)
+    end = cutoff
+    if lwd and lwd.startswith(str(year)):
+        end = min(end, datetime.date.fromisoformat(lwd))
+    days = max((end - start).days + 1, 0)
+    note = None
+    if start != start_of_year or end != cutoff:
+        note = "counted {} to {} ({} of {} days)".format(start.strftime("%d %b"), end.strftime("%d %b"), days, days_in_year)
+    return round(full * days / days_in_year, 2), note
+
+
 @app.route("/leave-report")
 def leave_report():
     db = get_db()
     year = request.args.get("year", type=int) or datetime.date.today().year
+    as_at = request.args.get("month", type=int) or 12   # entitlement/used counted up to the END of this month
+    if as_at < 1 or as_at > 12:
+        as_at = 12
 
     emps = db.execute(
         """SELECT emp_id, full_name, department, date_joined, last_working_day, resignation_date,
@@ -9897,14 +9926,11 @@ def leave_report():
             """SELECT COALESCE(SUM(al_days),0) AS al, COALESCE(SUM(mc_days),0) AS mc,
                       COALESCE(SUM(hl_days),0) AS hl, COALESCE(SUM(ul_days),0) AS ul,
                       COALESCE(SUM(other_paid_leave),0) AS other
-               FROM attendance_monthly WHERE emp_id=? AND year=?""",
-            (e["emp_id"], year),
+               FROM attendance_monthly WHERE emp_id=? AND year=? AND month<=?""",
+            (e["emp_id"], year, as_at),
         ).fetchone()
-        al_entitlement = e["annual_leave_entitlement"] or 0
         mc_entitlement = e["mc_entitlement"] or 0
-        prorated_al, al_note = _prorated_al_note(e, year)
-        if prorated_al is not None:
-            al_entitlement = prorated_al
+        al_entitlement, al_note = _al_entitlement_as_at(e, year, as_at)
         al_bf = _al_bf_for_year(e, year)  # B/F + Adj together - used for the totals
         # Shown separately: true carry-over from last year vs. dated adjustments
         # (replacement days etc.), only for the current year like _al_bf_for_year.
@@ -9941,7 +9967,7 @@ def leave_report():
         r["al_months"] = [round(mm.get(m, 0), 2) for m in range(1, 13)]
     month_totals = [round(sum(r["al_months"][i] for r in rows), 2) for i in range(12)]
 
-    return render_template("leave_report.html", rows=rows, year=year, years=years,
+    return render_template("leave_report.html", rows=rows, year=year, years=years, as_at=as_at,
                            month_totals=month_totals, month_labels=MONTH_NAMES[1:])
 
 

@@ -22,13 +22,24 @@
   <div class="month-nav">
     <span>Year:</span>
     {% for y in years %}
-    <a href="{{ url_for('leave_report', year=y.year) }}" style="{% if y.year == year %}font-weight:700;{% endif %}">{{ y.year }}</a>
+    <a href="{{ url_for('leave_report', year=y.year, month=as_at) }}" style="{% if y.year == year %}font-weight:700;{% endif %}">{{ y.year }}</a>
     {% endfor %}
+    <form method="get" style="display:inline-flex; gap:6px; align-items:center; margin-left:24px;">
+      <input type="hidden" name="year" value="{{ year }}">
+      <label style="margin:0; font-weight:600;">Entitlement &amp; leave counted up to end of:</label>
+      <select name="month" style="width:auto;" onchange="this.form.submit()">
+        {% for m in month_labels %}<option value="{{ loop.index }}" {% if loop.index == as_at %}selected{% endif %}>{{ m }}{% if loop.index == 12 %} (full year){% endif %}</option>{% endfor %}
+      </select>
+    </form>
+  </div>
+  <div style="font-size:12px; color:var(--muted); margin-top:4px;">
+    AL Entitlement = full-year days &times; days from 1 Jan (or Date Joined, if later) to the end of {{ month_labels[as_at-1] }}
+    (or Last Working Day, if earlier) &divide; days in {{ year }}. Leave Used is Jan&ndash;{{ month_labels[as_at-1][:3] }} only.
   </div>
 </div>
 <div class="print-only" style="margin-bottom:12px;">
   <strong>TIANMA PRECISION SDN BHD</strong><br>
-  Leave Taken Report &mdash; {{ year }}
+  Leave Taken Report &mdash; {{ year }}{% if as_at < 12 %} (entitlement and leave counted to end of {{ month_labels[as_at-1] }}){% endif %}
 </div>
 
 <div class="card table-wrap frozen-header">
@@ -71,7 +82,7 @@
 </div>
 <p><strong>Total Headcount: {{ rows|length }} employees</strong></p>
 
-<h2 style="margin-top:24px;">Annual Leave Taken by Month &mdash; {{ year }} (Jan&ndash;Dec)</h2>
+<h2 style="margin-top:24px;">Annual Leave Taken by Month &mdash; {{ year }} (Jan&ndash;{{ month_labels[as_at-1][:3] }})</h2>
 <p style="color:var(--muted); font-size:12px; margin-top:-6px;">Days of Annual Leave taken in each month (half-day = 0.5). AL Used is the sum of Jan&ndash;Dec; AL Balance = AL Total Available &minus; AL Used.</p>
 <div class="card table-wrap frozen-header">
 <table>
@@ -79,7 +90,7 @@
 <tr>
   <th class="text">Emp ID</th><th class="text">Name</th>
   <th>AL Entitlement</th><th>AL B/F</th><th>AL Adj</th><th>AL Total Available</th>
-  {% for m in month_labels %}<th>{{ m[:3] }}</th>{% endfor %}
+  {% for m in month_labels[:as_at] %}<th>{{ m[:3] }}</th>{% endfor %}
   <th>AL Used</th><th>AL Balance</th>
 </tr>
 </thead>
@@ -92,7 +103,7 @@
   <td>{{ '%g'|format(r.al_bf) }}</td>
   <td>{{ '%g'|format(r.al_adj) }}</td>
   <td>{{ '%g'|format(r.al_total_available) }}</td>
-  {% for v in r.al_months %}<td{% if not v %} style="color:var(--muted);"{% endif %}>{{ ('%g'|format(v)) if v else '-' }}</td>{% endfor %}
+  {% for v in r.al_months[:as_at] %}<td{% if not v %} style="color:var(--muted);"{% endif %}>{{ ('%g'|format(v)) if v else '-' }}</td>{% endfor %}
   <td><strong>{{ '%g'|format(r.al_used) }}</strong></td>
   <td {% if r.al_balance < 0 %}style="color:var(--danger); font-weight:700;"{% endif %}>{{ '%g'|format(r.al_balance) }}</td>
 </tr>
@@ -103,7 +114,7 @@
   <td>{{ '%g'|format(rows|sum(attribute='al_bf')|round(2)) }}</td>
   <td>{{ '%g'|format(rows|sum(attribute='al_adj')|round(2)) }}</td>
   <td>{{ '%g'|format(rows|sum(attribute='al_total_available')|round(2)) }}</td>
-  {% for v in month_totals %}<td>{{ ('%g'|format(v)) if v else '-' }}</td>{% endfor %}
+  {% for v in month_totals[:as_at] %}<td>{{ ('%g'|format(v)) if v else '-' }}</td>{% endfor %}
   <td>{{ '%g'|format(rows|sum(attribute='al_used')|round(2)) }}</td>
   <td>{{ '%g'|format(rows|sum(attribute='al_balance')|round(2)) }}</td>
 </tr>

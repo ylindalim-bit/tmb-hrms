@@ -91,6 +91,7 @@
     </select>
     <button type="submit" class="btn" style="padding:4px 12px;">Let this person view the ticked candidates</button>
     <span id="assign-count" style="color:var(--muted); font-size:12px;">0 ticked</span>
+    <button type="button" id="assign-only" class="btn secondary" style="padding:4px 12px;" title="Hide everyone you haven't ticked">Show only ticked</button>
     {% if not reviewers %}<span style="color:var(--danger); font-size:12px;">No reviewer account yet &mdash; create one in HR Accounts (tick &ldquo;Review Recruitment candidates&rdquo;).</span>{% endif %}
   </form>
   {% endif %}
@@ -148,6 +149,18 @@
     n.textContent = c + ' ticked';
     if (all) { all.checked = boxes.length > 0 && c === boxes.length; }
   }
+  // "Show only ticked": hides the rows you haven't ticked (click again to show everyone).
+  var onlyBtn = document.getElementById('assign-only'), onlyOn = false;
+  function applyOnly() {
+    boxes.forEach(function (b) { b.closest('tr').style.display = (onlyOn && !b.checked) ? 'none' : ''; });
+    onlyBtn.textContent = onlyOn ? 'Show all' : 'Show only ticked';
+    onlyBtn.className = onlyOn ? 'btn' : 'btn secondary';
+  }
+  onlyBtn.addEventListener('click', function () {
+    var c = 0; boxes.forEach(function (b) { if (b.checked) c++; });
+    if (!onlyOn && !c) { alert('Tick at least one candidate first.'); return; }
+    onlyOn = !onlyOn; applyOnly();
+  });
   boxes.forEach(function (b) { b.addEventListener('change', upd); });
   if (all) { all.addEventListener('change', function () { boxes.forEach(function (b) { b.checked = all.checked; }); upd(); }); }
   document.getElementById('assign-form').addEventListener('submit', function (e) {

@@ -9905,11 +9905,17 @@ def leave_report():
         prorated_al, al_note = _prorated_al_note(e, year)
         if prorated_al is not None:
             al_entitlement = prorated_al
-        al_bf = _al_bf_for_year(e, year)
+        al_bf = _al_bf_for_year(e, year)  # B/F + Adj together - used for the totals
+        # Shown separately: true carry-over from last year vs. dated adjustments
+        # (replacement days etc.), only for the current year like _al_bf_for_year.
+        if year == datetime.date.today().year:
+            bf_only, adj_only = (e["al_bf_days"] or 0), (e["al_adjustment_days"] or 0)
+        else:
+            bf_only = adj_only = 0
         al_total_available = al_entitlement + al_bf
         rows.append({
             "emp_id": e["emp_id"], "full_name": e["full_name"], "department": e["department"],
-            "al_entitlement": round(al_entitlement, 2), "al_bf": round(al_bf, 2),
+            "al_entitlement": round(al_entitlement, 2), "al_bf": round(bf_only, 2), "al_adj": round(adj_only, 2),
             "al_total_available": round(al_total_available, 2),
             "al_used": round(totals["al"], 2),
             "al_balance": round(al_total_available - totals["al"], 2), "al_note": al_note,

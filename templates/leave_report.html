@@ -36,7 +36,7 @@
 <thead>
 <tr>
   <th class="text">Emp ID</th><th class="text">Name</th><th class="text">Department</th>
-  <th>AL Entitlement</th><th>AL B/F + Adj</th><th>AL Total Available</th><th>AL Used</th><th>AL Balance</th>
+  <th>AL Entitlement</th><th>AL B/F</th><th>AL Adj</th><th>AL Total Available</th><th>AL Used</th><th>AL Balance</th>
   <th>MC Entitlement</th><th>MC Used</th><th>MC Balance</th>
   <th>Hospitalisation Used</th><th>Unpaid Leave</th><th>Other Paid Leave</th>
 </tr>
@@ -51,6 +51,7 @@
   <td class="text">{{ r.department or "-" }}</td>
   <td>{{ r.al_entitlement }}</td>
   <td>{{ r.al_bf }}</td>
+  <td>{{ r.al_adj }}</td>
   <td>{{ r.al_total_available }}</td>
   <td>{{ r.al_used }}</td>
   <td {% if r.al_balance < 0 %}style="color:var(--danger); font-weight:700;"{% endif %}>{{ r.al_balance }}</td>
@@ -63,7 +64,7 @@
 </tr>
 {% endfor %}
 {% if not rows %}
-<tr><td class="text" colspan="14">No active employees.</td></tr>
+<tr><td class="text" colspan="15">No active employees.</td></tr>
 {% endif %}
 </tbody>
 </table>

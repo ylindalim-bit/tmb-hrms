@@ -410,7 +410,8 @@ try:
 except sqlite3.Error:
     pass
 DOCUMENT_TYPES =["Job Application Form", "IC / Passport Copy", "Letter of Employment", "Confirmation Letter",
-                   "Resignation Letter", "CP22A", "e-Stamping Certificate", "TP3 (Prior Employer Income)", "Other"]
+                   "Warning Letter", "Show Cause Letter", "Resignation Letter", "CP22A", "e-Stamping Certificate",
+                   "TP3 (Prior Employer Income)", "Other"]
 BUSINESS_TRIP_TYPES = ["Business Trip", "Out-Duty", "Training", "Unrecorded Leave", "Home Leave (Malaysia)"]
 # Approving either of these pays the days as Other Paid Leave rather than
 # deducting them - "Unrecorded Leave" explains an attendance gap after the

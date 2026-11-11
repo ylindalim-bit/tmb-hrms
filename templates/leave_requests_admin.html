@@ -14,9 +14,35 @@
 <div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger); font-weight:600;">{{ error }}</div>
 {% endif %}
 
+<form method="get" class="card no-print" style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
+  <div><label>Employee</label>
+    <select name="emp_id" style="width:auto; min-width:200px;">
+      <option value="">All employees</option>
+      {% for e in flt_emps %}<option value="{{ e.emp_id }}" {% if flt.emp_id == e.emp_id %}selected{% endif %}>{{ e.emp_id }} &mdash; {{ e.full_name }}</option>{% endfor %}
+    </select></div>
+  <div><label>Base</label>
+    <select name="base" style="width:auto;">
+      <option value="">All bases</option>
+      {% for b in base_options %}<option value="{{ b }}" {% if flt.base == b %}selected{% endif %}>{{ b }}</option>{% endfor %}
+    </select></div>
+  <div><label>Department</label>
+    <select name="dept" style="width:auto;">
+      <option value="">All departments</option>
+      {% for d in flt_depts %}<option value="{{ d }}" {% if flt.dept == d %}selected{% endif %}>{{ d }}</option>{% endfor %}
+    </select></div>
+  <div><label>Reviewed list shows</label>
+    <select name="month" style="width:auto;">
+      <option value="0" {% if month == 0 %}selected{% endif %}>Whole year {{ year }}</option>
+      {% for m in range(1, 13) %}<option value="{{ m }}" {% if month == m %}selected{% endif %}>{{ month_names[m] }} {{ year }}</option>{% endfor %}
+    </select>
+    <input type="hidden" name="year" value="{{ year }}"></div>
+  <button class="btn" type="submit">Show</button>
+  {% if flt_qs %}<a href="{{ url_for('leave_requests_admin', year=year, month=month) }}" style="font-size:13px;">Clear filters</a>{% endif %}
+</form>
+
 <div class="card">
   <h2 style="margin-top:0;">Pending ({{ pending|length }})
-    <a class="no-print" href="{{ url_for('leave_requests_pdf', scope='pending') }}" style="font-size:12px; font-weight:600; margin-left:10px;">Download PDF</a>
+    <a class="no-print" href="{{ url_for('leave_requests_pdf', scope='pending', **flt_qs) }}" style="font-size:12px; font-weight:600; margin-left:10px;">Download PDF</a>
   </h2>
   <div class="table-wrap frozen-header">
   <table>
@@ -93,13 +119,19 @@
 
 <div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center;">
-    <h2 style="margin-top:0;">Recently Reviewed &mdash; {{ month_names[month] }} {{ year }}
-      <a class="no-print" href="{{ url_for('leave_requests_pdf', scope='reviewed', year=year, month=month) }}" style="font-size:12px; font-weight:600; margin-left:10px;">Download PDF</a>
+    <h2 style="margin-top:0;">Recently Reviewed &mdash; {% if month %}{{ month_names[month] }} {% else %}Whole year {% endif %}{{ year }}
+      <a class="no-print" href="{{ url_for('leave_requests_pdf', scope='reviewed', year=year, month=month, **flt_qs) }}" style="font-size:12px; font-weight:600; margin-left:10px;">Download PDF</a>
     </h2>
     <div class="month-nav no-print">
-      <a href="{{ url_for('leave_requests_admin', year=year if month>1 else year-1, month=month-1 if month>1 else 12) }}">&laquo; Prev</a>
+      {% if month %}
+      <a href="{{ url_for('leave_requests_admin', year=year if month>1 else year-1, month=month-1 if month>1 else 12, **flt_qs) }}">&laquo; Prev</a>
       <strong>{{ month_names[month] }} {{ year }}</strong>
-      <a href="{{ url_for('leave_requests_admin', year=year if month<12 else year+1, month=month+1 if month<12 else 1) }}">Next &raquo;</a>
+      <a href="{{ url_for('leave_requests_admin', year=year if month<12 else year+1, month=month+1 if month<12 else 1, **flt_qs) }}">Next &raquo;</a>
+      {% else %}
+      <a href="{{ url_for('leave_requests_admin', year=year-1, month=0, **flt_qs) }}">&laquo; Prev</a>
+      <strong>{{ year }}</strong>
+      <a href="{{ url_for('leave_requests_admin', year=year+1, month=0, **flt_qs) }}">Next &raquo;</a>
+      {% endif %}
     </div>
   </div>
   <div class="table-wrap frozen-header">

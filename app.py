@@ -6694,6 +6694,24 @@ def it_request_delete(request_id):
     return redirect(url_for("it_requests_list"))
 
 
+def _leave_filter_emp_ids(db, args):
+    """Employee / Base / Department filter for the Leave Requests page and its PDF.
+    Returns (set of allowed emp_ids or None when nothing is filtered, filter dict)."""
+    flt = {"emp_id": (args.get("emp_id") or "").strip(),
+           "base": (args.get("base") or "").strip(),
+           "dept": (args.get("dept") or "").strip()}
+    if not any(flt.values()):
+        return None, flt
+    sql, p = "SELECT emp_id FROM employees WHERE 1=1", []
+    if flt["emp_id"]:
+        sql += " AND emp_id=?"; p.append(flt["emp_id"])
+    if flt["base"]:
+        sql += " AND base=?"; p.append(flt["base"])
+    if flt["dept"]:
+        sql += " AND department=?"; p.append(flt["dept"])
+    return {r["emp_id"] for r in db.execute(sql, p).fetchall()}, flt
+
+
 @app.route("/leave-requests/pdf")
 def leave_requests_pdf():
     """PDF of leave requests and Movement Notices, one row each, grouped by employee name
@@ -6702,22 +6720,21 @@ def leave_requests_pdf():
     PDFs get a blank Decision column for signing by hand."""
     db = get_db()
     scope = "reviewed" if request.args.get("scope") == "reviewed" else "pending"
-    emp_id = (request.args.get("emp_id") or "").strip()
+    allowed_ids, _flt = _leave_filter_emp_ids(db, request.args)
     today = datetime.date.today()
     year = request.args.get("year", type=int) or today.year
-    month = request.args.get("month", type=int) or today.month
+    month = request.args.get("month", type=int)
+    if month is None:
+        month = today.month
     scope_clause, params_extra = "", []
     if session.get("hr_role") == "approver":
         scope_clause += " AND e.leave_approver_username=?"
         params_extra.append(session["hr_username"])
-    if emp_id:
-        scope_clause += " AND e.emp_id=?"
-        params_extra.append(emp_id)
     status_sql = "= 'Pending'" if scope == "pending" else "!= 'Pending'"
     month_sql, month_params = "", []
     if scope == "reviewed":
         month_sql = " AND {t}.start_date LIKE ?"
-        month_params = [f"{year:04d}-{month:02d}%"]
+        month_params = [f"{year:04d}-{month:02d}%" if month else f"{year:04d}-%"]
     try:
         half_col = "lr.half_day" if "half_day" in [r[1] for r in db.execute("PRAGMA table_info(leave_requests)").fetchall()] else "NULL"
     except sqlite3.OperationalError:
@@ -6736,13 +6753,18 @@ def leave_requests_pdf():
             ORDER BY 2, 5""",
         params_extra + month_params + params_extra + month_params,
     ).fetchall()
+    if allowed_ids is not None:
+        rows = [r for r in rows if r["emp_id"] in allowed_ids]
 
     styles = getSampleStyleSheet()
     small = ParagraphStyle("lsm", parent=styles["Normal"], fontSize=8, leading=9.5)
     title = ParagraphStyle("ltt", parent=styles["Title"], fontSize=15, spaceAfter=2, alignment=0)
     sub = ParagraphStyle("lsb", parent=styles["Normal"], fontSize=11, leading=14)
     heading_text = ("Pending Leave Requests" if scope == "pending"
-                    else f"Leave Requests Reviewed - {MONTH_NAMES[month]} {year}")
+                    else f"Leave Requests Reviewed - {MONTH_NAMES[month] + ' ' if month else 'Whole year '}{year}")
+    _fl = [x for x in (_flt["emp_id"], _flt["base"], _flt["dept"]) if x]
+    if _fl:
+        heading_text += " (" + ", ".join(_fl) + ")"
     headers = ["Employee", "Type", "Destination", "Dates", "Days", "Reason", "Status" if scope == "reviewed" else "Decision"]
     data = [headers]
     for r in rows:
@@ -6774,9 +6796,9 @@ def leave_requests_pdf():
     SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=1.5 * cm, rightMargin=1.5 * cm, topMargin=1.2 * cm,
                       bottomMargin=1.2 * cm, title=heading_text).build(story)
     buf.seek(0)
-    name = "Leave_Requests_Pending" if scope == "pending" else f"Leave_Requests_{MONTH_NAMES[month]}_{year}"
-    if emp_id:
-        name += f"_{emp_id}"
+    name = "Leave_Requests_Pending" if scope == "pending" else f"Leave_Requests_{MONTH_NAMES[month] if month else 'Year'}_{year}"
+    for part in _fl:
+        name += "_" + "".join(ch for ch in part if ch.isalnum())
     return Response(buf.getvalue(), mimetype="application/pdf",
                     headers={"Content-Disposition": f"attachment; filename={name}.pdf"})
 
@@ -10095,8 +10117,10 @@ def leave_requests_admin():
     # showing a whole year (or an arbitrary "last 50" cap) at once.
     today = datetime.date.today()
     year = request.args.get("year", type=int) or today.year
-    month = request.args.get("month", type=int) or today.month
-    month_prefix = f"{year:04d}-{month:02d}%"
+    month = request.args.get("month", type=int)  # 0 = whole year
+    if month is None:
+        month = today.month
+    month_prefix = f"{year:04d}-{month:02d}%" if month else f"{year:04d}-%"
     reviewed = db.execute(
         f"""SELECT 'leave' AS source, lr.id, lr.emp_id, e.full_name, lr.leave_type AS type_label,
                    NULL AS destination, lr.start_date, lr.end_date, lr.days, lr.reason,
@@ -10124,8 +10148,20 @@ def leave_requests_admin():
     ).fetchall():
         documents_by_request.setdefault(doc["leave_request_id"], []).append(doc)
 
+    allowed_ids, flt = _leave_filter_emp_ids(db, request.args)
+    if allowed_ids is not None:
+        pending = [r for r in pending if r["emp_id"] in allowed_ids]
+        reviewed = [r for r in reviewed if r["emp_id"] in allowed_ids]
+    if session.get("hr_role") == "approver":
+        flt_emps = db.execute("SELECT emp_id, full_name FROM employees WHERE status='Active' AND leave_approver_username=? ORDER BY emp_id",
+                              (session["hr_username"],)).fetchall()
+    else:
+        flt_emps = db.execute("SELECT emp_id, full_name FROM employees WHERE status='Active' ORDER BY emp_id").fetchall()
+    flt_depts = [r[0] for r in db.execute("SELECT DISTINCT department FROM employees WHERE status='Active' AND department IS NOT NULL AND department!='' ORDER BY 1").fetchall()]
+    flt_qs = {k: v for k, v in flt.items() if v}  # carried through Prev/Next/PDF links
     return render_template("leave_requests_admin.html", pending=pending, reviewed=reviewed,
                             year=year, month=month, documents_by_request=documents_by_request,
+                            flt=flt, flt_qs=flt_qs, flt_emps=flt_emps, flt_depts=flt_depts, base_options=BASE_OPTIONS,
                             trip_docs=_business_trip_extra_docs(db), error=request.args.get("error"))
 
 

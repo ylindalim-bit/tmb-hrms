@@ -9914,11 +9914,8 @@ def leave_report():
                   annual_leave_entitlement, al_bf_days, al_adjustment_days, mc_entitlement
            FROM employees
            WHERE status != 'Inactive'
-              OR (last_working_day IS NOT NULL AND last_working_day LIKE ?)
-              OR (resignation_date IS NOT NULL AND resignation_date LIKE ? AND last_working_day IS NULL)
            ORDER BY emp_id""",
-        (f"{year}%", f"{year}%"),
-    ).fetchall()
+    ).fetchall()  # Inactive (resigned/left) staff are not listed - HR's choice
 
     rows = []
     for e in emps:

@@ -72,14 +72,15 @@
 <p><strong>Total Headcount: {{ rows|length }} employees</strong></p>
 
 <h2 style="margin-top:24px;">Annual Leave Taken by Month &mdash; {{ year }} (Jan&ndash;Dec)</h2>
-<p style="color:var(--muted); font-size:12px; margin-top:-6px;">Days of Annual Leave taken in each month (half-day = 0.5). The Total column equals "AL Used" above.</p>
+<p style="color:var(--muted); font-size:12px; margin-top:-6px;">Days of Annual Leave taken in each month (half-day = 0.5). AL Used is the sum of Jan&ndash;Dec; AL Balance = AL Total Available &minus; AL Used.</p>
 <div class="card table-wrap frozen-header">
 <table>
 <thead>
 <tr>
   <th class="text">Emp ID</th><th class="text">Name</th>
+  <th>AL Entitlement</th><th>AL B/F</th><th>AL Adj</th><th>AL Total Available</th>
   {% for m in month_labels %}<th>{{ m[:3] }}</th>{% endfor %}
-  <th>Total</th>
+  <th>AL Used</th><th>AL Balance</th>
 </tr>
 </thead>
 <tbody>
@@ -87,14 +88,24 @@
 <tr>
   <td class="text">{{ r.emp_id }}</td>
   <td class="text">{{ r.full_name }}</td>
+  <td>{{ '%g'|format(r.al_entitlement) }}</td>
+  <td>{{ '%g'|format(r.al_bf) }}</td>
+  <td>{{ '%g'|format(r.al_adj) }}</td>
+  <td>{{ '%g'|format(r.al_total_available) }}</td>
   {% for v in r.al_months %}<td{% if not v %} style="color:var(--muted);"{% endif %}>{{ ('%g'|format(v)) if v else '-' }}</td>{% endfor %}
   <td><strong>{{ '%g'|format(r.al_used) }}</strong></td>
+  <td {% if r.al_balance < 0 %}style="color:var(--danger); font-weight:700;"{% endif %}>{{ '%g'|format(r.al_balance) }}</td>
 </tr>
 {% endfor %}
 <tr style="font-weight:700; background:#f1f5f9;">
   <td class="text" colspan="2">Total all staff</td>
+  <td>{{ '%g'|format(rows|sum(attribute='al_entitlement')|round(2)) }}</td>
+  <td>{{ '%g'|format(rows|sum(attribute='al_bf')|round(2)) }}</td>
+  <td>{{ '%g'|format(rows|sum(attribute='al_adj')|round(2)) }}</td>
+  <td>{{ '%g'|format(rows|sum(attribute='al_total_available')|round(2)) }}</td>
   {% for v in month_totals %}<td>{{ ('%g'|format(v)) if v else '-' }}</td>{% endfor %}
-  <td>{{ '%g'|format(month_totals|sum) }}</td>
+  <td>{{ '%g'|format(rows|sum(attribute='al_used')|round(2)) }}</td>
+  <td>{{ '%g'|format(rows|sum(attribute='al_balance')|round(2)) }}</td>
 </tr>
 </tbody>
 </table>

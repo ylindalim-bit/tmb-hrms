@@ -118,7 +118,15 @@
       <tr>
         {% if can_assign %}<td class="text"><input type="checkbox" form="assign-form" name="app_ids" value="{{ a.id }}" class="assign-box"></td>{% endif %}
         <td class="text" style="color:var(--muted);">{{ "%03d"|format(a.id) }}</td>
-        <td class="text" style="font-size:12px; white-space:nowrap;">{% if loe_refs.get(a.id) %}{{ loe_refs[a.id] }}{% else %}<span style="color:var(--muted);">-</span>{% endif %}</td>
+        <td class="text" style="font-size:12px;">
+          {% if can_assign %}
+          <form method="post" action="{{ url_for('recruitment_set_letter_ref', app_id=a.id) }}" style="display:flex; gap:4px; align-items:center; margin:0;">
+            <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+            <input type="text" name="ref_no" value="{{ loe_refs.get(a.id, '') }}" placeholder="auto" style="width:170px; padding:3px 6px; font-size:12px;">
+            <button type="submit" class="btn secondary" style="padding:2px 8px; font-size:11px;" title="Save this Ref">Save</button>
+          </form>
+          {% else %}{{ loe_refs.get(a.id, '-') }}{% endif %}
+        </td>
         <td class="text"><a href="{{ url_for('recruitment_detail', app_id=a.id) }}">{{ a.full_name }}</a></td>
         <td class="text">{{ a.position_applied or "" }}</td>
         {% set offer = offers.get(a.id) %}

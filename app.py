@@ -7659,6 +7659,7 @@ def recruitment_detail(app_id):
         rating_fields=INTERVIEW_RATING_FIELDS, recommendations=INTERVIEW_RECOMMENDATIONS,
         commenters=commenters, assessments=_load_assessments(db, app_id), slots=INTERVIEW_SLOTS,
         offer=_load_offer(db, application),
+        custom_letter=_custom_letter_name(app_id),
         family=json.loads(application["family_particulars_json"] or "[]"),
         education=json.loads(application["education_json"] or "[]"),
         other_quals=json.loads(application["other_qualifications_json"] or "[]"),
@@ -7845,6 +7846,85 @@ def recruitment_employment_letter_save(app_id):
     return redirect(url_for("recruitment_detail", app_id=app_id) + "#employment-letter")
 
 
+def _custom_letter_path(app_id):
+    return os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(app_id), "custom_letter.docx")
+
+
+def _custom_letter_name(app_id):
+    """The original file name of the Word letter HR uploaded for this candidate, or None."""
+    if os.path.exists(_custom_letter_path(app_id)):
+        try:
+            with open(_custom_letter_path(app_id) + ".name", encoding="utf-8") as f:
+                return f.read().strip() or "custom_letter.docx"
+        except OSError:
+            return "custom_letter.docx"
+    return None
+
+
+@app.route("/hr/recruitment/<int:app_id>/employment-letter/custom", methods=["POST"])
+def recruitment_employment_letter_custom_upload(app_id):
+    """Use HR's own Word letter for this candidate instead of the standard template. The letter is used as it
+    is; only its Ref line is filled in."""
+    if session.get("hr_role") == "approver":
+        abort(403)
+    db = get_db()
+    if db.execute("SELECT 1 FROM job_applications WHERE id=?", (app_id,)).fetchone() is None:
+        abort(404)
+    f = request.files.get("letter")
+    if f is None or not f.filename:
+        return redirect(url_for("recruitment_detail", app_id=app_id) + "#employment-letter")
+    if not f.filename.lower().endswith(".docx"):
+        return "Please upload a Word (.docx) file.", 400
+    data = f.read()
+    if len(data) > 8 * 1024 * 1024:
+        return "File too large (max 8 MB).", 400
+    try:
+        import docx as _docx
+        _docx.Document(io.BytesIO(data))
+    except Exception:
+        return "That file could not be read as a Word document.", 400
+    path = _custom_letter_path(app_id)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as out:
+        out.write(data)
+    with open(path + ".name", "w", encoding="utf-8") as out:
+        out.write(secure_filename(f.filename))
+    return redirect(url_for("recruitment_detail", app_id=app_id) + "#employment-letter")
+
+
+@app.route("/hr/recruitment/<int:app_id>/employment-letter/custom/remove", methods=["POST"])
+def recruitment_employment_letter_custom_remove(app_id):
+    if session.get("hr_role") == "approver":
+        abort(403)
+    for suffix in ("", ".name"):
+        try:
+            os.remove(_custom_letter_path(app_id) + suffix)
+        except OSError:
+            pass
+    return redirect(url_for("recruitment_detail", app_id=app_id) + "#employment-letter")
+
+
+@app.route("/hr/recruitment/<int:app_id>/letter-ref", methods=["POST"])
+def recruitment_set_letter_ref(app_id):
+    """Key in / change a candidate's Letter of Employment Ref straight from the Recruitment list."""
+    if session.get("hr_role") == "approver":
+        abort(403)
+    db = get_db()
+    if db.execute("SELECT 1 FROM job_applications WHERE id=?", (app_id,)).fetchone() is None:
+        abort(404)
+    ref = (request.form.get("ref_no") or "").strip()
+    if ref:
+        _loe_ref(db, app_id, 0, assign=False)   # makes sure the table exists
+        m = re.search(r"(\d{4})[-/](\d+)$", ref)
+        db.execute(
+            """INSERT INTO loe_refs (application_id, year, seq, ref_no) VALUES (?,?,?,?)
+               ON CONFLICT(application_id) DO UPDATE SET year=excluded.year, seq=excluded.seq, ref_no=excluded.ref_no""",
+            (app_id, int(m.group(1)) if m else None, int(m.group(2)) if m else 0, ref))
+        db.commit()
+    back = request.form.get("back") or ""
+    return redirect(back if back.startswith("/hr/recruitment") else url_for("recruitment_list"))
+
+
 def _employment_letter_content(app_id):
     """(application, docx bytes) for a candidate's Employment Letter built from the saved offer details."""
     if session.get("hr_role") == "approver":
@@ -7863,6 +7943,10 @@ def _employment_letter_content(app_id):
 
     today = datetime.datetime.now(MYT).date()
     letter_date = as_date(offer["letter_date"], today)
+    if _custom_letter_name(app_id):
+        with open(_custom_letter_path(app_id), "rb") as fh:
+            custom = fh.read()
+        return application, employment_letter.set_ref_on_letter(custom, _loe_ref(db, app_id, letter_date.year))
     data = {
         "ref": _loe_ref(db, app_id, letter_date.year),
         "full_name": application["full_name"], "address": application["address"],

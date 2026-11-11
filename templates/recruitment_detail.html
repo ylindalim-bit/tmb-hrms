@@ -154,7 +154,7 @@
   {% endif %}
 </div>
 
-{% if hr_role != "approver" and a.status in ("Interviewed", "Hired") %}
+{% if hr_role != "approver" and a.status in ("Reviewed", "Shortlisted", "Interviewed", "Hired") %}
 <div class="card no-print" id="employment-letter" style="max-width:520px;">
   <h2 style="margin-top:0;">Employment Letter</h2>
   <p style="color:var(--muted); font-size:12px; margin:0 0 10px;">
@@ -197,6 +197,22 @@
     </div>
     {% if offer.saved_at %}<p style="font-size:12px; color:var(--muted);">Last saved by {{ offer.saved_by or "-" }} at {{ offer.saved_at }}</p>{% endif %}
   </form>
+  <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border);">
+    <strong style="font-size:13px;">Use your own Word letter for this candidate</strong>
+    {% if custom_letter %}
+    <p style="font-size:13px; margin:6px 0;">&#10003; Using the uploaded letter <strong>{{ custom_letter }}</strong>. The offer details above are <u>not</u> used for this candidate &mdash;
+      the letter is used as it is, with only the <strong>Ref</strong> line filled in. View, PDF and Word all use it.</p>
+    <form method="post" action="{{ url_for('recruitment_employment_letter_custom_remove', app_id=a.id) }}" onsubmit="return confirm('Go back to the standard letter for this candidate?');">
+      <button type="submit" class="btn secondary" style="padding:4px 12px;">Remove uploaded letter</button>
+    </form>
+    {% else %}
+    <p style="font-size:12px; color:var(--muted); margin:4px 0 8px;">For a letter that is different from the standard one (e.g. a manager's). It is used as it is; only the Ref line is added.</p>
+    <form method="post" enctype="multipart/form-data" action="{{ url_for('recruitment_employment_letter_custom_upload', app_id=a.id) }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      <input type="file" name="letter" accept=".docx" required>
+      <button type="submit" class="btn secondary" style="padding:4px 12px;">Upload letter</button>
+    </form>
+    {% endif %}
+  </div>
 </div>
 {% endif %}
 

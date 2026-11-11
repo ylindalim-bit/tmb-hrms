@@ -235,6 +235,26 @@ def _keep_titles_with_text(d):
                 trPr.append(trPr.makeelement(qn("w:cantSplit"), {}))
 
 
+def set_ref_on_letter(docx_bytes, ref):
+    """An uploaded (hand-made) letter, used as it is, except that its Ref line is set: an existing 'Ref:' line is
+    updated, otherwise a 'Ref: ...' line is added under the date line."""
+    import docx
+    d = docx.Document(io.BytesIO(docx_bytes))
+    P = d.paragraphs
+    if ref:
+        i = _find(P, lambda t: t.lower().startswith("ref:") or t.lower().startswith("ref :"))
+        if i is not None:
+            _set_paragraph(P[i], [("Ref: " + ref, None)])
+        else:
+            j = _find(P, lambda t: bool(t))
+            if j is not None:
+                _insert_after(P[j], [("Ref: " + ref, None)])
+    _keep_titles_with_text(d)
+    buf = io.BytesIO()
+    d.save(buf)
+    return buf.getvalue()
+
+
 def build_letter(data):
     """data keys: ref (optional, e.g. 'TMB/HR/LOE/2026/011'), full_name, address, ic, salutation_line, position, join_date (date),
     letter_date (date), salary (float), schedule ('shift'|'office'), include_overseas (bool).

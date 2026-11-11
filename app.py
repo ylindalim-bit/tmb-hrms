@@ -7474,6 +7474,16 @@ def recruitment_document_upload(app_id):
     return redirect(url_for("recruitment_detail", app_id=app_id))
 
 
+def _offers_map(db):
+    """{application_id: (position, salary)} saved in each candidate's Employment Letter box -
+    what we actually offered, shown on the recruitment list."""
+    try:
+        return {r["application_id"]: (r["position"], r["salary"])
+                for r in db.execute("SELECT application_id, position, salary FROM job_application_offers").fetchall()}
+    except sqlite3.OperationalError:
+        return {}
+
+
 def _loe_refs_map(db):
     """{application_id: Letter of Employment Ref} for the recruitment list."""
     try:
@@ -7552,7 +7562,7 @@ def recruitment_list():
         interview_n=interview_n, today_iso=datetime.datetime.now(MYT).date().isoformat(),
         apply_url=url_for("careers_apply", _external=True), reviewers=reviewers,
         reviewer_names={r["username"]: r["full_name"] for r in reviewers},
-        loe_refs=_loe_refs_map(db),
+        loe_refs=_loe_refs_map(db), offers=_offers_map(db),
         viewer_filter=viewer_filter, viewer_counts=viewer_counts,
         position_filter=position_filter, positions=positions,
     )

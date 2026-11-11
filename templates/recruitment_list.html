@@ -98,7 +98,8 @@
   <table>
     <thead>
       <tr>{% if can_assign %}<th class="text" style="width:34px;"><input type="checkbox" id="assign-all" title="Tick / untick all shown"></th>{% endif %}
-          <th class="text" title="Application number - the last 3 digits of the letter Ref (e.g. TMB/HR/LOE/2026/009)">No.</th><th class="text">Letter Ref No.</th><th class="text">Name</th><th class="text">Position Applied For</th><th class="text">Contact</th>
+          <th class="text" title="Application number - the last 3 digits of the letter Ref (e.g. TMB/HR/LOE/2026/009)">No.</th><th class="text">Letter Ref No.</th><th class="text">Name</th><th class="text">Position Applied For</th>
+          <th class="text" title="Position and salary saved in the candidate's Employment Letter box">Position Offered</th>{% if can_assign %}<th class="text">Salary Offered</th>{% endif %}<th class="text">Contact</th>
           <th class="text">Status</th><th class="text">Interview</th><th class="text">Comments</th>
           {% if can_assign %}<th class="text">Can be viewed by
             <form method="get" action="{{ url_for('recruitment_list') }}" style="margin:4px 0 0;">
@@ -119,6 +120,9 @@
         <td class="text" style="font-size:12px; white-space:nowrap;">{% if loe_refs.get(a.id) %}{{ loe_refs[a.id] }}{% else %}<span style="color:var(--muted);">-</span>{% endif %}</td>
         <td class="text"><a href="{{ url_for('recruitment_detail', app_id=a.id) }}">{{ a.full_name }}</a></td>
         <td class="text">{{ a.position_applied or "" }}</td>
+        {% set offer = offers.get(a.id) %}
+        <td class="text">{% if offer and offer[0] %}{{ offer[0] }}{% else %}<span style="color:var(--muted);">-</span>{% endif %}</td>
+        {% if can_assign %}<td class="text" style="white-space:nowrap;">{% if offer and offer[1] %}RM {{ '{:,.2f}'.format(offer[1]) }}{% else %}<span style="color:var(--muted);">-</span>{% endif %}</td>{% endif %}
         <td class="text">{{ a.handphone_no or a.email or "" }}</td>
         <td class="text">
           <span class="pill {% if a.status == 'Hired' %}finalized{% elif a.status == 'Not Suitable' %}rejected{% elif a.status == 'Shortlisted' %}stage-shortlisted{% elif a.status == 'Interviewed' %}stage-interviewed{% elif a.status == 'Reviewed' %}stage-reviewed{% else %}stage-new{% endif %}">{{ a.status }}</span>
@@ -129,7 +133,7 @@
         <td class="text">{{ a.submitted_at.replace('T', ' ')[:16] if a.submitted_at else "" }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="11" class="text" style="color:var(--muted);">No applications yet.</td></tr>
+      <tr><td colspan="14" class="text" style="color:var(--muted);">No applications yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

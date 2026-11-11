@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Director's Signature - TMB Payroll{% endblock %}
+{% block content %}
+<h1>Director's Signature</h1>
+<p style="color:var(--muted); font-size:13px; margin-top:-8px; max-width:640px;">
+  Upload Yang Hui's signature once. It is then printed on every Employment Letter (View, PDF and Word),
+  between &ldquo;Sincerely,&rdquo; and the name. A clear photo or scan on white paper is fine &mdash; the paper
+  background is removed automatically. Only HR can see this page; the image is kept on the server, not in the program code.
+</p>
+{% if message %}<div class="card" style="max-width:640px; font-weight:600;">{{ message }}</div>{% endif %}
+<div class="card" style="max-width:640px;">
+  {% if has_signature %}
+  <p style="margin-top:0;"><strong>Current signature</strong></p>
+  <div style="background:#fff; border:1px solid var(--border); border-radius:6px; padding:12px; display:inline-block;">
+    <img src="{{ url_for('letter_signature_image') }}" alt="Signature" style="height:90px;">
+  </div>
+  <form method="post" style="margin-top:10px;" onsubmit="return confirm('Remove the signature? Letters will have blank space to sign by hand.');">
+    <input type="hidden" name="action" value="remove">
+    <button class="btn secondary" type="submit">Remove signature</button>
+  </form>
+  <hr style="margin:16px 0;">
+  <p><strong>Replace it</strong></p>
+  {% else %}
+  <p style="margin-top:0;"><strong>No signature uploaded yet</strong> &mdash; letters have blank space to sign by hand.</p>
+  {% endif %}
+  <form method="post" enctype="multipart/form-data" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+    <input type="file" name="signature" accept=".png,.jpg,.jpeg" required>
+    <button class="btn" type="submit">Upload signature</button>
+  </form>
+  <p style="font-size:12px; color:var(--muted); margin-bottom:0;">Use the signature only &mdash; no printed words. PNG or JPG.</p>
+</div>
+{% endblock %}

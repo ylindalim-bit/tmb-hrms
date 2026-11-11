@@ -7660,6 +7660,7 @@ def recruitment_detail(app_id):
         commenters=commenters, assessments=_load_assessments(db, app_id), slots=INTERVIEW_SLOTS,
         offer=_load_offer(db, application),
         custom_letter=_custom_letter_name(app_id),
+        has_signature=_director_signature() is not None,
         family=json.loads(application["family_particulars_json"] or "[]"),
         education=json.loads(application["education_json"] or "[]"),
         other_quals=json.loads(application["other_qualifications_json"] or "[]"),
@@ -7925,6 +7926,106 @@ def recruitment_set_letter_ref(app_id):
     return redirect(back if back.startswith("/hr/recruitment") else url_for("recruitment_list"))
 
 
+def _signature_path():
+    # Kept in the uploads folder (not in the code repository, which is public).
+    return os.path.join(UPLOAD_DIR, "signature", "director_signature.png")
+
+
+def _director_signature():
+    """PNG bytes of the director's signature uploaded by HR, or None."""
+    try:
+        with open(_signature_path(), "rb") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def _clean_signature_image(data):
+    """A photo/scan of a signature -> transparent-background PNG (dark ink), cropped to the strokes.
+    An image that already has transparency is only cropped and resized."""
+    img = PILImage.open(io.BytesIO(data))
+    img.load()
+    img = img.convert("RGBA")
+    alpha = img.split()[3]
+    if alpha.getextrema()[0] == 255:                       # opaque: paper background -> make it transparent
+        grey = img.convert("L")
+        hist = grey.histogram()
+        total, acc, bg = sum(hist), 0, 255
+        for v in range(256):                               # paper = the 90th-percentile brightness
+            acc += hist[v]
+            if acc >= 0.9 * total:
+                bg = v
+                break
+        lo, hi = bg - 20, max(bg - 150, 0)
+        lut = [0 if v >= lo else (255 if v <= hi else int(255 * (lo - v) / (lo - hi))) for v in range(256)]
+        alpha = grey.point(lut)
+        alpha = alpha.point([0 if v < 30 else v for v in range(256)])
+        ink = PILImage.new("RGBA", img.size, (15, 20, 45, 0))
+        ink.putalpha(alpha)
+        img = ink
+    box = img.split()[3].getbbox()
+    if box is None:
+        raise ValueError("No signature strokes found in that image.")
+    img = img.crop(box)
+    if img.width > 900:
+        img = img.resize((900, max(1, int(img.height * 900 / img.width))), PILImage.LANCZOS)
+    canvas = PILImage.new("RGBA", (img.width + 24, img.height + 24), (0, 0, 0, 0))
+    canvas.paste(img, (12, 12))
+    out = io.BytesIO()
+    canvas.save(out, "PNG")
+    return out.getvalue()
+
+
+@app.route("/hr/letter-signature", methods=["GET", "POST"])
+def letter_signature():
+    """HR uploads the director's signature once; it is then printed on every Employment Letter
+    (View / PDF / Word) between "Sincerely," and the director's name."""
+    if session.get("hr_role") == "approver":
+        abort(403)
+    message = None
+    if request.method == "POST":
+        if request.form.get("action") == "remove":
+            try:
+                os.remove(_signature_path())
+            except OSError:
+                pass
+            message = "Signature removed. Letters now have blank space to sign by hand."
+        else:
+            f = request.files.get("signature")
+            if f is None or not f.filename:
+                message = "Choose an image file first."
+            elif f.filename.rsplit(".", 1)[-1].lower() not in ("png", "jpg", "jpeg"):
+                message = "Please upload a PNG or JPG image."
+            else:
+                try:
+                    data = f.read()
+                    if len(data) > 8 * 1024 * 1024:
+                        raise ValueError("File too large (max 8 MB).")
+                    png = _clean_signature_image(data)
+                    os.makedirs(os.path.dirname(_signature_path()), exist_ok=True)
+                    with open(_signature_path(), "wb") as out:
+                        out.write(png)
+                    message = "Signature saved. It now appears on the Employment Letters."
+                except Exception as exc:  # unreadable image etc.
+                    message = f"Could not use that image: {exc}"
+    return render_template("letter_signature.html", has_signature=_director_signature() is not None, message=message)
+
+
+@app.route("/hr/letter-signature/image")
+def letter_signature_image():
+    if session.get("hr_role") == "approver":
+        abort(403)
+    data = _director_signature()
+    if data is None:
+        abort(404)
+    return Response(data, mimetype="image/png", headers={"Cache-Control": "no-store"})
+
+
+def _sign_letter(content):
+    sig = _director_signature()
+    return employment_letter.add_signature(content, sig) if sig else content
+
+
 def _employment_letter_content(app_id):
     """(application, docx bytes) for a candidate's Employment Letter built from the saved offer details."""
     if session.get("hr_role") == "approver":
@@ -7946,7 +8047,7 @@ def _employment_letter_content(app_id):
     if _custom_letter_name(app_id):
         with open(_custom_letter_path(app_id), "rb") as fh:
             custom = fh.read()
-        return application, employment_letter.set_ref_on_letter(custom, _loe_ref(db, app_id, letter_date.year))
+        return application, _sign_letter(employment_letter.set_ref_on_letter(custom, _loe_ref(db, app_id, letter_date.year)))
     data = {
         "ref": _loe_ref(db, app_id, letter_date.year),
         "full_name": application["full_name"], "address": application["address"],
@@ -7956,7 +8057,7 @@ def _employment_letter_content(app_id):
         "salary": float(offer["salary"] or DEFAULT_OFFER_SALARY), "schedule": offer["schedule"],
         "include_overseas": offer["include_overseas"] == "Y",
     }
-    return application, employment_letter.build_letter(data)
+    return application, _sign_letter(employment_letter.build_letter(data))
 
 
 def _letter_file_stem(application):

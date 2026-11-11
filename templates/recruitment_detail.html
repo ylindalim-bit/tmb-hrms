@@ -197,6 +197,9 @@
     </div>
     {% if offer.saved_at %}<p style="font-size:12px; color:var(--muted);">Last saved by {{ offer.saved_by or "-" }} at {{ offer.saved_at }}</p>{% endif %}
   </form>
+  <p style="font-size:12px; margin:10px 0 0;">Director's signature on letters:
+    <a href="{{ url_for('letter_signature') }}">{{ 'change / remove' if has_signature else 'upload it here' }}</a>
+    {% if has_signature %}<span style="color:#15803d;">&#10003; on</span>{% else %}<span style="color:var(--muted);">(blank space to sign by hand)</span>{% endif %}</p>
   <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border);">
     <strong style="font-size:13px;">Use your own Word letter for this candidate</strong>
     {% if custom_letter %}

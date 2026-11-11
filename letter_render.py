@@ -89,6 +89,18 @@ def parse(docx_bytes):
             continue
         p = Paragraph(ch, d)
         text = p.text
+        inline = ch.find(".//" + qn("wp:inline"))
+        if inline is not None and not text.strip():
+            blip = inline.find(".//" + qn("a:blip"))
+            ext = inline.find(qn("wp:extent"))
+            if blip is not None and ext is not None:
+                try:
+                    blob = d.part.related_parts[blip.get(qn("r:embed"))].blob
+                    blocks.append({"kind": "img", "bytes": blob, "w": int(ext.get("cx")) / 12700.0,
+                                   "h": int(ext.get("cy")) / 12700.0})
+                    continue
+                except (KeyError, ValueError, TypeError):
+                    pass
         runs = _runs_of(p)
         if not text.strip() and not (runs and any(r[2] for r in runs)):
             blocks.append({"kind": "space"})
@@ -236,6 +248,9 @@ def render_html(docx_bytes, title, pdf_url, word_url, back_url):
         prev_space = False
         if b["kind"] == "rule":
             parts.append("<hr>")
+        elif b["kind"] == "img":
+            parts.append('<div class="p" style="margin-left:5px;"><img alt="" style="width:%.0fpx; height:auto;" src="data:image/png;base64,%s"></div>'
+                         % (b["w"] * 1.33, base64.b64encode(b["bytes"]).decode("ascii")))
         elif b["kind"] == "cols":
             w = max(b["tab"] - b["x0"], 20)
             cls = "p h" if b["bold_all"] else "p"
@@ -387,6 +402,11 @@ def render_pdf(docx_bytes):
             wrapper.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), b["x0"]), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                                          ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
             story.append(wrapper)
+        elif b["kind"] == "img":
+            from reportlab.platypus import Image as RLImage
+            img = RLImage(io.BytesIO(b["bytes"]), width=b["w"], height=b["h"])
+            img.hAlign = "LEFT"
+            story.append(img)
         elif b["kind"] == "rule":
             story.append(Spacer(1, 6))
             story.append(HRFlowable(width="100%", thickness=0.8, color=colors.black))

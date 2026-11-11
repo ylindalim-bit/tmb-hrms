@@ -235,6 +235,39 @@ def _keep_titles_with_text(d):
                 trPr.append(trPr.makeelement(qn("w:cantSplit"), {}))
 
 
+def add_signature(docx_bytes, png_bytes, width_cm=3.4):
+    """Puts the director's signature image between "Sincerely," and the printed name ("Yang Hui").
+    The blank lines left there for a wet signature are replaced by the picture. Letters without
+    both of those lines are returned unchanged."""
+    import docx
+    from docx.shared import Cm
+    d = docx.Document(io.BytesIO(docx_bytes))
+    P = d.paragraphs
+    i_s = _find(P, lambda t: t.startswith("Sincerely"))
+    if i_s is None:
+        return docx_bytes
+    i_d = _find(P, lambda t: t.startswith("Yang Hui"), start=i_s + 1)
+    if i_d is None or i_d - i_s > 10:
+        return docx_bytes
+    between = P[i_s + 1:i_d]
+    if any(q.text.strip() for q in between) or not between:
+        return docx_bytes
+    host = between[0]
+    for q in between[1:]:
+        q._p.getparent().remove(q._p)
+    for r in list(host.runs):
+        r._r.getparent().remove(r._r)
+    host.paragraph_format.line_spacing = 1.0          # a fixed line height would cut the picture
+    host.paragraph_format.space_before = 0
+    host.paragraph_format.space_after = 0
+    host.add_run().add_picture(io.BytesIO(png_bytes), width=Cm(width_cm))
+    P[i_s].paragraph_format.keep_with_next = True
+    host.paragraph_format.keep_with_next = True
+    buf = io.BytesIO()
+    d.save(buf)
+    return buf.getvalue()
+
+
 def set_ref_on_letter(docx_bytes, ref):
     """An uploaded (hand-made) letter, used as it is, except that its Ref line is set: an existing 'Ref:' line is
     updated, otherwise a 'Ref: ...' line is added under the date line."""

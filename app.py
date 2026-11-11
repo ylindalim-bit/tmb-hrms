@@ -9020,6 +9020,41 @@ def portal_clock_location_error():
 LEAVE_HALF_DAY_SESSIONS = ("AM", "PM")
 
 
+def _al_days_available(db, emp_id, year, exclude_request_id=None):
+    """Annual Leave days still free to book in `year`: entitlement (prorated for the year, as on the
+    Leave Taken Report) + B/F + adjustments, less days already used (attendance_monthly, the same figure
+    as the report's AL Used) and less AL days in other still-Pending requests."""
+    emp = db.execute("SELECT * FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+    if emp is None:
+        return None
+    prorated, _note = _prorated_al_note(emp, year)
+    entitlement = prorated if prorated is not None else (emp["annual_leave_entitlement"] or 0)
+    used = db.execute(
+        "SELECT COALESCE(SUM(al_days),0) FROM attendance_monthly WHERE emp_id=? AND year=?", (emp_id, year)
+    ).fetchone()[0] or 0
+    pending = db.execute(
+        """SELECT COALESCE(SUM(days),0) FROM leave_requests
+           WHERE emp_id=? AND leave_type='Annual Leave' AND status='Pending' AND start_date LIKE ? AND id != ?""",
+        (emp_id, f"{year:04d}-%", exclude_request_id or -1),
+    ).fetchone()[0] or 0
+    return round(entitlement + _al_bf_for_year(emp, year) - used - pending, 2)
+
+
+def _al_over_balance_message(db, emp_id, start_date, days, exclude_request_id=None):
+    """None if the Annual Leave fits within the balance, else a message to show. Staff can't book more AL
+    than they have; use Unpaid Leave for the rest (or HR credits days on the AL Adjustment Log)."""
+    try:
+        year = int(start_date[:4])
+    except (TypeError, ValueError):
+        return None
+    free = _al_days_available(db, emp_id, year, exclude_request_id)
+    if free is None or days <= free + 1e-9:
+        return None
+    return (f"Not enough Annual Leave: this request is {days:g} day(s) but only {max(free, 0):g} day(s) are left "
+            f"for {year} (after approved leave and other pending requests). Apply the extra days as Unpaid Leave, "
+            "or ask HR if you think your balance is wrong.")
+
+
 def _validate_and_create_leave_request(db, emp_id, leave_type, start_date, end_date, reason, files, status,
                                         reviewed_by=None, half_day=None):
     """Shared validation + insert for a new leave_requests row - used by
@@ -9075,6 +9110,10 @@ def _validate_and_create_leave_request(db, emp_id, leave_type, start_date, end_d
     days = 0.5 if half_day else (
         datetime.date.fromisoformat(end_date) - datetime.date.fromisoformat(start_date)
     ).days + 1
+    if leave_type == "Annual Leave":
+        over = _al_over_balance_message(db, emp_id, start_date, days)
+        if over:
+            return None, over
     now = datetime.datetime.now().isoformat(timespec="seconds")
     cols = ["emp_id", "leave_type", "start_date", "end_date", "days", "reason", "status", "submitted_at"]
     vals = [emp_id, leave_type, start_date, end_date, days, reason, status, now]
@@ -10603,6 +10642,13 @@ def review_leave_request(request_id):
             error=f"{leave_request['emp_id']} already has another type of leave approved on "
                   f"{leave_request['start_date']} - a half-day can't be combined with it automatically.",
         ))
+    if decision == "Approved" and leave_request["leave_type"] == "Annual Leave":
+        over = _al_over_balance_message(db, leave_request["emp_id"], leave_request["start_date"],
+                                        leave_request["days"] or 0, exclude_request_id=request_id)
+        if over:
+            return redirect(url_for("leave_requests_admin",
+                                    error=f"{leave_request['emp_id']}: " + over.replace("ask HR if you think your balance is wrong",
+                                                                                         "credit days on the AL Adjustment Log first")))
     # Reviewer is derived from who's actually logged in, not typed by hand -
     # ties every decision to a real account now that HR/approver logins exist.
     hr_user = db.execute("SELECT full_name FROM hr_users WHERE username=?", (session["hr_username"],)).fetchone()

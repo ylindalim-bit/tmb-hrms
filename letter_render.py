@@ -185,6 +185,19 @@ def parse(docx_bytes):
         blocks.append({"kind": "p", "runs": runs, "align": align, "heading": heading,
                        "label": label, "left": left, "hanging": hanging, "first": -hanging if not label else 0,
                        "keep_next": keep_next})
+    # Room to sign: the gap after "Sincerely," (the signing space above the director's name, no line)
+    # and the gap above the acceptance "Signature ... Date" line are kept tall instead of collapsing.
+    for i, b in enumerate(blocks):
+        if b["kind"] != "p":
+            continue
+        t = "".join(r[0] for r in b["runs"]).strip()
+        if t.startswith("Sincerely") and i + 1 < len(blocks) and blocks[i + 1]["kind"] == "space":
+            blocks[i + 1]["height"] = 46
+        elif t.startswith("Signature:") and i > 0 and blocks[i - 1]["kind"] == "space":
+            j = i - 1
+            while j > 0 and blocks[j - 1]["kind"] == "space":   # a run of blanks shows as one gap: the first one
+                j -= 1
+            blocks[j]["height"] = 30
     return blocks
 
 
@@ -214,7 +227,9 @@ def render_html(docx_bytes, title, pdf_url, word_url, back_url):
     prev_space = True
     for b in parse(docx_bytes):
         if b["kind"] == "space":
-            if not prev_space:
+            if b.get("height") and not prev_space:
+                parts.append(f'<div class="gap" style="height:{int(b["height"] * 1.33)}px"></div>')
+            elif not prev_space:
                 parts.append('<div class="gap"></div>')
             prev_space = True
             continue
@@ -354,7 +369,7 @@ def render_pdf(docx_bytes):
     for b in parse(docx_bytes):
         if b["kind"] == "space":
             if not prev_space:
-                story.append(Spacer(1, 6))
+                story.append(Spacer(1, b.get("height") or 6))
             prev_space = True
             continue
         prev_space = False

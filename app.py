@@ -9929,7 +9929,20 @@ def leave_report():
     if not years:
         years = [{"year": year}]
 
-    return render_template("leave_report.html", rows=rows, year=year, years=years)
+    # AL taken month by month (Jan-Dec) - same attendance_monthly figures as "AL Used".
+    by_month = {}
+    for r in db.execute(
+        "SELECT emp_id, month, COALESCE(SUM(al_days),0) AS al FROM attendance_monthly WHERE year=? GROUP BY emp_id, month",
+        (year,),
+    ).fetchall():
+        by_month.setdefault(r["emp_id"], {})[r["month"]] = r["al"]
+    for r in rows:
+        mm = by_month.get(r["emp_id"], {})
+        r["al_months"] = [round(mm.get(m, 0), 2) for m in range(1, 13)]
+    month_totals = [round(sum(r["al_months"][i] for r in rows), 2) for i in range(12)]
+
+    return render_template("leave_report.html", rows=rows, year=year, years=years,
+                           month_totals=month_totals, month_labels=MONTH_NAMES[1:])
 
 
 @app.route("/ot-report/<int:year>/<int:month>")

@@ -3562,8 +3562,6 @@ def attendance_bulk_fill():
             error = "Tick at least one employee."
         elif d0 is None or d1 < d0:
             error = "Choose a valid From and To date (To must not be before From)."
-        elif form["date_to"] > today_iso:
-            error = "To date can't be in the future."
         elif in_min is None or out_min is None or out_min <= in_min:
             error = "Time In and Time Out must both be filled in, and Time Out must be later."
         else:
@@ -3572,7 +3570,8 @@ def attendance_bulk_fill():
                 written = _bulk_fill_apply(db, plans, form["time_in"], form["time_out"])
                 db.commit()
                 plans = _bulk_fill_plan(db, form["emp_ids"], form["date_from"], form["date_to"])
-    return render_template("attendance_bulk_fill.html", employees=employees, form=form, plans=plans,
+    future_dates = bool(plans) and form["date_to"] > today_iso
+    return render_template("attendance_bulk_fill.html", employees=employees, form=form, plans=plans, future_dates=future_dates,
                            error=error, written=written, base_options=BASE_OPTIONS,
                            depts=depts, positions=positions)
 

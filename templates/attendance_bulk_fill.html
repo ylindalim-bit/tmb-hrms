@@ -95,6 +95,9 @@
 {% if plans is not none %}
 <div class="card">
   <h2 style="margin-top:0;">{% if written is not none %}Result{% else %}Preview &mdash; nothing saved yet{% endif %}</h2>
+  {% if future_dates %}<div style="background:#eff6ff; border:1px solid #93c5fd; border-radius:6px; padding:6px 10px; margin-bottom:10px; font-size:13px;">
+    Some of these dates are <strong>in the future</strong>, so the times are filled in advance. Leave or a Business Trip / Training notice approved
+    for those days later will replace the filled day.</div>{% endif %}
   {% set ns = namespace(adds=0, alerts=0) %}
   {% for p in plans %}
   {% set adds = p['items'] | selectattr('action', 'in', ['add', 'fill']) | list %}

@@ -29,7 +29,7 @@
     <a href="{{ url_for('portal_daily_attendance') }}">Daily Attendance</a>
     <a href="{{ url_for('portal_leave') }}">Apply Leave</a>
     <a href="{{ url_for('portal_medical_claim') }}">Medical Claim</a>
-    <a href="{{ url_for('portal_business_trip') }}">Movement Notice</a>
+    <a href="{{ url_for('portal_business_trip') }}">Business Trip / Training</a>
     <a href="{{ url_for('portal_training') }}">My Training</a>
     {% if emp and emp.mobile_clockin_enabled == "Y" %}
     <a href="{{ url_for('portal_clock') }}">Clock In / Out</a>
@@ -46,7 +46,7 @@
     <a href="{{ url_for('leave_requests_admin') }}" style="color:var(--accent);">Approve Leave
       {% if pending_leave_count %}<span class="pill rejected" style="margin-left:3px;">{{ pending_leave_count }}</span>{% endif %}
     </a>
-    <a href="{{ url_for('business_trips_admin') }}" style="color:var(--accent);">Movement Notices
+    <a href="{{ url_for('business_trips_admin') }}" style="color:var(--accent);">Business Trips / Training
       {% if pending_trip_count %}<span class="pill rejected" style="margin-left:3px;">{{ pending_trip_count }}</span>{% endif %}
     </a>
     {% endif %}

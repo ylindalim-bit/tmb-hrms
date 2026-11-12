@@ -134,7 +134,7 @@
         </td>
         <td class="text">
           {% if lr.source == 'trip' %}
-          <span style="color:var(--muted); font-size:11px;">Movement Notice</span>
+          <span style="color:var(--muted); font-size:11px;">Business Trip / Training</span>
           {% elif lr.status == 'Pending' %}
           <form method="post" action="{{ url_for('portal_leave_delete', request_id=lr.id) }}" onsubmit="return confirm('Delete this leave request?');">
             <button class="btn secondary" type="submit" style="padding:4px 10px;">Delete</button>

@@ -39,7 +39,7 @@
   </div>
 
   <div class="card">
-    <h2 style="margin-top:0;">Movement Notices</h2>
+    <h2 style="margin-top:0;">Business Trip / Training</h2>
     <p>{{ pending_trip }} pending</p>
     <a class="btn secondary" href="{{ url_for('portal_business_trip') }}">Apply / View</a>
   </div>
@@ -70,7 +70,7 @@
     {% endif %}
     {% if supervisor.pending_trip %}
     <p style="color:var(--danger); font-weight:600;">{{ supervisor.pending_trip }} movement notice{{ "s" if supervisor.pending_trip != 1 }} awaiting your approval</p>
-    <p><a class="btn secondary" href="{{ url_for('business_trips_admin') }}">Review Movement Notices</a></p>
+    <p><a class="btn secondary" href="{{ url_for('business_trips_admin') }}">Review Business Trips / Training</a></p>
     {% endif %}
     {% if supervisor.pending_appraisal %}
     <p style="color:var(--danger); font-weight:600;">{{ supervisor.pending_appraisal }} team member{{ "s" if supervisor.pending_appraisal != 1 }} still need{{ "s" if supervisor.pending_appraisal == 1 }} an appraisal</p>

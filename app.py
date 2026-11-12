@@ -413,6 +413,8 @@ DOCUMENT_TYPES =["Job Application Form", "IC / Passport Copy", "Letter of Employ
                    "Warning Letter", "Show Cause Letter", "Resignation Letter", "CP22A", "e-Stamping Certificate",
                    "TP3 (Prior Employer Income)", "Other"]
 BUSINESS_TRIP_TYPES = ["Business Trip", "Out-Duty", "Training", "Unrecorded Leave", "Home Leave (Malaysia)"]
+# Home Leave (Malaysia) is no longer offered for new notices (existing ones, reports and totals still work).
+SELECTABLE_TRIP_TYPES = [t for t in BUSINESS_TRIP_TYPES if t != "Home Leave (Malaysia)"]
 # Approving either of these pays the days as Other Paid Leave rather than
 # deducting them - "Unrecorded Leave" explains an attendance gap after the
 # fact; "Home Leave (Malaysia)" is an overseas-assignment staff member's
@@ -9441,7 +9443,7 @@ def portal_leave():
     return render_template("portal_leave.html", emp=emp, requests=my_requests, error=error,
                             al_balance=al_balance, mc_balance=mc_balance, hl_balance=hl_balance,
                             al_used=al_used, mc_used=mc_used, ul_used=ul_used, unrecorded_used=unrecorded_used,
-                            home_leave_used=home_leave_used, notice_types=BUSINESS_TRIP_TYPES,
+                            home_leave_used=home_leave_used, notice_types=SELECTABLE_TRIP_TYPES,
                             change_by_leave_id=change_by_leave_id,
                             documents_by_request=documents_by_request, leave_types=LEAVE_TYPES,
                             al_entitlement=al_entitlement, al_bf=(emp["al_bf_days"] or 0),
@@ -9798,7 +9800,7 @@ def portal_business_trip():
     error = None
     if request.method == "POST":
         notice_type = request.form.get("notice_type") or "Business Trip"
-        if notice_type not in BUSINESS_TRIP_TYPES:
+        if notice_type not in SELECTABLE_TRIP_TYPES:
             notice_type = "Business Trip"
         destination = request.form.get("destination", "").strip()
         start_date = request.form.get("start_date", "")
@@ -9867,7 +9869,7 @@ def portal_business_trip():
         "SELECT * FROM business_trips WHERE emp_id=? ORDER BY submitted_at DESC", (emp["emp_id"],)
     ).fetchall()
     return render_template("portal_business_trip.html", emp=emp, trips=my_trips, error=error,
-                            notice_types=BUSINESS_TRIP_TYPES, trip_docs=_business_trip_extra_docs(db))
+                            notice_types=SELECTABLE_TRIP_TYPES, trip_docs=_business_trip_extra_docs(db))
 
 
 @app.route("/portal/ot-claim", methods=["GET", "POST"])
@@ -11581,7 +11583,7 @@ def hr_add_business_trip():
     if request.method == "POST":
         emp_id = request.form.get("emp_id", "").strip()
         notice_type = request.form.get("notice_type") or "Business Trip"
-        if notice_type not in BUSINESS_TRIP_TYPES:
+        if notice_type not in SELECTABLE_TRIP_TYPES:
             notice_type = "Business Trip"
         destination = request.form.get("destination", "").strip()
         start_date = request.form.get("start_date", "")
@@ -11645,7 +11647,7 @@ def hr_add_business_trip():
             return redirect(url_for("business_trips_admin"))
 
     return render_template("business_trip_add.html", employees=employees, error=error,
-                            notice_types=BUSINESS_TRIP_TYPES)
+                            notice_types=SELECTABLE_TRIP_TYPES)
 
 
 @app.route("/business-trips/<int:trip_id>/delete", methods=["POST"])

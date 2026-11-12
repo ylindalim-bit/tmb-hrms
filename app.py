@@ -6720,6 +6720,7 @@ def leave_requests_pdf():
     with ?year=&month= (by start date); ?emp_id= limits it to one employee. Pending
     PDFs get a blank Decision column for signing by hand."""
     db = get_db()
+    _ensure_trip_half_day(db)
     scope = "reviewed" if request.args.get("scope") == "reviewed" else "pending"
     allowed_ids, _flt = _leave_filter_emp_ids(db, request.args)
     today = datetime.date.today()
@@ -6747,8 +6748,8 @@ def leave_requests_pdf():
             WHERE lr.status {status_sql} {scope_clause} {month_sql.format(t='lr')}
             UNION ALL
             SELECT e.emp_id, e.full_name, bt.notice_type, bt.destination, bt.start_date, bt.end_date,
-                   CAST(julianday(bt.end_date) - julianday(bt.start_date) + 1 AS INTEGER), bt.purpose, bt.status,
-                   bt.reviewed_by, bt.reviewed_at, NULL
+                   CASE WHEN bt.half_day IN ('AM','PM') THEN 0.5 ELSE CAST(julianday(bt.end_date) - julianday(bt.start_date) + 1 AS INTEGER) END, bt.purpose, bt.status,
+                   bt.reviewed_by, bt.reviewed_at, CASE bt.half_day WHEN 'AM' THEN 'tAM' WHEN 'PM' THEN 'tPM' END
             FROM business_trips bt JOIN employees e ON e.emp_id = bt.emp_id
             WHERE bt.status {status_sql} {scope_clause} {month_sql.format(t='bt')}
             ORDER BY 2, 5""",
@@ -6771,7 +6772,7 @@ def leave_requests_pdf():
     for r in rows:
         dates = r["start_date"] if (r["half_day"] or r["start_date"] == r["end_date"]) else f"{r['start_date']} - {r['end_date']}"
         if r["half_day"]:
-            dates += " (half day - " + ("morning off" if r["half_day"] == "AM" else "afternoon off") + ")"
+            dates += " (half day - " + {"AM": "morning off", "PM": "afternoon off", "tAM": "morning", "tPM": "afternoon"}[r["half_day"]] + ")"
         status = ""
         if scope == "reviewed":
             status = f"{r['status']}" + (f" by {r['reviewed_by']}" if r["reviewed_by"] else "")
@@ -9374,6 +9375,9 @@ def portal_leave():
     home_leave_used = 0.0
     for t in db.execute("""SELECT * FROM business_trips WHERE emp_id=?""", (emp["emp_id"],)).fetchall():
         days = (datetime.date.fromisoformat(t["end_date"]) - datetime.date.fromisoformat(t["start_date"])).days + 1
+        _th = t["half_day"] if "half_day" in t.keys() and t["half_day"] in ("AM", "PM") else None
+        if _th:
+            days = 0.5
         if t["status"] == "Approved" and t["start_date"][:4] == str(datetime.date.today().year):
             if t["notice_type"] == "Unrecorded Leave":
                 unrecorded_used += days
@@ -9381,7 +9385,7 @@ def portal_leave():
                 home_leave_used += days
         leave_rows.append({
             "source": "trip", "id": t["id"], "leave_type": t["notice_type"], "start_date": t["start_date"],
-            "end_date": t["end_date"], "half_day": None, "days": days, "reason": t["purpose"],
+            "end_date": t["end_date"], "half_day": ("t" + _th) if _th else None, "days": days, "reason": t["purpose"],
             "status": t["status"], "review_notes": t["review_notes"], "submitted_at": t["submitted_at"],
             "main_doc": t["supporting_doc_original"] if t["supporting_doc_stored"] else None,
             "extra_docs": trip_docs_all.get(t["id"], []),
@@ -9750,6 +9754,26 @@ def portal_business_trip_document_add(trip_id):
     return redirect(url_for("portal_business_trip"))
 
 
+TRIP_HALF_DAY_TYPES = ("Training", "Business Trip", "Out-Duty")   # the paid-leave notice types stay whole days
+
+
+def _ensure_trip_half_day(db):
+    """business_trips.half_day ('AM' / 'PM') for a half-day Movement Notice - added on first use, so the
+    live database needs no separate migration step."""
+    try:
+        cols = [r[1] for r in db.execute("PRAGMA table_info(business_trips)").fetchall()]
+        if cols and "half_day" not in cols:
+            db.execute("ALTER TABLE business_trips ADD COLUMN half_day TEXT")
+            db.commit()
+    except sqlite3.OperationalError:
+        pass
+
+
+def _trip_half_day(notice_type, form_value):
+    """'AM' / 'PM' when HR/staff chose a half day on a notice type that allows it, else None."""
+    return form_value if (form_value in ("AM", "PM") and notice_type in TRIP_HALF_DAY_TYPES) else None
+
+
 def _training_purpose(notice_type, course_title, purpose):
     """A Training notice must name the course: it is kept at the front of Purpose ("Course: <title>"), so it
     shows everywhere Purpose does (Staff Portal list, Leave Requests, Business Trips, PDFs).
@@ -9767,6 +9791,7 @@ def _training_purpose(notice_type, course_title, purpose):
 @portal_login_required
 def portal_business_trip():
     db = get_db()
+    _ensure_trip_half_day(db)
     emp = current_portal_employee(db)
     error = None
     if request.method == "POST":
@@ -9776,6 +9801,9 @@ def portal_business_trip():
         destination = request.form.get("destination", "").strip()
         start_date = request.form.get("start_date", "")
         end_date = request.form.get("end_date", "")
+        half_day = _trip_half_day(notice_type, request.form.get("half_day"))
+        if half_day and start_date:
+            end_date = start_date   # a half day is a single date
         purpose = request.form.get("purpose", "").strip() or None
         purpose, course_error = _training_purpose(notice_type, request.form.get("course_title"), purpose)
         files = [f for f in request.files.getlist("supporting_doc") if f.filename]
@@ -9812,11 +9840,11 @@ def portal_business_trip():
             cur = db.execute(
                 """INSERT INTO business_trips (
                        emp_id, notice_type, destination, start_date, end_date, purpose,
-                       supporting_doc_original, supporting_doc_stored, status, submitted_at
-                   ) VALUES (?,?,?,?,?,?,?,?,'Pending',?)""",
+                       supporting_doc_original, supporting_doc_stored, status, submitted_at, half_day
+                   ) VALUES (?,?,?,?,?,?,?,?,'Pending',?,?)""",
                 (emp["emp_id"], notice_type, destination, start_date, end_date, purpose,
                  original_name, stored_name,
-                 datetime.datetime.now().isoformat(timespec="seconds")),
+                 datetime.datetime.now().isoformat(timespec="seconds"), half_day),
             )
             if len(saved) > 1:
                 _ensure_business_trip_documents_table(db)
@@ -10347,6 +10375,7 @@ def ot_report_individual(year, month, emp_id):
 @app.route("/leave-requests")
 def leave_requests_admin():
     db = get_db()
+    _ensure_trip_half_day(db)
     # An approver (e.g. Mr Kee) only sees requests for employees assigned to
     # them; HR (role='admin') sees everyone - matches "all leave except
     # W001/W002/K002/K003 is under Mr Kee or HR".
@@ -10391,10 +10420,10 @@ def leave_requests_admin():
            UNION ALL
            SELECT 'trip' AS source, bt.id, bt.emp_id, e.full_name, bt.notice_type AS type_label,
                    bt.destination, bt.start_date, bt.end_date,
-                   CAST(julianday(bt.end_date) - julianday(bt.start_date) + 1 AS INTEGER) AS days,
+                   CASE WHEN bt.half_day IN ('AM','PM') THEN 0.5 ELSE CAST(julianday(bt.end_date) - julianday(bt.start_date) + 1 AS INTEGER) END AS days,
                    bt.purpose AS reason,
                    bt.supporting_doc_original, bt.supporting_doc_stored,
-                   bt.submitted_at, NULL AS half_day
+                   bt.submitted_at, CASE bt.half_day WHEN 'AM' THEN 'tAM' WHEN 'PM' THEN 'tPM' END AS half_day
            FROM business_trips bt JOIN employees e ON e.emp_id = bt.emp_id
            WHERE bt.status='Pending' {scope_clause}"""
     try:
@@ -10424,10 +10453,10 @@ def leave_requests_admin():
            UNION ALL
            SELECT 'trip' AS source, bt.id, bt.emp_id, e.full_name, bt.notice_type AS type_label,
                    bt.destination, bt.start_date, bt.end_date,
-                   CAST(julianday(bt.end_date) - julianday(bt.start_date) + 1 AS INTEGER) AS days,
+                   CASE WHEN bt.half_day IN ('AM','PM') THEN 0.5 ELSE CAST(julianday(bt.end_date) - julianday(bt.start_date) + 1 AS INTEGER) END AS days,
                    bt.purpose AS reason,
                    bt.supporting_doc_original, bt.supporting_doc_stored,
-                   bt.status, bt.reviewed_by, bt.reviewed_at, NULL AS half_day
+                   bt.status, bt.reviewed_by, bt.reviewed_at, CASE bt.half_day WHEN 'AM' THEN 'tAM' WHEN 'PM' THEN 'tPM' END AS half_day
            FROM business_trips bt JOIN employees e ON e.emp_id = bt.emp_id
            WHERE bt.status!='Pending' AND bt.start_date LIKE ? {scope_clause}
            ORDER BY 4, 7""",
@@ -10881,6 +10910,7 @@ def review_leave_request(request_id):
 @app.route("/business-trips")
 def business_trips_admin():
     db = get_db()
+    _ensure_trip_half_day(db)
     # An approver (e.g. Mr Kee) only sees notices for employees assigned to
     # them as Leave Approver - reuses that same assignment rather than a
     # separate one, since it's the same "who's this person's supervisor"
@@ -10892,7 +10922,7 @@ def business_trips_admin():
         params.append(session["hr_username"])
     pending = db.execute(
         f"""SELECT bt.*, e.full_name,
-                   CAST(julianday(bt.end_date) - julianday(bt.start_date) + 1 AS INTEGER) AS days
+                   CASE WHEN bt.half_day IN ('AM','PM') THEN 0.5 ELSE CAST(julianday(bt.end_date) - julianday(bt.start_date) + 1 AS INTEGER) END AS days
            FROM business_trips bt
            JOIN employees e ON e.emp_id = bt.emp_id
            WHERE bt.status='Pending' {scope_clause} ORDER BY bt.submitted_at""",
@@ -10900,7 +10930,7 @@ def business_trips_admin():
     ).fetchall()
     reviewed = db.execute(
         f"""SELECT bt.*, e.full_name,
-                   CAST(julianday(bt.end_date) - julianday(bt.start_date) + 1 AS INTEGER) AS days
+                   CASE WHEN bt.half_day IN ('AM','PM') THEN 0.5 ELSE CAST(julianday(bt.end_date) - julianday(bt.start_date) + 1 AS INTEGER) END AS days
            FROM business_trips bt
            JOIN employees e ON e.emp_id = bt.emp_id
            WHERE bt.status!='Pending' {scope_clause} ORDER BY bt.reviewed_at DESC LIMIT 50""",
@@ -11058,6 +11088,7 @@ def hr_add_business_trip():
     exactly as approving a submitted one does. Unrecorded Leave still needs a
     supporting document, same as the portal."""
     db = get_db()
+    _ensure_trip_half_day(db)
     error = None
     is_approver = session.get("hr_role") == "approver"
     if is_approver:
@@ -11078,6 +11109,9 @@ def hr_add_business_trip():
         destination = request.form.get("destination", "").strip()
         start_date = request.form.get("start_date", "")
         end_date = request.form.get("end_date", "")
+        half_day = _trip_half_day(notice_type, request.form.get("half_day"))
+        if half_day and start_date:
+            end_date = start_date
         purpose = request.form.get("purpose", "").strip() or None
         purpose, course_error = _training_purpose(notice_type, request.form.get("course_title"), purpose)
         file = request.files.get("supporting_doc")
@@ -11117,10 +11151,10 @@ def hr_add_business_trip():
                 """INSERT INTO business_trips (
                        emp_id, notice_type, destination, start_date, end_date, purpose,
                        supporting_doc_original, supporting_doc_stored, status, submitted_at,
-                       reviewed_by, reviewed_at
-                   ) VALUES (?,?,?,?,?,?,?,?,'Approved',?,?,?)""",
+                       reviewed_by, reviewed_at, half_day
+                   ) VALUES (?,?,?,?,?,?,?,?,'Approved',?,?,?,?)""",
                 (emp_id, notice_type, destination, start_date, end_date, purpose,
-                 original_name, stored_name, now, reviewer, now),
+                 original_name, stored_name, now, reviewer, now, half_day),
             )
             if notice_type in PAID_TRIP_NOTICE_TYPES:
                 _sync_days_to_attendance_monthly(db, emp_id, start_date, end_date, "other_paid_leave")

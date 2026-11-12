@@ -19,7 +19,7 @@
         <td class="text">{{ t.emp_id }} &mdash; {{ t.full_name }}</td>
         <td class="text">{% if t.notice_type == 'Unrecorded Leave' %}<strong>{{ t.notice_type }}</strong>{% else %}{{ t.notice_type }}{% endif %}</td>
         <td class="text">{{ t.destination }}</td>
-        <td class="text">{{ t.start_date }} &ndash; {{ t.end_date }}</td>
+        <td class="text">{% if t.half_day %}{{ t.start_date }}<div style="font-size:11px; color:var(--muted);">Half day &mdash; {{ 'morning' if t.half_day == 'AM' else 'afternoon' }}</div>{% else %}{{ t.start_date }} &ndash; {{ t.end_date }}{% endif %}</td>
         <td>{{ t.days }}</td>
         <td class="text">{{ t.purpose or "" }}</td>
         <td class="text">
@@ -68,7 +68,7 @@
         <td class="text">{{ t.emp_id }} &mdash; {{ t.full_name }}</td>
         <td class="text">{% if t.notice_type == 'Unrecorded Leave' %}<strong>{{ t.notice_type }}</strong>{% else %}{{ t.notice_type }}{% endif %}</td>
         <td class="text">{{ t.destination }}</td>
-        <td class="text">{{ t.start_date }} &ndash; {{ t.end_date }}</td>
+        <td class="text">{% if t.half_day %}{{ t.start_date }}<div style="font-size:11px; color:var(--muted);">Half day &mdash; {{ 'morning' if t.half_day == 'AM' else 'afternoon' }}</div>{% else %}{{ t.start_date }} &ndash; {{ t.end_date }}{% endif %}</td>
         <td>{{ t.days }}</td>
         <td class="text">
           {% if t.supporting_doc_stored %}

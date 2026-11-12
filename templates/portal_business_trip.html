@@ -28,6 +28,14 @@
     <div><label id="trip_end_label">End Date</label><input type="date" id="trip_end_date" name="end_date" onchange="updateTripDays()" required></div>
   </div>
   <p id="trip_days" style="font-weight:600; margin-top:8px;"></p>
+  <div id="half_row" style="margin-top:12px;">
+    <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">Whole day or half day?</label>
+    <select id="half_day" name="half_day" onchange="updateTripDays()" style="width:auto;">
+      <option value="">Whole day(s) &mdash; use the start and end date above</option>
+      <option value="AM">Half day &mdash; morning</option>
+      <option value="PM">Half day &mdash; afternoon</option>
+    </select>
+  </div>
   <div id="course_row" style="margin-top:12px; display:none;">
     <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px; font-weight:600;">Title of Course <span style="color:var(--danger);">*</span></label>
     <input type="text" id="course_title" name="course_title" style="width:100%;" placeholder="e.g. CNC Machining Basic Course">
@@ -60,7 +68,7 @@
       <tr>
         <td class="text">{{ t.notice_type }}</td>
         <td class="text">{{ t.destination }}</td>
-        <td class="text">{{ t.start_date }} &ndash; {{ t.end_date }}</td>
+        <td class="text">{% if t.half_day %}{{ t.start_date }}<div style="font-size:11px; color:var(--muted);">Half day &mdash; {{ 'morning' if t.half_day == 'AM' else 'afternoon' }}</div>{% else %}{{ t.start_date }} &ndash; {{ t.end_date }}{% endif %}</td>
         <td class="text">{{ t.purpose or "" }}</td>
         <td class="text">
           {% if t.supporting_doc_stored %}
@@ -101,7 +109,10 @@ function updateTripDays() {
   var startStr = document.getElementById('trip_start_date').value;
   var endStr = document.getElementById('trip_end_date').value;
   var display = document.getElementById('trip_days');
+  var half = document.getElementById('half_day').value;
+  if (half) { document.getElementById('trip_end_date').value = startStr; endStr = startStr; }
   if (!startStr || !endStr) { display.textContent = ''; return; }
+  if (half) { display.textContent = '0.5 day'; display.style.color = ''; return; }
   var start = new Date(startStr);
   var end = new Date(endStr);
   var days = Math.round((end - start) / 86400000) + 1;
@@ -115,7 +126,11 @@ function updateTripDays() {
 }
 
 function updateTripDocRequirement() {
-  var isTraining = document.getElementById('notice_type').value === 'Training';
+  var _nt = document.getElementById('notice_type').value;
+  var halfOk = ['Training', 'Business Trip', 'Out-Duty'].indexOf(_nt) !== -1;
+  document.getElementById('half_row').style.display = halfOk ? 'block' : 'none';
+  if (!halfOk) { document.getElementById('half_day').value = ''; updateTripDays(); }
+  var isTraining = _nt === 'Training';
   document.getElementById('course_row').style.display = isTraining ? 'block' : 'none';
   document.getElementById('course_title').required = isTraining;
   document.getElementById('trip_start_label').textContent = isTraining ? 'Course Start Date' : 'Start Date';

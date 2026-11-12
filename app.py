@@ -9750,6 +9750,19 @@ def portal_business_trip_document_add(trip_id):
     return redirect(url_for("portal_business_trip"))
 
 
+def _training_purpose(notice_type, course_title, purpose):
+    """A Training notice must name the course: it is kept at the front of Purpose ("Course: <title>"), so it
+    shows everywhere Purpose does (Staff Portal list, Leave Requests, Business Trips, PDFs).
+    Returns (purpose, error)."""
+    course_title = (course_title or "").strip()
+    if notice_type != "Training":
+        return purpose, None
+    if not course_title:
+        return purpose, "Please enter the title of the course for a Training notice."
+    text = "Course: " + course_title
+    return (text + " - " + purpose if purpose else text), None
+
+
 @app.route("/portal/business-trip", methods=["GET", "POST"])
 @portal_login_required
 def portal_business_trip():
@@ -9764,10 +9777,13 @@ def portal_business_trip():
         start_date = request.form.get("start_date", "")
         end_date = request.form.get("end_date", "")
         purpose = request.form.get("purpose", "").strip() or None
+        purpose, course_error = _training_purpose(notice_type, request.form.get("course_title"), purpose)
         files = [f for f in request.files.getlist("supporting_doc") if f.filename]
         has_file = bool(files)
         original_name = stored_name = None
-        if not destination or not start_date or not end_date:
+        if course_error:
+            error = course_error
+        elif not destination or not start_date or not end_date:
             error = "Destination, start date, and end date are required."
         elif end_date < start_date:
             error = "End date cannot be before start date."
@@ -11063,11 +11079,14 @@ def hr_add_business_trip():
         start_date = request.form.get("start_date", "")
         end_date = request.form.get("end_date", "")
         purpose = request.form.get("purpose", "").strip() or None
+        purpose, course_error = _training_purpose(notice_type, request.form.get("course_title"), purpose)
         file = request.files.get("supporting_doc")
         has_file = file is not None and file.filename != ""
         original_name = stored_name = None
         emp = db.execute("SELECT * FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
-        if emp is None:
+        if course_error:
+            error = course_error
+        elif emp is None:
             error = "Select a valid employee."
         elif is_approver and emp["leave_approver_username"] != session["hr_username"]:
             error = "You can only enter notices for staff assigned to you."

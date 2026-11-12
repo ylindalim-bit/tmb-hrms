@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Training Records - TMB Payroll{% endblock %}
+{% block content %}
+<h1>Training Records
+  <a href="{{ url_for('training_add') }}" style="font-size:13px; font-weight:600; margin-left:10px;">+ Add training (one or several staff)</a>
+  <a href="{{ url_for('training_export', **qs) }}" style="font-size:13px; font-weight:600; margin-left:10px;">Download Excel report</a>
+</h1>
+<p style="color:var(--muted); font-size:13px; margin-top:-8px; max-width:900px;">
+  Courses attended by staff, with hours. Staff add their own under <em>My Training</em> on the Staff Portal (and an approved Training notice
+  creates a record automatically); you can adjust anything here. Once you <strong>verify</strong> a record, the staff member can no longer change it.
+</p>
+
+<form method="get" class="card no-print" style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
+  <div><label>Year (by start date)</label>
+    <select name="year" style="width:auto;">
+      <option value="0" {% if flt.year == 0 %}selected{% endif %}>All years</option>
+      {% for y in years %}<option value="{{ y }}" {% if flt.year == y %}selected{% endif %}>{{ y }}</option>{% endfor %}
+    </select></div>
+  <div><label>Employee</label>
+    <select name="emp_id" style="width:auto; min-width:180px;">
+      <option value="">All employees</option>
+      {% for e in emps %}<option value="{{ e.emp_id }}" {% if flt.emp_id == e.emp_id %}selected{% endif %}>{{ e.emp_id }} &mdash; {{ e.full_name }}</option>{% endfor %}
+    </select></div>
+  <div><label>Base</label>
+    <select name="base" style="width:auto;"><option value="">All</option>
+      {% for b in base_options %}<option value="{{ b }}" {% if flt.base == b %}selected{% endif %}>{{ b }}</option>{% endfor %}</select></div>
+  <div><label>Department</label>
+    <select name="dept" style="width:auto;"><option value="">All</option>
+      {% for d in depts %}<option value="{{ d }}" {% if flt.dept == d %}selected{% endif %}>{{ d }}</option>{% endfor %}</select></div>
+  <div><label>Type</label>
+    <select name="type" style="width:auto;"><option value="">All</option>
+      {% for t in types %}<option value="{{ t }}" {% if flt.type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+  <div><label>HRD claim</label>
+    <select name="hrd" style="width:auto;"><option value="">Any</option>
+      <option value="Y" {% if flt.hrd == 'Y' %}selected{% endif %}>Claimed</option><option value="N" {% if flt.hrd == 'N' %}selected{% endif %}>Not claimed</option></select></div>
+  <div><label>Verified</label>
+    <select name="verified" style="width:auto;"><option value="">Any</option>
+      <option value="Y" {% if flt.verified == 'Y' %}selected{% endif %}>Verified</option><option value="N" {% if flt.verified == 'N' %}selected{% endif %}>Not yet</option></select></div>
+  <div><label>Course / provider</label><input type="text" name="q" value="{{ flt.q }}" placeholder="search" style="width:150px;"></div>
+  <button class="btn" type="submit">Show</button>
+  {% if qs %}<a href="{{ url_for('training_admin') }}" style="font-size:13px;">Clear filters</a>{% endif %}
+</form>
+
+<div style="display:flex; gap:14px; flex-wrap:wrap; margin-bottom:10px;">
+  <div class="card" style="margin:0; min-width:140px;"><div style="color:var(--muted); font-size:12px;">Records</div><strong style="font-size:22px;">{{ rows|length }}</strong></div>
+  <div class="card" style="margin:0; min-width:140px;"><div style="color:var(--muted); font-size:12px;">Total hours</div><strong style="font-size:22px;">{{ '%g'|format(total_hours) }}</strong></div>
+  <div class="card" style="margin:0; min-width:140px;"><div style="color:var(--muted); font-size:12px;">Total cost</div><strong style="font-size:22px;">RM {{ '{:,.2f}'.format(total_cost) }}</strong></div>
+  {% if missing_hours %}<div class="card" style="margin:0; background:#fef3c7; border-color:#f59e0b;"><div style="font-size:12px;">Hours not filled in</div><strong style="font-size:22px;">{{ missing_hours }}</strong></div>{% endif %}
+  {% if unverified %}<div class="card" style="margin:0; background:#eff6ff; border-color:#93c5fd;"><div style="font-size:12px;">Not yet verified</div><strong style="font-size:22px;">{{ unverified }}</strong></div>{% endif %}
+</div>
+
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+    <h2 style="margin:0;">Records</h2>
+    {% if unverified %}
+    <form method="post" action="{{ url_for('training_verify') }}" style="margin:0;" onsubmit="return confirm('Verify all {{ unverified }} shown record(s) that are not yet verified? Staff can no longer change them.');">
+      <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+      {% for r in rows if (r.verified or 'N') != 'Y' %}<input type="hidden" name="ids" value="{{ r.id }}">{% endfor %}
+      <button class="btn secondary" type="submit" style="padding:4px 12px;">Verify all shown ({{ unverified }})</button>
+    </form>
+    {% endif %}
+  </div>
+  <div class="table-wrap frozen-header" style="margin-top:8px;">
+  <table>
+    <thead><tr>
+      <th class="text">Staff</th><th class="text">Course</th><th class="text">Type</th><th class="text">Provider / venue</th>
+      <th class="text">Date</th><th>Hours</th><th class="text">Result</th><th class="text">HRD</th><th>Cost (RM)</th>
+      <th class="text">Certificate</th><th class="text">Status</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr>
+      <td class="text">{{ r.emp_id }} &mdash; {{ r.full_name }}<div style="font-size:11px; color:var(--muted);">{{ r.department or '' }}</div></td>
+      <td class="text">{{ r.course_title }}{% if r.notes %}<div style="font-size:11px; color:var(--muted);">{{ r.notes }}</div>{% endif %}</td>
+      <td class="text">{{ r.training_type or '-' }}</td>
+      <td class="text">{{ r.provider or '-' }}{% if r.venue %}<div style="font-size:11px; color:var(--muted);">{{ r.venue }}</div>{% endif %}</td>
+      <td class="text" style="white-space:nowrap;">{{ r.start_date }}{% if r.end_date and r.end_date != r.start_date %} &ndash; {{ r.end_date }}{% endif %}</td>
+      <td>{% if r.hours is none %}<span style="color:var(--danger); font-weight:700;">?</span>{% else %}{{ '%g'|format(r.hours) }}{% endif %}</td>
+      <td class="text">{{ r.result or '-' }}</td>
+      <td class="text">{% if r.hrd_claim == 'Y' %}Yes{% if r.hrd_claim_ref %}<div style="font-size:11px; color:var(--muted);">{{ r.hrd_claim_ref }}</div>{% endif %}{% else %}<span style="color:var(--muted);">No</span>{% endif %}</td>
+      <td>{% if r.cost is not none %}{{ '{:,.2f}'.format(r.cost) }}{% else %}-{% endif %}</td>
+      <td class="text">{% if r.cert_stored %}<a href="{{ url_for('training_certificate', record_id=r.id) }}" target="_blank" rel="noopener">View</a>{% else %}<span style="color:var(--muted);">-</span>{% endif %}
+        {% if r.cert_expiry %}<div style="font-size:11px; color:var(--muted);">expires {{ r.cert_expiry }}</div>{% endif %}</td>
+      <td class="text" style="font-size:12px;">{% if r.verified == 'Y' %}<span class="pill finalized">Verified</span>{% else %}<span class="pill draft">Not verified</span>{% endif %}
+        <div style="color:var(--muted);">{{ 'by staff' if r.entered_by_role == 'staff' else ('from notice' if r.entered_by_role == 'notice' else 'by HR') }}</div></td>
+      <td class="text" style="white-space:nowrap;"><a href="{{ url_for('training_edit', record_id=r.id) }}">Edit</a></td>
+    </tr>
+    {% else %}
+    <tr><td class="text" colspan="12" style="color:var(--muted);">No training records for these filters.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(380px, 1fr)); gap:14px;">
+  <div class="card">
+    <h2 style="margin-top:0;">Hours by staff</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th class="text">Staff</th><th class="text">Dept</th><th>Courses</th><th>Hours</th></tr></thead>
+      <tbody>
+      {% for e in emp_rows %}<tr><td class="text">{{ e.emp_id }} &mdash; {{ e.full_name }}</td><td class="text">{{ e.department or '' }}</td><td>{{ e.courses }}</td><td><strong>{{ '%g'|format(e.hours) }}</strong></td></tr>
+      {% else %}<tr><td class="text" colspan="4" style="color:var(--muted);">-</td></tr>{% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <h2 style="margin-top:0;">Hours by course</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th class="text">Course</th><th>Staff</th><th>Total hours</th></tr></thead>
+      <tbody>
+      {% for c in course_rows %}<tr><td class="text">{{ c.course }}</td><td>{{ c.people }}</td><td><strong>{{ '%g'|format(c.hours) }}</strong></td></tr>
+      {% else %}<tr><td class="text" colspan="3" style="color:var(--muted);">-</td></tr>{% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "portal_base.html" %}
+{% block title %}Edit Training - Staff Portal{% endblock %}
+{% block content %}
+<h1>Edit Training</h1>
+{% if error %}<div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger); font-weight:600;">{{ error }}</div>{% endif %}
+<form method="post" enctype="multipart/form-data" class="card" style="max-width:800px;">
+  <div class="form-grid">
+    <div style="grid-column:1/-1;"><label>Title of Course <span style="color:var(--danger);">*</span></label><input type="text" name="course_title" value="{{ rec.course_title or '' }}" required></div>
+    <div><label>Type</label>
+      <select name="training_type">{% for t in types %}<option value="{{ t }}" {% if (rec.training_type or 'External') == t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+    <div><label>Provider / trainer</label><input type="text" name="provider" value="{{ rec.provider or '' }}"></div>
+    <div><label>Venue</label><input type="text" name="venue" value="{{ rec.venue or '' }}"></div>
+    <div><label>Start date <span style="color:var(--danger);">*</span></label><input type="date" name="start_date" value="{{ rec.start_date or '' }}" required></div>
+    <div><label>End date</label><input type="date" name="end_date" value="{{ rec.end_date or '' }}"></div>
+    <div><label>Hours of training <span style="color:var(--danger);">*</span></label><input type="text" inputmode="decimal" name="hours" value="{{ '' if rec.hours is none or rec.hours == '' else rec.hours }}" required placeholder="e.g. 8 or 4.5"></div>
+    <div><label>Certificate expiry (if any)</label><input type="date" name="cert_expiry" value="{{ rec.cert_expiry or '' }}"></div>
+    <div style="grid-column:1/-1;"><label>Notes (optional)</label><input type="text" name="notes" value="{{ rec.notes or '' }}"></div>
+    <div style="grid-column:1/-1;"><label>Certificate / attendance proof (PDF, Word or image)</label>
+      <input type="file" name="certificate" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+      {% if rec.cert_stored %}<div style="font-size:13px; margin-top:4px;">Current: <a href="{{ url_for('portal_training_certificate', record_id=rec.id) }}" target="_blank" rel="noopener">{{ rec.cert_original }}</a> (choose a new file to replace it)</div>{% endif %}
+    </div>
+  </div>
+  <div class="form-actions"><button class="btn" type="submit">Save</button> <a class="btn secondary" href="{{ url_for('portal_training') }}">Cancel</a></div>
+</form>
+{% endblock %}

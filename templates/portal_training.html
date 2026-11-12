@@ -1,0 +1,63 @@
+{% extends "portal_base.html" %}
+{% block title %}My Training - Staff Portal{% endblock %}
+{% block content %}
+<h1>My Training</h1>
+<p style="color:var(--muted); font-size:13px; margin-top:-8px; max-width:760px;">
+  Record the training courses you have attended, with the <strong>hours</strong>. HR will check them. A Training notice that HR approves
+  also appears here &mdash; just add the hours if they are missing. You can change a record until HR has verified it.
+</p>
+{% if error %}<div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger); font-weight:600;">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0;">Add a course I attended</h2>
+  <form method="post" enctype="multipart/form-data">
+    <div class="form-grid">
+      <div style="grid-column:1/-1;"><label>Title of Course <span style="color:var(--danger);">*</span></label><input type="text" name="course_title" value="{{ form.get('course_title', '') }}" required></div>
+      <div><label>Type</label>
+        <select name="training_type">{% for t in types %}<option value="{{ t }}" {% if form.get('training_type', 'External') == t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+      <div><label>Provider / trainer</label><input type="text" name="provider" value="{{ form.get('provider', '') }}"></div>
+      <div><label>Venue</label><input type="text" name="venue" value="{{ form.get('venue', '') }}" placeholder="e.g. Chengdu, China"></div>
+      <div><label>Start date <span style="color:var(--danger);">*</span></label><input type="date" name="start_date" value="{{ form.get('start_date', '') }}" required></div>
+      <div><label>End date</label><input type="date" name="end_date" value="{{ form.get('end_date', '') }}"></div>
+      <div><label>Hours of training <span style="color:var(--danger);">*</span></label><input type="text" inputmode="decimal" name="hours" value="{{ form.get('hours', '') }}" required placeholder="e.g. 8 or 4.5"></div>
+      <div><label>Certificate expiry (if any)</label><input type="date" name="cert_expiry" value="{{ form.get('cert_expiry', '') }}"></div>
+      <div style="grid-column:1/-1;"><label>Notes (optional)</label><input type="text" name="notes" value="{{ form.get('notes', '') }}"></div>
+      <div style="grid-column:1/-1;"><label>Certificate / attendance proof (optional &mdash; PDF, Word or image)</label>
+        <input type="file" name="certificate" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"></div>
+    </div>
+    <div class="form-actions"><button class="btn" type="submit">Save training</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+    <h2 style="margin:0;">My training {{ year }} &mdash; <span style="color:var(--accent);">{{ '%g'|format(total_hours) }} hours</span></h2>
+    <div class="month-nav">{% for y in years %}<a href="{{ url_for('portal_training', year=y) }}" style="{% if y == year %}font-weight:700;{% endif %}">{{ y }}</a> {% endfor %}</div>
+  </div>
+  <div class="table-wrap" style="margin-top:8px;">
+  <table>
+    <thead><tr><th class="text">Course</th><th class="text">Type</th><th class="text">Date</th><th>Hours</th><th class="text">Certificate</th><th class="text">Status</th><th></th></tr></thead>
+    <tbody>
+    {% for r in records %}
+    <tr>
+      <td class="text">{{ r.course_title }}{% if r.provider or r.venue %}<div style="font-size:11px; color:var(--muted);">{{ r.provider or '' }}{% if r.provider and r.venue %} &middot; {% endif %}{{ r.venue or '' }}</div>{% endif %}</td>
+      <td class="text">{{ r.training_type or '-' }}</td>
+      <td class="text" style="white-space:nowrap;">{{ r.start_date }}{% if r.end_date and r.end_date != r.start_date %} &ndash; {{ r.end_date }}{% endif %}</td>
+      <td>{% if r.hours is none %}<span style="color:var(--danger); font-weight:700;">please add</span>{% else %}{{ '%g'|format(r.hours) }}{% endif %}</td>
+      <td class="text">{% if r.cert_stored %}<a href="{{ url_for('portal_training_certificate', record_id=r.id) }}" target="_blank" rel="noopener">View</a>{% else %}<span style="color:var(--muted);">-</span>{% endif %}</td>
+      <td class="text">{% if r.verified == 'Y' %}<span class="pill finalized">Verified by HR</span>{% else %}<span class="pill draft">Waiting for HR</span>{% endif %}</td>
+      <td class="text" style="white-space:nowrap;">
+        {% if r.verified != 'Y' %}
+        <a href="{{ url_for('portal_training_edit', record_id=r.id) }}">Edit</a>
+        <form method="post" action="{{ url_for('portal_training_delete', record_id=r.id) }}" style="display:inline;" onsubmit="return confirm('Delete this record?');"><button class="btn secondary" type="submit" style="padding:1px 8px; font-size:11px;">Delete</button></form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td class="text" colspan="7" style="color:var(--muted);">No training recorded for {{ year }}.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

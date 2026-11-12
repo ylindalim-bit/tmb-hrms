@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if rec else 'Add' }} Training - TMB Payroll{% endblock %}
+{% block content %}
+<h1>{% if rec %}Edit Training &mdash; {{ rec.emp_id }} {{ rec.full_name }}{% else %}Add Training{% endif %}</h1>
+{% if error %}<div class="card" style="background:#fee2e2; color:var(--danger); border-color:var(--danger); font-weight:600;">{{ error }}</div>{% endif %}
+{% set v = rec if rec else form %}
+<form method="post" enctype="multipart/form-data" class="card" style="max-width:900px;">
+  {% if not rec %}
+  <p style="margin-top:0; font-size:13px; color:var(--muted);">One record is created for each staff member you tick &mdash; use this for a course several people attended.</p>
+  <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:6px;">
+    <strong style="font-size:13px;">Staff who attended:</strong>
+    <select id="tr-base" style="width:auto;"><option value="">All bases</option>{% for b in base_options %}<option>{{ b }}</option>{% endfor %}</select>
+    <select id="tr-dept" style="width:auto;"><option value="">All departments</option>{% for d in depts %}<option>{{ d }}</option>{% endfor %}</select>
+    <a href="#" id="tr-all" style="font-size:12px;">Tick all shown</a> <a href="#" id="tr-none" style="font-size:12px;">Untick all</a>
+  </div>
+  <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:3px 14px; margin-bottom:14px;">
+    {% for e in emps %}
+    <label class="tr-emp" data-base="{{ e.base or '' }}" data-dept="{{ e.department or '' }}" style="display:flex; gap:6px; align-items:center; font-weight:400;">
+      <input type="checkbox" name="emp_ids" value="{{ e.emp_id }}" style="width:auto;" {% if e.emp_id in picked %}checked{% endif %}> {{ e.emp_id }} &mdash; {{ e.full_name }}
+    </label>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <div class="form-grid">
+    <div style="grid-column:1/-1;"><label>Title of Course <span style="color:var(--danger);">*</span></label><input type="text" name="course_title" value="{{ v.course_title or '' }}" required></div>
+    <div><label>Type</label>
+      <select name="training_type">{% for t in types %}<option value="{{ t }}" {% if (v.training_type or 'External') == t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+    <div><label>Provider / trainer</label><input type="text" name="provider" value="{{ v.provider or '' }}"></div>
+    <div><label>Venue</label><input type="text" name="venue" value="{{ v.venue or '' }}" placeholder="e.g. Chengdu, China"></div>
+    <div><label>Start date <span style="color:var(--danger);">*</span></label><input type="date" name="start_date" value="{{ v.start_date or '' }}" required></div>
+    <div><label>End date</label><input type="date" name="end_date" value="{{ v.end_date or '' }}"></div>
+    <div><label>Hours of training <span style="color:var(--danger);">*</span></label><input type="text" inputmode="decimal" name="hours" value="{{ '' if v.hours is none or v.hours == '' else v.hours }}" required placeholder="e.g. 8 or 4.5"></div>
+    <div><label>Result</label>
+      <select name="result">{% for r in results %}<option value="{{ r }}" {% if (v.result or 'Attended') == r %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></div>
+    <div><label>HRD Corp claim?</label>
+      <select name="hrd_claim"><option value="N" {% if v.hrd_claim != 'Y' %}selected{% endif %}>No</option><option value="Y" {% if v.hrd_claim == 'Y' %}selected{% endif %}>Yes &mdash; claimed / to claim</option></select></div>
+    <div><label>HRD claim reference</label><input type="text" name="hrd_claim_ref" value="{{ v.hrd_claim_ref or '' }}"></div>
+    <div><label>Cost (RM, per person)</label><input type="text" inputmode="decimal" name="cost" value="{{ '' if v.cost is none or v.cost == '' else v.cost }}"></div>
+    <div><label>Certificate expiry (if any)</label><input type="date" name="cert_expiry" value="{{ v.cert_expiry or '' }}"></div>
+    <div style="grid-column:1/-1;"><label>Notes</label><input type="text" name="notes" value="{{ v.notes or '' }}"></div>
+    <div style="grid-column:1/-1;"><label>Certificate / attendance proof (PDF, Word or image)</label>
+      <input type="file" name="certificate" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+      {% if rec and rec.cert_stored %}<div style="font-size:13px; margin-top:4px;">Current: <a href="{{ url_for('training_certificate', record_id=rec.id) }}" target="_blank" rel="noopener">{{ rec.cert_original }}</a>
+        &middot; <label style="display:inline; font-weight:400;"><input type="checkbox" name="remove_cert" value="1" style="width:auto;"> remove it</label></div>{% endif %}
+    </div>
+    {% if rec %}
+    <div><label style="display:inline;"><input type="checkbox" name="verified" value="Y" style="width:auto;" {% if rec.verified == 'Y' %}checked{% endif %}> Verified by HR (staff can no longer change it)</label></div>
+    {% endif %}
+  </div>
+  <div class="form-actions">
+    <button class="btn" type="submit">Save</button>
+    <a class="btn secondary" href="{{ url_for('training_admin') }}">Cancel</a>
+  </div>
+  {% if rec and rec.entered_by_role %}<p style="font-size:12px; color:var(--muted);">Entered {{ 'by the staff member' if rec.entered_by_role == 'staff' else ('from an approved Training notice' if rec.entered_by_role == 'notice' else 'by HR') }}{% if rec.created_at %} on {{ rec.created_at[:16].replace('T', ' ') }}{% endif %}.</p>{% endif %}
+</form>
+{% if rec %}
+<form method="post" action="{{ url_for('training_delete', record_id=rec.id) }}" onsubmit="return confirm('Delete this training record permanently?');" style="max-width:900px;">
+  <button class="btn secondary" type="submit" style="color:var(--danger);">Delete this record</button>
+</form>
+{% endif %}
+{% if not rec %}
+<script>
+(function () {
+  var rows = document.querySelectorAll('.tr-emp'), b = document.getElementById('tr-base'), d = document.getElementById('tr-dept');
+  function apply() {
+    rows.forEach(function (r) {
+      var show = (!b.value || r.dataset.base === b.value) && (!d.value || r.dataset.dept === d.value);
+      r.style.display = show ? '' : 'none';
+    });
+  }
+  function tick(on) { return function (e) { e.preventDefault(); rows.forEach(function (r) { if (r.style.display !== 'none') r.querySelector('input').checked = on; }); }; }
+  b.addEventListener('change', apply); d.addEventListener('change', apply);
+  document.getElementById('tr-all').addEventListener('click', tick(true));
+  document.getElementById('tr-none').addEventListener('click', tick(false));
+})();
+</script>
+{% endif %}
+{% endblock %}

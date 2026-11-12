@@ -9762,8 +9762,10 @@ def _ensure_trip_half_day(db):
     live database needs no separate migration step."""
     try:
         cols = [r[1] for r in db.execute("PRAGMA table_info(business_trips)").fetchall()]
-        if cols and "half_day" not in cols:
-            db.execute("ALTER TABLE business_trips ADD COLUMN half_day TEXT")
+        if cols:
+            for col, kind in (("half_day", "TEXT"), ("course_title", "TEXT"), ("training_hours", "REAL")):
+                if col not in cols:
+                    db.execute(f"ALTER TABLE business_trips ADD COLUMN {col} {kind}")
             db.commit()
     except sqlite3.OperationalError:
         pass
@@ -9806,6 +9808,9 @@ def portal_business_trip():
             end_date = start_date   # a half day is a single date
         purpose = request.form.get("purpose", "").strip() or None
         purpose, course_error = _training_purpose(notice_type, request.form.get("course_title"), purpose)
+        course_title = ((request.form.get("course_title") or "").strip()[:200] or None) if notice_type == "Training" else None
+        training_hours, hours_error = _parse_hours(request.form.get("training_hours")) if notice_type == "Training" else (None, None)
+        course_error = course_error or hours_error
         files = [f for f in request.files.getlist("supporting_doc") if f.filename]
         has_file = bool(files)
         original_name = stored_name = None
@@ -9840,11 +9845,12 @@ def portal_business_trip():
             cur = db.execute(
                 """INSERT INTO business_trips (
                        emp_id, notice_type, destination, start_date, end_date, purpose,
-                       supporting_doc_original, supporting_doc_stored, status, submitted_at, half_day
-                   ) VALUES (?,?,?,?,?,?,?,?,'Pending',?,?)""",
+                       supporting_doc_original, supporting_doc_stored, status, submitted_at, half_day,
+                       course_title, training_hours
+                   ) VALUES (?,?,?,?,?,?,?,?,'Pending',?,?,?,?)""",
                 (emp["emp_id"], notice_type, destination, start_date, end_date, purpose,
                  original_name, stored_name,
-                 datetime.datetime.now().isoformat(timespec="seconds"), half_day),
+                 datetime.datetime.now().isoformat(timespec="seconds"), half_day, course_title, training_hours),
             )
             if len(saved) > 1:
                 _ensure_business_trip_documents_table(db)
@@ -10245,6 +10251,475 @@ def leave_report():
 
     return render_template("leave_report.html", rows=rows, year=year, years=years, as_at=as_at,
                            month_totals=month_totals, month_labels=MONTH_NAMES[1:])
+
+
+# ---------------- Training Records ----------------
+# One row per staff member per course. Staff add their own (Staff Portal > My Training, or automatically
+# from an approved Training notice); HR can add for several staff at once, adjust anything, add cost / HRD claim
+# details, and "verify" a record (after which the staff member can no longer change it). Hours are keyed in by hand.
+
+TRAINING_TYPES = ["Internal", "External", "Overseas"]
+TRAINING_RESULTS = ["Attended", "Passed", "Not passed", "Not completed"]
+
+
+def _ensure_training_tables(db):
+    db.execute("""CREATE TABLE IF NOT EXISTS training_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL, course_title TEXT NOT NULL,
+        training_type TEXT, provider TEXT, venue TEXT, start_date TEXT NOT NULL, end_date TEXT, hours REAL,
+        result TEXT, hrd_claim TEXT DEFAULT 'N', hrd_claim_ref TEXT, cost REAL,
+        cert_original TEXT, cert_stored TEXT, cert_expiry TEXT, notes TEXT, notice_id INTEGER,
+        entered_by TEXT, entered_by_role TEXT, verified TEXT DEFAULT 'N',
+        created_at TEXT, updated_at TEXT, updated_by TEXT)""")
+    _ensure_trip_half_day(db)
+    db.commit()
+
+
+def _parse_hours(value):
+    """(hours or None, error). Blank is allowed (None)."""
+    v = (value or "").strip()
+    if not v:
+        return None, None
+    try:
+        h = float(v)
+    except ValueError:
+        return None, "Hours must be a number, e.g. 8 or 4.5."
+    if h < 0 or h > 2000:
+        return None, "Hours must be between 0 and 2000."
+    return round(h, 2), None
+
+
+def _parse_money(value):
+    v = (value or "").strip().replace(",", "")
+    if not v:
+        return None, None
+    try:
+        m = float(v)
+    except ValueError:
+        return None, "Cost must be a number."
+    return (round(m, 2), None) if m >= 0 else (None, "Cost can't be negative.")
+
+
+def _valid_iso(d):
+    try:
+        datetime.date.fromisoformat(d)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def _training_save_cert(emp_id, file):
+    """(original, stored, error) for an uploaded certificate."""
+    if file is None or not file.filename:
+        return None, None, None
+    original = secure_filename(file.filename)
+    ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
+    if ext not in ALLOWED_DOC_EXTENSIONS:
+        return None, None, "Certificate must be a PDF, Word file or image (JPG/PNG)."
+    emp_dir = os.path.join(UPLOAD_DIR, emp_id)
+    os.makedirs(emp_dir, exist_ok=True)
+    stored = f"{uuid.uuid4().hex}_{original}"
+    file.save(os.path.join(emp_dir, stored))
+    return original, stored, None
+
+
+def _training_remove_cert_file(emp_id, stored):
+    if stored:
+        try:
+            os.remove(os.path.join(UPLOAD_DIR, emp_id, stored))
+        except OSError:
+            pass
+
+
+def _training_fields_from_form(form, hr):
+    """Cleaned values common to the staff and HR forms -> (dict, error)."""
+    title = (form.get("course_title") or "").strip()
+    ttype = form.get("training_type") if form.get("training_type") in TRAINING_TYPES else "External"
+    start = (form.get("start_date") or "").strip()
+    end = (form.get("end_date") or "").strip() or start
+    hours, err = _parse_hours(form.get("hours"))
+    if not title:
+        err = "Please enter the title of the course."
+    elif not _valid_iso(start):
+        err = "Please enter the course start date."
+    elif not _valid_iso(end) or end < start:
+        err = "The end date can't be before the start date."
+    elif hours is None and not err:
+        err = "Please enter the hours of training (e.g. 8)."
+    expiry = (form.get("cert_expiry") or "").strip() or None
+    if expiry and not _valid_iso(expiry):
+        err = err or "Certificate expiry date is not a valid date."
+    data = {
+        "course_title": title[:200], "training_type": ttype, "provider": (form.get("provider") or "").strip()[:200] or None,
+        "venue": (form.get("venue") or "").strip()[:200] or None, "start_date": start, "end_date": end, "hours": hours,
+        "cert_expiry": expiry, "notes": (form.get("notes") or "").strip()[:1000] or None,
+    }
+    if hr:
+        data["result"] = form.get("result") if form.get("result") in TRAINING_RESULTS else "Attended"
+        data["hrd_claim"] = "Y" if form.get("hrd_claim") == "Y" else "N"
+        data["hrd_claim_ref"] = (form.get("hrd_claim_ref") or "").strip()[:100] or None
+        cost, cerr = _parse_money(form.get("cost"))
+        data["cost"] = cost
+        err = err or cerr
+    return data, err
+
+
+def _training_from_notice(db, trip_id):
+    """An approved Training notice becomes a Training Record (once), so nothing is keyed twice. Staff / HR
+    can then add the hours and other details."""
+    _ensure_training_tables(db)
+    trip = db.execute("SELECT * FROM business_trips WHERE id=?", (trip_id,)).fetchone()
+    if trip is None or trip["notice_type"] != "Training" or trip["status"] != "Approved":
+        return
+    if db.execute("SELECT 1 FROM training_records WHERE notice_id=?", (trip_id,)).fetchone():
+        return
+    keys = trip.keys()
+    title = (trip["course_title"] if "course_title" in keys else None) or ""
+    if not title and (trip["purpose"] or "").startswith("Course: "):
+        title = trip["purpose"][len("Course: "):].split(" - ")[0]
+    title = title or "Training"
+    hours = trip["training_hours"] if "training_hours" in keys else None
+    half = trip["half_day"] if "half_day" in keys else None
+    now = datetime.datetime.now(MYT).isoformat(timespec="seconds")
+    db.execute(
+        """INSERT INTO training_records (emp_id, course_title, training_type, venue, start_date, end_date, hours, result,
+               hrd_claim, notice_id, entered_by, entered_by_role, verified, created_at, updated_at, notes)
+           VALUES (?,?,?,?,?,?,?,?,'N',?,?,?,'N',?,?,?)""",
+        (trip["emp_id"], title, "External", trip["destination"], trip["start_date"], trip["end_date"], hours,
+         "Attended", trip_id, trip["emp_id"], "notice", now, now,
+         "From Training notice" + (" (half day - " + ("morning" if half == "AM" else "afternoon") + ")" if half in ("AM", "PM") else "")),
+    )
+    db.commit()
+
+
+def _backfill_training_from_notices(db):
+    """Approved Training notices that have no record yet (e.g. approved before this feature existed)."""
+    _ensure_training_tables(db)
+    for r in db.execute("""SELECT id FROM business_trips WHERE notice_type='Training' AND status='Approved'
+                           AND id NOT IN (SELECT notice_id FROM training_records WHERE notice_id IS NOT NULL)""").fetchall():
+        _training_from_notice(db, r["id"])
+
+
+# ---- Staff Portal ----
+
+@app.route("/portal/training", methods=["GET", "POST"])
+@portal_login_required
+def portal_training():
+    db = get_db()
+    _backfill_training_from_notices(db)
+    emp = current_portal_employee(db)
+    error, form = None, {}
+    if request.method == "POST":
+        form = request.form
+        data, error = _training_fields_from_form(form, hr=False)
+        cert_orig = cert_stored = None
+        if error is None:
+            cert_orig, cert_stored, error = _training_save_cert(emp["emp_id"], request.files.get("certificate"))
+        if error is None:
+            now = datetime.datetime.now(MYT).isoformat(timespec="seconds")
+            db.execute(
+                """INSERT INTO training_records (emp_id, course_title, training_type, provider, venue, start_date, end_date,
+                       hours, result, hrd_claim, cert_original, cert_stored, cert_expiry, notes, entered_by, entered_by_role,
+                       verified, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,'Attended','N',?,?,?,?,?,'staff','N',?,?)""",
+                (emp["emp_id"], data["course_title"], data["training_type"], data["provider"], data["venue"], data["start_date"],
+                 data["end_date"], data["hours"], cert_orig, cert_stored, data["cert_expiry"], data["notes"], emp["emp_id"], now, now))
+            db.commit()
+            return redirect(url_for("portal_training"))
+    year = request.args.get("year", type=int) or datetime.date.today().year
+    records = db.execute(
+        "SELECT * FROM training_records WHERE emp_id=? AND start_date LIKE ? ORDER BY start_date DESC, id DESC",
+        (emp["emp_id"], f"{year:04d}-%")).fetchall()
+    years = sorted({int(r[0]) for r in db.execute(
+        "SELECT DISTINCT substr(start_date,1,4) FROM training_records WHERE emp_id=?", (emp["emp_id"],)).fetchall() if r[0]} | {year},
+        reverse=True)
+    total_hours = round(sum(r["hours"] or 0 for r in records), 2)
+    return render_template("portal_training.html", emp=emp, records=records, error=error, form=form, year=year, years=years,
+                           total_hours=total_hours, types=TRAINING_TYPES)
+
+
+def _own_training(db, emp, record_id):
+    r = db.execute("SELECT * FROM training_records WHERE id=? AND emp_id=?", (record_id, emp["emp_id"])).fetchone()
+    if r is None:
+        abort(404)
+    return r
+
+
+@app.route("/portal/training/<int:record_id>/edit", methods=["GET", "POST"])
+@portal_login_required
+def portal_training_edit(record_id):
+    db = get_db()
+    _ensure_training_tables(db)
+    emp = current_portal_employee(db)
+    rec = _own_training(db, emp, record_id)
+    if rec["verified"] == "Y":
+        return redirect(url_for("portal_training"))      # HR has verified it - only HR can change it now
+    error = None
+    if request.method == "POST":
+        data, error = _training_fields_from_form(request.form, hr=False)
+        cert_orig, cert_stored = rec["cert_original"], rec["cert_stored"]
+        if error is None:
+            new_orig, new_stored, error = _training_save_cert(emp["emp_id"], request.files.get("certificate"))
+            if error is None and new_stored:
+                _training_remove_cert_file(emp["emp_id"], cert_stored)
+                cert_orig, cert_stored = new_orig, new_stored
+        if error is None:
+            db.execute(
+                """UPDATE training_records SET course_title=?, training_type=?, provider=?, venue=?, start_date=?, end_date=?,
+                       hours=?, cert_original=?, cert_stored=?, cert_expiry=?, notes=?, updated_at=?, updated_by=? WHERE id=?""",
+                (data["course_title"], data["training_type"], data["provider"], data["venue"], data["start_date"], data["end_date"],
+                 data["hours"], cert_orig, cert_stored, data["cert_expiry"], data["notes"],
+                 datetime.datetime.now(MYT).isoformat(timespec="seconds"), emp["emp_id"], record_id))
+            db.commit()
+            return redirect(url_for("portal_training"))
+        rec = dict(rec, **{k: request.form.get(k) for k in request.form})
+    return render_template("portal_training_edit.html", emp=emp, rec=rec, error=error, types=TRAINING_TYPES)
+
+
+@app.route("/portal/training/<int:record_id>/delete", methods=["POST"])
+@portal_login_required
+def portal_training_delete(record_id):
+    db = get_db()
+    _ensure_training_tables(db)
+    emp = current_portal_employee(db)
+    rec = _own_training(db, emp, record_id)
+    if rec["verified"] != "Y":
+        _training_remove_cert_file(emp["emp_id"], rec["cert_stored"])
+        db.execute("DELETE FROM training_records WHERE id=?", (record_id,))
+        db.commit()
+    return redirect(url_for("portal_training"))
+
+
+@app.route("/portal/training/<int:record_id>/certificate")
+@portal_login_required
+def portal_training_certificate(record_id):
+    db = get_db()
+    _ensure_training_tables(db)
+    emp = current_portal_employee(db)
+    rec = _own_training(db, emp, record_id)
+    if not rec["cert_stored"]:
+        abort(404)
+    return send_from_directory(os.path.join(UPLOAD_DIR, emp["emp_id"]), rec["cert_stored"],
+                               as_attachment=False, download_name=rec["cert_original"])
+
+
+# ---- HR ----
+
+def _training_filters(db, args):
+    """(rows, filter dict) for the HR Training page / export."""
+    year_arg = args.get("year")
+    year = datetime.date.today().year if year_arg in (None, "") else int(year_arg) if str(year_arg).isdigit() else 0
+    flt = {"year": year, "emp_id": (args.get("emp_id") or "").strip(), "base": (args.get("base") or "").strip(),
+           "dept": (args.get("dept") or "").strip(), "type": (args.get("type") or "").strip(),
+           "hrd": (args.get("hrd") or "").strip(), "verified": (args.get("verified") or "").strip(),
+           "q": (args.get("q") or "").strip()}
+    sql = ("SELECT tr.*, e.full_name, e.department, e.base, e.position FROM training_records tr "
+           "JOIN employees e ON e.emp_id = tr.emp_id WHERE 1=1")
+    p = []
+    if year:
+        sql += " AND tr.start_date LIKE ?"; p.append(f"{year:04d}-%")
+    for key, col in (("emp_id", "tr.emp_id"), ("base", "e.base"), ("dept", "e.department"), ("type", "tr.training_type")):
+        if flt[key]:
+            sql += f" AND {col}=?"; p.append(flt[key])
+    if flt["hrd"] in ("Y", "N"):
+        sql += " AND COALESCE(tr.hrd_claim,'N')=?"; p.append(flt["hrd"])
+    if flt["verified"] in ("Y", "N"):
+        sql += " AND COALESCE(tr.verified,'N')=?"; p.append(flt["verified"])
+    if flt["q"]:
+        sql += " AND (tr.course_title LIKE ? OR tr.provider LIKE ?)"; p += [f"%{flt['q']}%", f"%{flt['q']}%"]
+    sql += " ORDER BY tr.start_date DESC, e.full_name"
+    return db.execute(sql, p).fetchall(), flt
+
+
+def _training_summaries(rows):
+    by_emp, by_course = {}, {}
+    for r in rows:
+        h = r["hours"] or 0
+        e = by_emp.setdefault(r["emp_id"], {"emp_id": r["emp_id"], "full_name": r["full_name"], "department": r["department"],
+                                            "courses": 0, "hours": 0.0, "cost": 0.0})
+        e["courses"] += 1; e["hours"] += h; e["cost"] += r["cost"] or 0
+        c = by_course.setdefault((r["course_title"] or "").strip().lower(), {"course": r["course_title"], "people": set(), "hours": 0.0,
+                                                                             "cost": 0.0})
+        c["people"].add(r["emp_id"]); c["hours"] += h; c["cost"] += r["cost"] or 0
+    emp_rows = sorted(by_emp.values(), key=lambda x: (-x["hours"], x["full_name"] or ""))
+    course_rows = sorted(({**c, "people": len(c["people"])} for c in by_course.values()), key=lambda x: (-x["hours"], x["course"] or ""))
+    return emp_rows, course_rows
+
+
+def _training_admin_context(db, args):
+    _backfill_training_from_notices(db)
+    rows, flt = _training_filters(db, args)
+    emp_rows, course_rows = _training_summaries(rows)
+    emps = db.execute("SELECT emp_id, full_name, department, base FROM employees WHERE status='Active' ORDER BY emp_id").fetchall()
+    depts = [r[0] for r in db.execute("SELECT DISTINCT department FROM employees WHERE department IS NOT NULL AND department!='' ORDER BY 1")]
+    years = sorted({int(r[0]) for r in db.execute("SELECT DISTINCT substr(start_date,1,4) FROM training_records").fetchall() if r[0]}
+                   | {datetime.date.today().year}, reverse=True)
+    return dict(rows=rows, flt=flt, emp_rows=emp_rows, course_rows=course_rows, emps=emps, depts=depts, years=years,
+                total_hours=round(sum(r["hours"] or 0 for r in rows), 2), total_cost=round(sum(r["cost"] or 0 for r in rows), 2),
+                base_options=BASE_OPTIONS, types=TRAINING_TYPES,
+                missing_hours=sum(1 for r in rows if r["hours"] is None), unverified=sum(1 for r in rows if (r["verified"] or "N") != "Y"))
+
+
+@app.route("/training")
+def training_admin():
+    db = get_db()
+    ctx = _training_admin_context(db, request.args)
+    ctx["qs"] = {k: v for k, v in request.args.items() if v}
+    return render_template("training_admin.html", **ctx)
+
+
+@app.route("/training/export.xlsx")
+def training_export():
+    db = get_db()
+    _ensure_training_tables(db)
+    rows, flt = _training_filters(db, request.args)
+    emp_rows, course_rows = _training_summaries(rows)
+    wb = openpyxl.Workbook()
+    head_font, head_fill = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="1D4ED8")
+
+    def sheet(ws, title, headers, data, widths):
+        ws.title = title
+        ws.cell(row=1, column=1, value="TIANMA PRECISION SDN BHD - Training Report " + (str(flt["year"]) if flt["year"] else "(all years)")).font = Font(bold=True, size=13)
+        for i, h in enumerate(headers, 1):
+            c = ws.cell(row=3, column=i, value=h); c.font = head_font; c.fill = head_fill
+        for r_i, row in enumerate(data, 4):
+            for c_i, v in enumerate(row, 1):
+                ws.cell(row=r_i, column=c_i, value=v)
+        for i, w in enumerate(widths, 1):
+            ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+        ws.freeze_panes = "A4"
+
+    sheet(wb.active, "Records",
+          ["Emp ID", "Name", "Department", "Base", "Course", "Type", "Provider", "Venue", "Start", "End", "Hours", "Result",
+           "HRD claim", "HRD ref", "Cost (RM)", "Cert expiry", "Verified", "Entered by"],
+          [[r["emp_id"], r["full_name"], r["department"], r["base"], r["course_title"], r["training_type"], r["provider"], r["venue"],
+            r["start_date"], r["end_date"], r["hours"], r["result"], "Yes" if r["hrd_claim"] == "Y" else "No", r["hrd_claim_ref"], r["cost"],
+            r["cert_expiry"], "Yes" if r["verified"] == "Y" else "No", r["entered_by_role"]] for r in rows],
+          [9, 28, 14, 7, 34, 11, 24, 20, 11, 11, 8, 13, 10, 14, 10, 12, 9, 10])
+    sheet(wb.create_sheet(), "Hours by staff", ["Emp ID", "Name", "Department", "Courses", "Total hours", "Cost (RM)"],
+          [[e["emp_id"], e["full_name"], e["department"], e["courses"], round(e["hours"], 2), round(e["cost"], 2)] for e in emp_rows],
+          [9, 30, 14, 9, 12, 11])
+    sheet(wb.create_sheet(), "Hours by course", ["Course", "Staff attended", "Total hours (all staff)", "Cost (RM)"],
+          [[c["course"], c["people"], round(c["hours"], 2), round(c["cost"], 2)] for c in course_rows], [40, 14, 20, 11])
+    buf = io.BytesIO()
+    wb.save(buf)
+    name = f"Training_Report_{flt['year'] or 'All'}.xlsx"
+    return Response(buf.getvalue(), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename={name}"})
+
+
+@app.route("/training/add", methods=["GET", "POST"])
+def training_add():
+    """HR adds one course for one or several staff (a record each)."""
+    db = get_db()
+    _ensure_training_tables(db)
+    emps = db.execute("SELECT emp_id, full_name, department, base FROM employees WHERE status='Active' ORDER BY emp_id").fetchall()
+    error, form, picked = None, {}, []
+    if request.method == "POST":
+        form, picked = request.form, request.form.getlist("emp_ids")
+        data, error = _training_fields_from_form(form, hr=True)
+        valid = {e["emp_id"] for e in emps}
+        picked = [p for p in picked if p in valid]
+        if error is None and not picked:
+            error = "Tick at least one staff member."
+        cert_file = request.files.get("certificate")
+        if error is None:
+            hr_name = session.get("hr_username")
+            now = datetime.datetime.now(MYT).isoformat(timespec="seconds")
+            for eid in picked:
+                co = cs = None
+                if cert_file is not None and cert_file.filename:
+                    cert_file.stream.seek(0)
+                    co, cs, cerr = _training_save_cert(eid, cert_file)
+                    if cerr:
+                        error = cerr
+                        break
+                db.execute(
+                    """INSERT INTO training_records (emp_id, course_title, training_type, provider, venue, start_date, end_date,
+                           hours, result, hrd_claim, hrd_claim_ref, cost, cert_original, cert_stored, cert_expiry, notes,
+                           entered_by, entered_by_role, verified, created_at, updated_at)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'hr','Y',?,?)""",
+                    (eid, data["course_title"], data["training_type"], data["provider"], data["venue"], data["start_date"],
+                     data["end_date"], data["hours"], data["result"], data["hrd_claim"], data["hrd_claim_ref"], data["cost"],
+                     co, cs, data["cert_expiry"], data["notes"], hr_name, now, now))
+            if error is None:
+                db.commit()
+                return redirect(url_for("training_admin"))
+            db.rollback()
+    return render_template("training_form.html", rec=None, form=form, error=error, emps=emps, picked=picked, types=TRAINING_TYPES,
+                           results=TRAINING_RESULTS, base_options=BASE_OPTIONS,
+                           depts=sorted({e["department"] for e in emps if e["department"]}))
+
+
+@app.route("/training/<int:record_id>", methods=["GET", "POST"])
+def training_edit(record_id):
+    db = get_db()
+    _ensure_training_tables(db)
+    rec = db.execute(
+        "SELECT tr.*, e.full_name FROM training_records tr JOIN employees e ON e.emp_id = tr.emp_id WHERE tr.id=?", (record_id,)).fetchone()
+    if rec is None:
+        abort(404)
+    error = None
+    if request.method == "POST":
+        data, error = _training_fields_from_form(request.form, hr=True)
+        cert_orig, cert_stored = rec["cert_original"], rec["cert_stored"]
+        if error is None and request.form.get("remove_cert") == "1":
+            _training_remove_cert_file(rec["emp_id"], cert_stored)
+            cert_orig = cert_stored = None
+        if error is None:
+            new_orig, new_stored, error = _training_save_cert(rec["emp_id"], request.files.get("certificate"))
+            if error is None and new_stored:
+                _training_remove_cert_file(rec["emp_id"], cert_stored)
+                cert_orig, cert_stored = new_orig, new_stored
+        if error is None:
+            db.execute(
+                """UPDATE training_records SET course_title=?, training_type=?, provider=?, venue=?, start_date=?, end_date=?, hours=?,
+                       result=?, hrd_claim=?, hrd_claim_ref=?, cost=?, cert_original=?, cert_stored=?, cert_expiry=?, notes=?,
+                       verified=?, updated_at=?, updated_by=? WHERE id=?""",
+                (data["course_title"], data["training_type"], data["provider"], data["venue"], data["start_date"], data["end_date"],
+                 data["hours"], data["result"], data["hrd_claim"], data["hrd_claim_ref"], data["cost"], cert_orig, cert_stored,
+                 data["cert_expiry"], data["notes"], "Y" if request.form.get("verified") == "Y" else "N",
+                 datetime.datetime.now(MYT).isoformat(timespec="seconds"), session.get("hr_username"), record_id))
+            db.commit()
+            return redirect(url_for("training_admin"))
+        rec = dict(rec, **{k: request.form.get(k) for k in request.form})
+    return render_template("training_form.html", rec=rec, form={}, error=error, emps=[], picked=[], types=TRAINING_TYPES,
+                           results=TRAINING_RESULTS, base_options=BASE_OPTIONS, depts=[])
+
+
+@app.route("/training/<int:record_id>/delete", methods=["POST"])
+def training_delete(record_id):
+    db = get_db()
+    _ensure_training_tables(db)
+    rec = db.execute("SELECT * FROM training_records WHERE id=?", (record_id,)).fetchone()
+    if rec is not None:
+        _training_remove_cert_file(rec["emp_id"], rec["cert_stored"])
+        db.execute("DELETE FROM training_records WHERE id=?", (record_id,))
+        db.commit()
+    return redirect(url_for("training_admin"))
+
+
+@app.route("/training/verify", methods=["POST"])
+def training_verify():
+    """Verify one record (record_id) or every record in `ids`."""
+    db = get_db()
+    _ensure_training_tables(db)
+    ids = [int(i) for i in request.form.getlist("ids") if i.isdigit()]
+    if ids:
+        db.execute(f"UPDATE training_records SET verified='Y' WHERE id IN ({','.join('?' * len(ids))})", ids)
+        db.commit()
+    back = request.form.get("back") or ""
+    return redirect(back if back.startswith("/training") else url_for("training_admin"))
+
+
+@app.route("/training/<int:record_id>/certificate")
+def training_certificate(record_id):
+    db = get_db()
+    _ensure_training_tables(db)
+    rec = db.execute("SELECT * FROM training_records WHERE id=?", (record_id,)).fetchone()
+    if rec is None or not rec["cert_stored"]:
+        abort(404)
+    return send_from_directory(os.path.join(UPLOAD_DIR, rec["emp_id"]), rec["cert_stored"],
+                               as_attachment=False, download_name=rec["cert_original"])
 
 
 @app.route("/ot-report/<int:year>/<int:month>")
@@ -11063,6 +11538,8 @@ def review_business_trip(trip_id):
         _sync_days_to_attendance_monthly(db, trip["emp_id"], trip["start_date"], trip["end_date"], "other_paid_leave")
         _sync_days_to_attendance_daily(db, trip["emp_id"], trip["start_date"], trip["end_date"], "OTHER_PAID")
     db.commit()
+    if decision == "Approved" and trip["notice_type"] == "Training":
+        _training_from_notice(db, trip_id)
     return redirect(url_for("business_trips_admin"))
 
 
@@ -11114,6 +11591,9 @@ def hr_add_business_trip():
             end_date = start_date
         purpose = request.form.get("purpose", "").strip() or None
         purpose, course_error = _training_purpose(notice_type, request.form.get("course_title"), purpose)
+        course_title = ((request.form.get("course_title") or "").strip()[:200] or None) if notice_type == "Training" else None
+        training_hours, hours_error = _parse_hours(request.form.get("training_hours")) if notice_type == "Training" else (None, None)
+        course_error = course_error or hours_error
         file = request.files.get("supporting_doc")
         has_file = file is not None and file.filename != ""
         original_name = stored_name = None
@@ -11147,19 +11627,21 @@ def hr_add_business_trip():
             hr_user = db.execute("SELECT full_name FROM hr_users WHERE username=?", (session["hr_username"],)).fetchone()
             reviewer = hr_user["full_name"] if hr_user else session["hr_username"]
             now = datetime.datetime.now().isoformat(timespec="seconds")
-            db.execute(
+            new_trip = db.execute(
                 """INSERT INTO business_trips (
                        emp_id, notice_type, destination, start_date, end_date, purpose,
                        supporting_doc_original, supporting_doc_stored, status, submitted_at,
-                       reviewed_by, reviewed_at, half_day
-                   ) VALUES (?,?,?,?,?,?,?,?,'Approved',?,?,?,?)""",
+                       reviewed_by, reviewed_at, half_day, course_title, training_hours
+                   ) VALUES (?,?,?,?,?,?,?,?,'Approved',?,?,?,?,?,?)""",
                 (emp_id, notice_type, destination, start_date, end_date, purpose,
-                 original_name, stored_name, now, reviewer, now, half_day),
+                 original_name, stored_name, now, reviewer, now, half_day, course_title, training_hours),
             )
             if notice_type in PAID_TRIP_NOTICE_TYPES:
                 _sync_days_to_attendance_monthly(db, emp_id, start_date, end_date, "other_paid_leave")
                 _sync_days_to_attendance_daily(db, emp_id, start_date, end_date, "OTHER_PAID")
             db.commit()
+            if notice_type == "Training":
+                _training_from_notice(db, new_trip.lastrowid)
             return redirect(url_for("business_trips_admin"))
 
     return render_template("business_trip_add.html", employees=employees, error=error,

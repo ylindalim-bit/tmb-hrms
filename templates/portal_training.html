@@ -29,6 +29,27 @@
   </form>
 </div>
 
+{% if notices %}
+<div class="card" style="background:#fffbeb; border-color:#f59e0b;">
+  <h2 style="margin-top:0;">Training notices not yet approved</h2>
+  <p style="font-size:12px; color:var(--muted); margin-top:-6px;">These appear in the list below as soon as they are approved.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th class="text">Course</th><th class="text">Date</th><th>Hours</th><th class="text">Status</th><th class="text">Note</th></tr></thead>
+    <tbody>
+    {% for n in notices %}
+    <tr>
+      <td class="text">{{ n.course_title or (n.purpose or 'Training') }}</td>
+      <td class="text" style="white-space:nowrap;">{{ n.start_date }}{% if n.half_day %} (half day &mdash; {{ 'morning' if n.half_day == 'AM' else 'afternoon' }}){% elif n.end_date != n.start_date %} &ndash; {{ n.end_date }}{% endif %}</td>
+      <td>{% if n.training_hours is not none %}{{ '%g'|format(n.training_hours) }}{% else %}-{% endif %}</td>
+      <td class="text">{% if n.status == 'Pending' %}<span class="pill draft">Waiting for approval</span>{% else %}<span class="pill rejected">Rejected</span>{% endif %}</td>
+      <td class="text" style="font-size:12px;">{{ n.review_notes or '' }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endif %}
+
 <div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
     <h2 style="margin:0;">My training {{ year }} &mdash; <span style="color:var(--accent);">{{ '%g'|format(total_hours) }} hours</span></h2>

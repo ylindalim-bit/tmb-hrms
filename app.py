@@ -9868,6 +9868,7 @@ def portal_business_trip():
         "SELECT * FROM business_trips WHERE emp_id=? ORDER BY submitted_at DESC", (emp["emp_id"],)
     ).fetchall()
     return render_template("portal_business_trip.html", emp=emp, trips=my_trips, error=error,
+                            form=(request.form.to_dict() if request.method == "POST" else {}),
                             notice_types=SELECTABLE_TRIP_TYPES, trip_docs=_business_trip_extra_docs(db))
 
 
@@ -10280,10 +10281,10 @@ def _parse_hours(value):
     v = (value or "").strip()
     if not v:
         return None, None
-    try:
-        h = float(v)
-    except ValueError:
-        return None, "Hours must be a number, e.g. 8 or 4.5."
+    m = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)\s*(?:h|hr|hrs|hour|hours)?", v, flags=re.I)   # "2", "2 hours", "1.5hrs"
+    if m is None:
+        return None, "Hours must be a number, e.g. 8 or 4.5 (you can also write 2 hours)."
+    h = float(m.group(1))
     if h < 0 or h > 2000:
         return None, "Hours must be between 0 and 2000."
     return round(h, 2), None
@@ -10434,8 +10435,11 @@ def portal_training():
         "SELECT DISTINCT substr(start_date,1,4) FROM training_records WHERE emp_id=?", (emp["emp_id"],)).fetchall() if r[0]} | {year},
         reverse=True)
     total_hours = round(sum(r["hours"] or 0 for r in records), 2)
+    notices = db.execute(
+        """SELECT * FROM business_trips WHERE emp_id=? AND notice_type='Training' AND status IN ('Pending','Rejected')
+           AND start_date LIKE ? ORDER BY start_date DESC, id DESC""", (emp["emp_id"], f"{year:04d}-%")).fetchall()
     return render_template("portal_training.html", emp=emp, records=records, error=error, form=form, year=year, years=years,
-                           total_hours=total_hours, types=TRAINING_TYPES)
+                           total_hours=total_hours, types=TRAINING_TYPES, notices=notices)
 
 
 def _own_training(db, emp, record_id):

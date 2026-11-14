@@ -116,6 +116,14 @@
   </div>
 </div>
 <script>
+// After an error the page is shown again - put back what was typed (the file has to be chosen again).
+(function () {
+  var f = {{ (form or {})|tojson }};
+  Object.keys(f).forEach(function (k) {
+    var el = document.querySelector('[name="' + k + '"]');
+    if (el && el.type !== 'file') el.value = f[k];
+  });
+})();
 function updateTripDays() {
   var startStr = document.getElementById('trip_start_date').value;
   var endStr = document.getElementById('trip_end_date').value;

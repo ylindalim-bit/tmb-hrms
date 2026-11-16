@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bank &amp; Statutory Details - TIANMA PRECISION SDN BHD</title>
+<title>Bank Details - TIANMA PRECISION SDN BHD</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <style>
   body { max-width: 480px; margin: 0 auto; padding: 20px 16px 60px; }
@@ -24,27 +24,24 @@
   <img src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="Company logo">
   <div>
     <h1>TIANMA PRECISION SDN BHD</h1>
-    <p>Bank &amp; Statutory Details</p>
+    <p>Bank Details</p>
   </div>
 </div>
 
 {% if saved %}
 <div class="check">&#10003;</div>
 <p style="text-align:center; color:var(--muted); font-size:14px;">Thank you, {{ a.full_name }} - your details have been received.</p>
+<p style="text-align:center;"><a class="btn secondary" href="{{ url_for('careers_documents', token=token) }}" style="display:inline-block;">&laquo; Back to my documents</a></p>
 {% else %}
 <p style="color:var(--muted); font-size:13px;">
-  Hi {{ a.full_name }}, please fill in your bank and statutory details below for
-  {{ a.position_applied or "your application" }}. You can revisit this link to update them if needed.
+  Hi {{ a.full_name }}, please fill in your bank details below for
+  {{ position or "your application" }}. You can come back to this page to update them if needed.
 </p>
 <form method="post">
   <label>Bank Name</label>
   <input type="text" name="bank_name" value="{{ a.bank_name or '' }}">
   <label>Bank Account No.</label>
   <input type="text" name="bank_account_no" value="{{ a.bank_account_no or '' }}">
-  <label>EPF No.</label>
-  <input type="text" name="epf_no" value="{{ a.epf_no or '' }}">
-  <label>Tax No.</label>
-  <input type="text" name="tax_no" value="{{ a.tax_no or '' }}">
   <div class="submit-bar"><button class="btn" type="submit">Submit</button></div>
 </form>
 {% endif %}

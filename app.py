@@ -7377,20 +7377,16 @@ def careers_bank_info(token):
     if application["docs_locked"] == "Y":
         return redirect(url_for("careers_documents", token=token))
     if request.method == "POST":
+        # Only the bank details: EPF / tax numbers are filled in by HR (a candidate would otherwise blank them).
         db.execute(
-            """UPDATE job_applications SET bank_name=?, bank_account_no=?, epf_no=?, tax_no=?
-               WHERE id=?""",
-            (
-                request.form.get("bank_name") or None,
-                request.form.get("bank_account_no") or None,
-                request.form.get("epf_no") or None,
-                request.form.get("tax_no") or None,
-                application["id"],
-            ),
+            """UPDATE job_applications SET bank_name=?, bank_account_no=? WHERE id=?""",
+            ((request.form.get("bank_name") or "").strip() or None,
+             (request.form.get("bank_account_no") or "").strip() or None, application["id"]),
         )
         db.commit()
-        return render_template("careers_bank_info.html", a=application, saved=True)
-    return render_template("careers_bank_info.html", a=application, saved=False)
+        application = db.execute("SELECT * FROM job_applications WHERE id=?", (application["id"],)).fetchone()
+        return render_template("careers_bank_info.html", a=application, saved=True, token=token, position=_offered_position(db, application))
+    return render_template("careers_bank_info.html", a=application, saved=False, token=token, position=_offered_position(db, application))
 
 
 # ---- Candidate document checklist (public link, same token as the bank-details link) ----
@@ -7450,6 +7446,16 @@ def _checklist_progress_map(db, applications):
             done += 1
         out[a["id"]] = (done, total)
     return out
+
+
+def _offered_position(db, application):
+    """The position offered in the Employment Letter box, else the one applied for."""
+    try:
+        row = db.execute("SELECT position FROM job_application_offers WHERE application_id=?", (application["id"],)).fetchone()
+        offered = (row["position"] or "").strip() if row else ""
+    except sqlite3.OperationalError:
+        offered = ""
+    return offered or application["position_applied"]
 
 
 def _ensure_candidate_lock_columns(db):

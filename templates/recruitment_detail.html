@@ -152,12 +152,33 @@
           <td class="text" style="color:var(--muted);">{% if i.key == 'bank' %}{{ 'received' if i.done else 'missing' }}{% else %}{{ (i.count ~ ' file' ~ ('s' if i.count != 1 else '')) if i.done else 'missing' }}{% endif %}</td></tr>
       {% endfor %}
     </table>
+    {% if a.reupload_request %}
+    <div style="margin-top:10px; padding:8px 10px; background:#fffbeb; border:1px solid #f59e0b; border-radius:8px; font-size:13px;">
+      <strong>The candidate asks to re-upload a document</strong>{% if a.reupload_requested_at %} ({{ a.reupload_requested_at[:16].replace('T', ' ') }}){% endif %}:<br>
+      &ldquo;{{ a.reupload_request }}&rdquo;
+      <div style="display:flex; gap:8px; margin-top:6px;">
+        <form method="post" action="{{ url_for('recruitment_documents_review', app_id=a.id) }}"><input type="hidden" name="action" value="unlock"><button class="btn" style="padding:3px 12px; font-size:12px;" type="submit">Approve &mdash; let them re-upload</button></form>
+        <form method="post" action="{{ url_for('recruitment_documents_review', app_id=a.id) }}"><input type="hidden" name="action" value="decline"><button class="btn secondary" style="padding:3px 12px; font-size:12px;" type="submit">Decline</button></form>
+      </div>
+    </div>
+    {% endif %}
+    {% if a.docs_locked == 'Y' %}
+    <div style="margin-top:10px; font-size:13px;">&#128274; <strong>Reviewed and locked</strong> by {{ a.docs_locked_by or 'HR' }}{% if a.docs_locked_at %} on {{ a.docs_locked_at[:10] }}{% endif %}.
+      The candidate can no longer upload or change anything unless you approve it.
+      <form method="post" action="{{ url_for('recruitment_documents_review', app_id=a.id) }}" style="display:inline;" onsubmit="return confirm('Unlock so the candidate can upload again?');">
+        <input type="hidden" name="action" value="unlock"><button class="btn secondary" style="padding:2px 10px; font-size:12px;" type="submit">Unlock</button></form></div>
+    {% elif not checklist_reminder %}
+    <form method="post" action="{{ url_for('recruitment_documents_review', app_id=a.id) }}" style="margin-top:8px;" onsubmit="return confirm('Mark these documents as reviewed and lock them? The candidate will not be able to change them without your approval.');">
+      <input type="hidden" name="action" value="lock">
+      <button class="btn" style="padding:4px 12px; font-size:12px;" type="submit">&#10003; I have reviewed the documents &mdash; lock them</button>
+    </form>
+    {% endif %}
     {% if checklist_reminder %}
     <p style="font-size:12px; color:var(--muted); margin:10px 0 4px;">Still missing &mdash; copy this reminder and send it by WhatsApp:</p>
     <textarea id="checklist-reminder" rows="8" readonly style="width:100%; font:inherit; font-size:12px; padding:8px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text); box-sizing:border-box;">{{ checklist_reminder }}</textarea>
     <button type="button" class="btn secondary" style="padding:4px 10px; font-size:12px; margin-top:4px;" onclick="navigator.clipboard.writeText(document.getElementById('checklist-reminder').value); this.textContent='Copied!';">Copy reminder</button>
     {% else %}
-    <p style="font-size:13px; color:#15803d; margin:10px 0 0;"><strong>&#10003; Everything has been received.</strong></p>
+    <p style="font-size:13px; color:#15803d; margin:10px 0 0;"><strong>&#10003; Everything has been received.</strong> Open each file under <em>Supporting Documents</em> above to check it, then lock.</p>
     {% endif %}
     <p style="font-size:12px; color:var(--muted); margin:8px 0 0;">Uploaded files appear under <em>Supporting Documents</em> above. If a candidate sends something by WhatsApp instead, add it with <em>Add file</em> using the same document name and it will be ticked here too.</p>
     {% else %}

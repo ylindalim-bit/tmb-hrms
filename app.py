@@ -7367,11 +7367,14 @@ def careers_bank_info(token):
     treated as the candidate's authorization - same trust model as the
     /careers/apply form itself having no login."""
     db = get_db()
+    _ensure_candidate_lock_columns(db)
     application = db.execute(
         "SELECT * FROM job_applications WHERE bank_info_token=?", (token,)
     ).fetchone()
     if application is None:
         abort(404)
+    if application["docs_locked"] == "Y":
+        return redirect(url_for("careers_documents", token=token))
     if request.method == "POST":
         db.execute(
             """UPDATE job_applications SET bank_name=?, bank_account_no=?, epf_no=?, tax_no=?
@@ -7448,6 +7451,62 @@ def _checklist_progress_map(db, applications):
     return out
 
 
+def _ensure_candidate_lock_columns(db):
+    """Columns for "HR has reviewed the documents - locked" and the candidate's re-upload request (added on first use)."""
+    try:
+        cols = [r[1] for r in db.execute("PRAGMA table_info(job_applications)").fetchall()]
+        for col in ("docs_locked", "docs_locked_by", "docs_locked_at", "reupload_request", "reupload_requested_at"):
+            if col not in cols:
+                db.execute(f"ALTER TABLE job_applications ADD COLUMN {col} TEXT")
+        db.commit()
+    except sqlite3.OperationalError:
+        pass
+
+
+@app.route("/hr/recruitment/<int:app_id>/documents-review", methods=["POST"])
+def recruitment_documents_review(app_id):
+    """HR confirms the candidate's documents are complete and correct (lock), lets the candidate re-upload (unlock /
+    approve a re-upload request), or declines a re-upload request."""
+    if session.get("hr_role") == "approver":
+        abort(403)
+    db = get_db()
+    _ensure_candidate_lock_columns(db)
+    application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
+    if application is None:
+        abort(404)
+    action = request.form.get("action")
+    now = datetime.datetime.now(MYT).isoformat(timespec="seconds")
+    back = url_for("recruitment_detail", app_id=app_id) + "#employment-letter"
+    if action == "lock":
+        if not all(i["done"] for i in _candidate_checklist(db, application)):
+            return redirect(back)       # only when every item has been received
+        hr_user = db.execute("SELECT full_name FROM hr_users WHERE username=?", (session.get("hr_username"),)).fetchone()
+        db.execute("UPDATE job_applications SET docs_locked='Y', docs_locked_by=?, docs_locked_at=?, reupload_request=NULL, "
+                   "reupload_requested_at=NULL WHERE id=?", ((hr_user["full_name"] if hr_user else session.get("hr_username")), now, app_id))
+    elif action == "unlock":
+        db.execute("UPDATE job_applications SET docs_locked=NULL, reupload_request=NULL, reupload_requested_at=NULL WHERE id=?", (app_id,))
+    elif action == "decline":
+        db.execute("UPDATE job_applications SET reupload_request=NULL, reupload_requested_at=NULL WHERE id=?", (app_id,))
+    db.commit()
+    return redirect(back)
+
+
+@app.route("/careers/documents/<token>/request-reupload", methods=["POST"])
+def careers_documents_request_reupload(token):
+    """A candidate whose documents are locked asks HR for permission to replace something."""
+    db = get_db()
+    _ensure_candidate_lock_columns(db)
+    application = db.execute("SELECT * FROM job_applications WHERE bank_info_token=?", (token,)).fetchone()
+    if application is None:
+        abort(404)
+    msg = (request.form.get("reason") or "").strip()[:500]
+    if application["docs_locked"] == "Y" and msg:
+        db.execute("UPDATE job_applications SET reupload_request=?, reupload_requested_at=? WHERE id=?",
+                   (msg, datetime.datetime.now(MYT).isoformat(timespec="seconds"), application["id"]))
+        db.commit()
+    return redirect(url_for("careers_documents", token=token, asked="1"))
+
+
 def _candidate_letter_ready(db, application):
     """The candidate may open their Employment Letter once HR has prepared it (offer saved and a Ref number given,
     or an uploaded own-letter) - so nothing half-finished is shown, and viewing never hands out a new Ref number."""
@@ -7490,10 +7549,14 @@ def careers_documents(token):
     """Public page for a candidate to upload the documents HR asked for (no login - the long random token in the
     link is the authorisation, same as the bank-details page)."""
     db = get_db()
+    _ensure_candidate_lock_columns(db)
     application = db.execute("SELECT * FROM job_applications WHERE bank_info_token=?", (token,)).fetchone()
     if application is None:
         abort(404)
     message, errors = None, []
+    locked = application["docs_locked"] == "Y"
+    if locked and request.method == "POST":
+        return redirect(url_for("careers_documents", token=token))   # reviewed by HR: no changes without approval
     if request.method == "POST":
         app_dir = os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(application["id"]))
         now = datetime.datetime.now(MYT).isoformat(timespec="seconds")
@@ -7543,7 +7606,9 @@ def careers_documents(token):
         offered = (row["position"] or "").strip() if row else None
     except sqlite3.OperationalError:
         pass
-    return render_template("careers_documents.html", a=application, items=checklist, token=token,
+    if request.args.get("asked") and locked:
+        message = "Your request has been sent to HR. They will let you know."
+    return render_template("careers_documents.html", a=application, items=checklist, token=token, locked=locked,
                            position=offered or application["position_applied"],   # the position offered, not the one applied for
                            letter_ready=_candidate_letter_ready(db, application),
                            done=sum(1 for i in checklist if i["done"]), total=len(checklist), message=message, errors=errors)
@@ -7657,6 +7722,7 @@ def _loe_refs_map(db):
 @app.route("/hr/recruitment")
 def recruitment_list():
     db = get_db()
+    _ensure_candidate_lock_columns(db)
     # Default view = "active": New / Reviewed / Shortlisted, so Hired and Not Suitable
     # candidates are out of the way (still one click away via their own filter or "all").
     status_filter = request.args.get("status", "")
@@ -7803,6 +7869,7 @@ def recruitment_create():
 @app.route("/hr/recruitment/<int:app_id>")
 def recruitment_detail(app_id):
     db = get_db()
+    _ensure_candidate_lock_columns(db)
     application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
     if application is None:
         abort(404)

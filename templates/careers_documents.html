@@ -44,6 +44,29 @@
 {% if message %}<div class="msg good">{{ message }}</div>{% endif %}
 {% for e in errors %}<div class="msg bad">{{ e }}</div>{% endfor %}
 
+{% if locked %}
+<div class="msg" style="background:#eff6ff; border:1px solid #93c5fd;">
+  &#128274; <strong>Your documents have been reviewed and accepted by HR{% if a.docs_locked_at %} on {{ a.docs_locked_at[:10] }}{% endif %}.</strong>
+  They are now locked, so they cannot be changed or deleted here. If you need to replace a document, ask HR below.
+</div>
+{% for i in items %}
+<div class="item">
+  <h2><span class="ok">&#10003;</span> {{ i.label }}</h2>
+  <p>{% if i.key == 'bank' %}Received.{% else %}<strong class="ok">Received ({{ i.count }} file{{ 's' if i.count != 1 }}).</strong>{% endif %}</p>
+</div>
+{% endfor %}
+{% if a.reupload_request %}
+<div class="msg" style="background:#fffbeb; border:1px solid #f59e0b;"><strong>Your request is waiting for HR approval.</strong><br>
+  <span style="font-size:13px;">&ldquo;{{ a.reupload_request }}&rdquo;</span></div>
+{% else %}
+<form method="post" action="{{ url_for('careers_documents_request_reupload', token=token) }}" class="item">
+  <h2>Need to replace a document?</h2>
+  <p>Tell HR which document and why. You can upload again once HR approves.</p>
+  <textarea name="reason" rows="3" required maxlength="500" style="width:100%; font:inherit; padding:8px; border:1px solid var(--border); border-radius:6px; box-sizing:border-box;" placeholder="e.g. My passport copy is blurry, I would like to upload a clearer one."></textarea>
+  <div class="submit-bar" style="margin-top:8px;"><button class="btn secondary" type="submit">Ask HR for approval</button></div>
+</form>
+{% endif %}
+{% else %}
 <form method="post" enctype="multipart/form-data">
   {% for i in items if not i.key == 'bank' %}
   <div class="item">
@@ -69,16 +92,17 @@
   {% endfor %}
   <div class="submit-bar"><button class="btn" type="submit">Upload</button></div>
 </form>
+{% endif %}
 
-{% for i in items if i.key == 'bank' %}
+{% if not locked %}{% for i in items if i.key == 'bank' %}
 <div class="item" style="margin-top:14px;">
   <h2>{% if i.done %}<span class="ok">&#10003;</span>{% else %}<span class="todo">&#9675;</span>{% endif %} {{ i.label }}</h2>
   <p>{{ i.hint }}{% if i.done %} <strong class="ok">Received.</strong>{% endif %}</p>
   <a class="btn secondary" href="{{ url_for('careers_bank_info', token=token) }}" style="display:inline-block;">{{ 'Check / change' if i.done else 'Fill in now' }}</a>
 </div>
-{% endfor %}
+{% endfor %}{% endif %}
 
-{% if done == total %}<p style="text-align:center; font-size:15px; margin-top:20px;" class="ok"><strong>&#10003; Everything has been received. Thank you!</strong></p>{% endif %}
+{% if done == total and not locked %}<p style="text-align:center; font-size:15px; margin-top:20px;" class="ok"><strong>&#10003; Everything has been received. Thank you!</strong></p>{% endif %}
 <script>
 // English-only file buttons (the browser's own button follows the computer's language).
 document.querySelectorAll('.filepick input[type=file]').forEach(function (inp) {

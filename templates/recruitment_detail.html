@@ -141,7 +141,7 @@
     </p>
     <div style="display:flex; gap:6px;">
       <input id="bank-info-link" type="text" readonly
-             value="{{ url_for('careers_documents', token=a.bank_info_token, _external=True) }}"
+             value="{{ candidate_link }}"
              style="flex:1; font-size:12px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text);">
       <button type="button" class="btn secondary" style="padding:4px 10px; font-size:12px;" onclick="navigator.clipboard.writeText(document.getElementById('bank-info-link').value); this.textContent='Copied!';">Copy</button>
     </div>

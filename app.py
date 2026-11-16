@@ -7419,14 +7419,22 @@ def _candidate_checklist(db, application):
     return items
 
 
+def _candidate_link(application):
+    """The candidate's upload link, always https on the live site (the proxy hands the app plain http)."""
+    url = url_for("careers_documents", token=application["bank_info_token"], _external=True)
+    if url.startswith("http://") and not url.startswith(("http://localhost", "http://127.0.0.1")):
+        url = "https://" + url[len("http://"):]
+    return url
+
+
 def _candidate_reminder(application, checklist):
     """A ready-to-send WhatsApp message listing what is still missing, with the upload link (None if nothing is missing)."""
     missing = [i["label"] for i in checklist if not i["done"]]
     if not missing or not application["bank_info_token"]:
         return None
-    first = ((application["full_name"] or "").split() or ["there"])[0].title()
-    url = url_for("careers_documents", token=application["bank_info_token"], _external=True)
-    return (f"Hi {first},\n\nPlease upload the following for your Tianma Precision job offer:\n"
+    name = (application["full_name"] or "there").strip().title()      # the full name
+    url = _candidate_link(application)
+    return (f"Hi {name},\n\nPlease upload the following for your Tianma Precision job offer:\n"
             + "\n".join(f"- {m}" for m in missing)
             + f"\n\nUpload here: {url}\n\nThank you.\nLinda Lim, HR, Tianma Precision Sdn Bhd")
 
@@ -7953,6 +7961,7 @@ def recruitment_detail(app_id):
         custom_letter=_custom_letter_name(app_id),
         has_signature=_director_signature() is not None,
         deleted_by_candidate=_deleted_by_candidate(db, app_id),
+        candidate_link=_candidate_link(application) if application["bank_info_token"] else None,
         checklist=_candidate_checklist(db, application),
         checklist_reminder=_candidate_reminder(application, _candidate_checklist(db, application)),
         family=json.loads(application["family_particulars_json"] or "[]"),

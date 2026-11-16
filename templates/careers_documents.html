@@ -69,6 +69,15 @@
 {% else %}
 <form method="post" enctype="multipart/form-data">
   {% for i in items if not i.key == 'bank' %}
+  {% if i.key == 'bank_proof' %}
+  {% for b in items if b.key == 'bank' %}
+  <div class="item" style="border-color:#93c5fd;">
+    <h2>{% if b.done %}<span class="ok">&#10003;</span>{% else %}<span class="todo">&#9675;</span>{% endif %} {{ b.label }}</h2>
+    <p>{{ b.hint }}{% if b.done %} <strong class="ok">Received.</strong>{% endif %} This opens in a new tab, so your chosen files here are kept.</p>
+    <a class="btn secondary" href="{{ url_for('careers_bank_info', token=token) }}" target="_blank" rel="noopener" style="display:inline-block;">{{ 'Check / change' if b.done else 'Fill in now' }}</a>
+  </div>
+  {% endfor %}
+  {% endif %}
   <div class="item">
     <h2>{% if i.done %}<span class="ok">&#10003;</span>{% else %}<span class="todo">&#9675;</span>{% endif %} {{ i.label }}</h2>
     <p>{{ i.hint }}{% if i.done %} <strong class="ok">Received ({{ i.count }} file{{ 's' if i.count != 1 }}).</strong>{% endif %}</p>
@@ -94,13 +103,7 @@
 </form>
 {% endif %}
 
-{% if not locked %}{% for i in items if i.key == 'bank' %}
-<div class="item" style="margin-top:14px;">
-  <h2>{% if i.done %}<span class="ok">&#10003;</span>{% else %}<span class="todo">&#9675;</span>{% endif %} {{ i.label }}</h2>
-  <p>{{ i.hint }}{% if i.done %} <strong class="ok">Received.</strong>{% endif %}</p>
-  <a class="btn secondary" href="{{ url_for('careers_bank_info', token=token) }}" style="display:inline-block;">{{ 'Check / change' if i.done else 'Fill in now' }}</a>
-</div>
-{% endfor %}{% endif %}
+
 
 {% if done == total and not locked %}<p style="text-align:center; font-size:15px; margin-top:20px;" class="ok"><strong>&#10003; Everything has been received. Thank you!</strong></p>{% endif %}
 <script>

@@ -7389,6 +7389,120 @@ def careers_bank_info(token):
     return render_template("careers_bank_info.html", a=application, saved=False)
 
 
+# ---- Candidate document checklist (public link, same token as the bank-details link) ----
+# One link per candidate: they upload each required document into its own slot and HR sees a tick-list
+# (Recruitment list column + candidate page), so nothing is forgotten.
+CANDIDATE_DOC_CHECKLIST = [
+    # key, label (stored as the document type), hint shown to the candidate, images only?
+    ("signed_loe", "Signed Letter of Employment", "Sign the letter we sent you, then upload a clear photo or scan.", False),
+    ("ic", "I/C copy (front and back)", "Front and back of your I/C. You can choose 2 files, or one file with both sides.", False),
+    ("medical", "Medical check-up report", "The report from your medical check-up.", False),
+    ("passport", "Passport copy", "The photo page of your passport. No passport yet? Apply for one now and upload it when you receive it.", False),
+    ("photo", "Passport-size photo", "A recent passport-size photo (JPG or PNG).", True),
+]
+CANDIDATE_DOC_MAX_BYTES = 10 * 1024 * 1024
+CANDIDATE_DOC_MAX_PER_ITEM = 6
+
+
+def _candidate_checklist(db, application):
+    """[{key, label, hint, images_only, count, done}] - the tick-list for one candidate (last item: bank details)."""
+    have = {}
+    for r in db.execute("SELECT doc_type, COUNT(*) AS n FROM job_application_documents WHERE application_id=? GROUP BY doc_type",
+                        (application["id"],)).fetchall():
+        have[r["doc_type"]] = r["n"]
+    items = [{"key": k, "label": lbl, "hint": hint, "images_only": img, "count": have.get(lbl, 0), "done": have.get(lbl, 0) > 0}
+             for k, lbl, hint, img in CANDIDATE_DOC_CHECKLIST]
+    bank_done = bool((application["bank_name"] or "").strip() and (application["bank_account_no"] or "").strip())
+    items.append({"key": "bank", "label": "Bank name and account number", "hint": "For salary payment.", "images_only": False,
+                  "count": 1 if bank_done else 0, "done": bank_done})
+    return items
+
+
+def _candidate_reminder(application, checklist):
+    """A ready-to-send WhatsApp message listing what is still missing, with the upload link (None if nothing is missing)."""
+    missing = [i["label"] for i in checklist if not i["done"]]
+    if not missing or not application["bank_info_token"]:
+        return None
+    first = ((application["full_name"] or "").split() or ["there"])[0].title()
+    url = url_for("careers_documents", token=application["bank_info_token"], _external=True)
+    return (f"Hi {first},\n\nPlease upload the following for your Tianma Precision job offer:\n"
+            + "\n".join(f"- {m}" for m in missing)
+            + f"\n\nUpload here: {url}\n\nThank you.\nLinda Lim, HR, Tianma Precision Sdn Bhd")
+
+
+def _checklist_progress_map(db, applications):
+    """{application_id: (done, total)} for the Recruitment list."""
+    total = len(CANDIDATE_DOC_CHECKLIST) + 1
+    labels = {lbl: k for k, lbl, _h, _i in CANDIDATE_DOC_CHECKLIST}
+    have = {}
+    for r in db.execute("SELECT DISTINCT application_id, doc_type FROM job_application_documents").fetchall():
+        if r["doc_type"] in labels:
+            have.setdefault(r["application_id"], set()).add(r["doc_type"])
+    out = {}
+    for a in applications:
+        done = len(have.get(a["id"], ()))
+        if (a["bank_name"] or "").strip() and (a["bank_account_no"] or "").strip():
+            done += 1
+        out[a["id"]] = (done, total)
+    return out
+
+
+@app.route("/careers/documents/<token>", methods=["GET", "POST"])
+def careers_documents(token):
+    """Public page for a candidate to upload the documents HR asked for (no login - the long random token in the
+    link is the authorisation, same as the bank-details page)."""
+    db = get_db()
+    application = db.execute("SELECT * FROM job_applications WHERE bank_info_token=?", (token,)).fetchone()
+    if application is None:
+        abort(404)
+    message, errors = None, []
+    if request.method == "POST":
+        app_dir = os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(application["id"]))
+        now = datetime.datetime.now(MYT).isoformat(timespec="seconds")
+        saved = 0
+        existing = {r["doc_type"]: r["n"] for r in db.execute(
+            "SELECT doc_type, COUNT(*) AS n FROM job_application_documents WHERE application_id=? GROUP BY doc_type",
+            (application["id"],)).fetchall()}
+        for key, label, _hint, images_only in CANDIDATE_DOC_CHECKLIST:
+            for f in request.files.getlist("file_" + key):
+                if not f or not f.filename:
+                    continue
+                original = secure_filename(f.filename)
+                ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
+                allowed = {"jpg", "jpeg", "png"} if images_only else ALLOWED_DOC_EXTENSIONS
+                if ext not in allowed:
+                    errors.append(f"{label}: {f.filename} - only " + (", ".join(sorted(allowed))).upper() + " files are accepted.")
+                    continue
+                f.stream.seek(0, os.SEEK_END)
+                size = f.stream.tell()
+                f.stream.seek(0)
+                if size > CANDIDATE_DOC_MAX_BYTES:
+                    errors.append(f"{label}: {f.filename} is too large (maximum 10 MB).")
+                    continue
+                if existing.get(label, 0) >= CANDIDATE_DOC_MAX_PER_ITEM:
+                    errors.append(f"{label}: too many files already uploaded - please contact HR.")
+                    continue
+                os.makedirs(app_dir, exist_ok=True)
+                stored = f"{uuid.uuid4().hex}_{original}"
+                f.save(os.path.join(app_dir, stored))
+                db.execute(
+                    """INSERT INTO job_application_documents (application_id, doc_type, original_name, stored_name, uploaded_at)
+                       VALUES (?,?,?,?,?)""", (application["id"], label, original, stored, now))
+                if key == "photo" and not application["photo_stored_name"] and ext in ALLOWED_PHOTO_EXTENSIONS:
+                    db.execute("UPDATE job_applications SET photo_stored_name=? WHERE id=?", (stored, application["id"]))
+                    application = db.execute("SELECT * FROM job_applications WHERE id=?", (application["id"],)).fetchone()
+                existing[label] = existing.get(label, 0) + 1
+                saved += 1
+        db.commit()
+        if saved:
+            message = f"Thank you - {saved} file(s) received."
+        elif not errors:
+            message = "Please choose a file first."
+    checklist = _candidate_checklist(db, application)
+    return render_template("careers_documents.html", a=application, items=checklist, token=token,
+                           done=sum(1 for i in checklist if i["done"]), total=len(checklist), message=message, errors=errors)
+
+
 @app.route("/hr/recruitment/<int:app_id>/photo")
 def recruitment_photo(app_id):
     db = get_db()
@@ -7561,6 +7675,7 @@ def recruitment_list():
         interview_n = 0
     return render_template(
         "recruitment_list.html", applications=applications, status_filter=status_filter, counts=counts,
+        doc_progress=_checklist_progress_map(db, applications),
         interview_n=interview_n, today_iso=datetime.datetime.now(MYT).date().isoformat(),
         apply_url=url_for("careers_apply", _external=True), reviewers=reviewers,
         reviewer_names={r["username"]: r["full_name"] for r in reviewers},
@@ -7663,6 +7778,8 @@ def recruitment_detail(app_id):
         offer=_load_offer(db, application),
         custom_letter=_custom_letter_name(app_id),
         has_signature=_director_signature() is not None,
+        checklist=_candidate_checklist(db, application),
+        checklist_reminder=_candidate_reminder(application, _candidate_checklist(db, application)),
         family=json.loads(application["family_particulars_json"] or "[]"),
         education=json.loads(application["education_json"] or "[]"),
         other_quals=json.loads(application["other_qualifications_json"] or "[]"),

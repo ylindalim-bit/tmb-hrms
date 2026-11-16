@@ -134,17 +134,32 @@
   </form>
   {% if hr_role != "approver" %}
   <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
-    <label style="display:block; margin-bottom:4px;">Candidate self-entry link</label>
+    <label style="display:block; margin-bottom:4px;">Candidate self-entry link &mdash; documents and bank details</label>
     {% if a.bank_info_token %}
     <p style="color:var(--muted); font-size:12px; margin:0 0 6px;">
-      Send this link to the candidate so they can fill in their own Bank Name/Account No./EPF No./Tax No. above directly.
+      Send this one link to the candidate. They upload the documents below and fill in their bank details themselves.
     </p>
     <div style="display:flex; gap:6px;">
       <input id="bank-info-link" type="text" readonly
-             value="{{ url_for('careers_bank_info', token=a.bank_info_token, _external=True) }}"
+             value="{{ url_for('careers_documents', token=a.bank_info_token, _external=True) }}"
              style="flex:1; font-size:12px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text);">
       <button type="button" class="btn secondary" style="padding:4px 10px; font-size:12px;" onclick="navigator.clipboard.writeText(document.getElementById('bank-info-link').value); this.textContent='Copied!';">Copy</button>
     </div>
+    <table style="margin-top:10px; font-size:13px; width:100%;">
+      {% for i in checklist %}
+      <tr><td class="text" style="width:26px;">{% if i.done %}<span style="color:#15803d; font-weight:700;">&#10003;</span>{% else %}<span style="color:#b45309;">&#9675;</span>{% endif %}</td>
+          <td class="text">{{ i.label }}</td>
+          <td class="text" style="color:var(--muted);">{% if i.key == 'bank' %}{{ 'received' if i.done else 'missing' }}{% else %}{{ (i.count ~ ' file' ~ ('s' if i.count != 1 else '')) if i.done else 'missing' }}{% endif %}</td></tr>
+      {% endfor %}
+    </table>
+    {% if checklist_reminder %}
+    <p style="font-size:12px; color:var(--muted); margin:10px 0 4px;">Still missing &mdash; copy this reminder and send it by WhatsApp:</p>
+    <textarea id="checklist-reminder" rows="8" readonly style="width:100%; font:inherit; font-size:12px; padding:8px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text); box-sizing:border-box;">{{ checklist_reminder }}</textarea>
+    <button type="button" class="btn secondary" style="padding:4px 10px; font-size:12px; margin-top:4px;" onclick="navigator.clipboard.writeText(document.getElementById('checklist-reminder').value); this.textContent='Copied!';">Copy reminder</button>
+    {% else %}
+    <p style="font-size:13px; color:#15803d; margin:10px 0 0;"><strong>&#10003; Everything has been received.</strong></p>
+    {% endif %}
+    <p style="font-size:12px; color:var(--muted); margin:8px 0 0;">Uploaded files appear under <em>Supporting Documents</em> above. If a candidate sends something by WhatsApp instead, add it with <em>Add file</em> using the same document name and it will be ticked here too.</p>
     {% else %}
     <form method="post" action="{{ url_for('recruitment_generate_bank_info_link', app_id=a.id) }}">
       <button type="submit" class="btn secondary" style="padding:4px 10px; font-size:12px;">Generate link</button>
@@ -317,6 +332,11 @@
       <option>Certificate / Diploma</option>
       <option>License</option>
       <option>Offer / Signed Letter</option>
+      <option>Signed Letter of Employment</option>
+      <option>I/C copy (front and back)</option>
+      <option>Medical check-up report</option>
+      <option>Passport copy</option>
+      <option>Passport-size photo</option>
       <option>Other Supporting Document</option>
       <option value="Other">Other (type name)...</option>
     </select>

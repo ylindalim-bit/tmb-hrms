@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Upload Documents - TIANMA PRECISION SDN BHD</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<style>
+  body { max-width: 560px; margin: 0 auto; padding: 20px 16px 60px; }
+  .careers-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .careers-header img { height: 32px; width: auto; display: block; flex-shrink: 0; }
+  .careers-header h1 { font-size: 16px; margin: 0; line-height: 1.3; }
+  .careers-header p { color: var(--muted); font-size: 12px; margin: 0; }
+  .item { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: var(--card); }
+  .item h2 { font-size: 15px; margin: 0 0 2px; display: flex; gap: 8px; align-items: center; }
+  .item p { margin: 2px 0 8px; font-size: 12px; color: var(--muted); }
+  .ok { color: #15803d; } .todo { color: #b45309; }
+  .bar { height: 8px; background: #e5e7eb; border-radius: 99px; overflow: hidden; margin: 6px 0 14px; }
+  .bar > div { height: 100%; background: #16a34a; }
+  .msg { padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; font-size: 14px; }
+  .msg.good { background: #dcfce7; } .msg.bad { background: #fee2e2; color: var(--danger); }
+  .submit-bar { text-align: center; margin-top: 16px; }
+  .submit-bar button { font-size: 15px; padding: 12px 32px; }
+</style>
+</head>
+<body>
+<div class="careers-header">
+  <img src="{{ url_for('static', filename='img/tmb_logo.jpg') }}" alt="Company logo">
+  <div><h1>TIANMA PRECISION SDN BHD</h1><p>Documents for your job offer</p></div>
+</div>
+
+<p style="font-size:14px;">Hi {{ a.full_name }}, please upload the documents below{% if a.position_applied %} for the position of <strong>{{ a.position_applied }}</strong>{% endif %}.
+  You can come back to this same link at any time to add the rest.</p>
+
+<div><strong>{{ done }} of {{ total }} completed</strong></div>
+<div class="bar"><div style="width:{{ (done * 100 / total)|round|int }}%;"></div></div>
+
+{% if message %}<div class="msg good">{{ message }}</div>{% endif %}
+{% for e in errors %}<div class="msg bad">{{ e }}</div>{% endfor %}
+
+<form method="post" enctype="multipart/form-data">
+  {% for i in items if not i.key == 'bank' %}
+  <div class="item">
+    <h2>{% if i.done %}<span class="ok">&#10003;</span>{% else %}<span class="todo">&#9675;</span>{% endif %} {{ i.label }}</h2>
+    <p>{{ i.hint }}{% if i.done %} <strong class="ok">Received ({{ i.count }} file{{ 's' if i.count != 1 }}).</strong>{% endif %}</p>
+    <input type="file" name="file_{{ i.key }}" multiple accept="{{ '.jpg,.jpeg,.png' if i.images_only else '.pdf,.doc,.docx,.jpg,.jpeg,.png' }}">
+  </div>
+  {% endfor %}
+  <div class="submit-bar"><button class="btn" type="submit">Upload</button></div>
+</form>
+
+{% for i in items if i.key == 'bank' %}
+<div class="item" style="margin-top:14px;">
+  <h2>{% if i.done %}<span class="ok">&#10003;</span>{% else %}<span class="todo">&#9675;</span>{% endif %} {{ i.label }}</h2>
+  <p>{{ i.hint }}{% if i.done %} <strong class="ok">Received.</strong>{% endif %}</p>
+  <a class="btn secondary" href="{{ url_for('careers_bank_info', token=token) }}" style="display:inline-block;">{{ 'Check / change' if i.done else 'Fill in now' }}</a>
+</div>
+{% endfor %}
+
+{% if done == total %}<p style="text-align:center; font-size:15px; margin-top:20px;" class="ok"><strong>&#10003; Everything has been received. Thank you!</strong></p>{% endif %}
+</body>
+</html>

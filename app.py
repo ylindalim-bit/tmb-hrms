@@ -7399,6 +7399,7 @@ CANDIDATE_DOC_CHECKLIST = [
     ("medical", "Medical check-up report", "The report from your medical check-up.", False),
     ("passport", "Passport copy", "The photo page of your passport. No passport yet? Apply for one now and upload it when you receive it.", False),
     ("photo", "Passport-size photo", "A recent passport-size photo (JPG or PNG).", True),
+    ("bank_proof", "Bank account proof (statement or bank book)", "A bank statement, or the first page of your bank book, showing your name and account number.", False),
 ]
 CANDIDATE_DOC_MAX_BYTES = 10 * 1024 * 1024
 CANDIDATE_DOC_MAX_PER_ITEM = 6

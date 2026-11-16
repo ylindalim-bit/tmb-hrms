@@ -149,7 +149,8 @@
       {% for i in checklist %}
       <tr><td class="text" style="width:26px;">{% if i.done %}<span style="color:#15803d; font-weight:700;">&#10003;</span>{% else %}<span style="color:#b45309;">&#9675;</span>{% endif %}</td>
           <td class="text">{{ i.label }}</td>
-          <td class="text" style="color:var(--muted);">{% if i.key == 'bank' %}{{ 'received' if i.done else 'missing' }}{% else %}{{ (i.count ~ ' file' ~ ('s' if i.count != 1 else '')) if i.done else 'missing' }}{% endif %}</td></tr>
+          <td class="text" style="color:var(--muted);">{% if i.key == 'bank' %}{{ 'received' if i.done else 'missing' }}{% else %}{{ (i.count ~ ' file' ~ ('s' if i.count != 1 else '')) if i.done else 'missing' }}{% endif %}</td>
+          <td class="text">{% if i.done and i.key != 'bank' %}<a href="{{ url_for('recruitment_print_a4', app_id=a.id, kind=i.key) }}" target="_blank" rel="noopener" style="font-size:12px; font-weight:600;" title="Open as an A4 page, ready to print">Print A4</a>{% endif %}</td></tr>
       {% endfor %}
     </table>
     {% if a.reupload_request %}

@@ -27,6 +27,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfgen import canvas as pdfcanvas
@@ -8826,6 +8827,102 @@ def _image_to_pdf_page_bytes(image_path):
     c.save()
     buf.seek(0)
     return buf.read()
+
+
+# What to print, per checklist item: images go two to a page (I/C front + back, bank proof) or one per page.
+PRINT_A4_KINDS = {"ic": 2, "passport": 2, "bank_proof": 2, "signed_loe": 1, "medical": 1, "photo": 1}
+
+
+def _a4_print_pdf(app_dir, docs, title, per_page):
+    """One A4 PDF of a candidate's uploaded files for printing: JPG/PNG are straightened (phone photos are often
+    sideways), shrunk to fit and placed `per_page` to a page (I/C front above back); PDFs are appended as they are."""
+    from PIL import ImageOps
+    writer = PdfWriter()
+    images = []   # (PIL image, caption)
+    pdfs_after = []
+
+    def flush(imgs):
+        for start in range(0, len(imgs), per_page):
+            group = imgs[start:start + per_page]
+            buf = io.BytesIO()
+            cv = pdfcanvas.Canvas(buf, pagesize=A4)
+            pw, ph = A4
+            margin = 1.5 * cm
+            cv.setFont("Helvetica", 8)
+            cv.setFillColor(colors.HexColor("#6b7280"))
+            cv.drawString(margin, ph - 1.0 * cm, title)
+            slot_h = (ph - 2 * margin - 0.6 * cm) / per_page
+            for n, (im, caption) in enumerate(group):
+                max_w, max_h = pw - 2 * margin, slot_h - 0.8 * cm
+                scale = min(max_w / im.width, max_h / im.height)
+                dw, dh = im.width * scale, im.height * scale
+                top = ph - margin - 0.6 * cm - n * slot_h
+                x, y = (pw - dw) / 2, top - 0.5 * cm - dh
+                ib = io.BytesIO()
+                im.save(ib, "JPEG", quality=88)
+                ib.seek(0)
+                cv.drawImage(ImageReader(ib), x, y, width=dw, height=dh)
+                cv.setFont("Helvetica", 7)
+                cv.drawString(x, y - 0.35 * cm, caption)
+            cv.showPage()
+            cv.save()
+            buf.seek(0)
+            for page in PdfReader(buf).pages:
+                writer.add_page(page)
+
+    for d in docs:
+        path = os.path.join(app_dir, d["stored_name"])
+        if not os.path.exists(path):
+            continue
+        ext = d["stored_name"].rsplit(".", 1)[-1].lower()
+        try:
+            if ext in ("jpg", "jpeg", "png"):
+                with PILImage.open(path) as im:
+                    im = ImageOps.exif_transpose(im)
+                    if im.mode in ("RGBA", "LA", "P"):
+                        bg = PILImage.new("RGB", im.size, "white")
+                        im = im.convert("RGBA")
+                        bg.paste(im, mask=im.split()[3])
+                        im = bg
+                    im = im.convert("RGB")
+                    if max(im.size) > 2400:
+                        im.thumbnail((2400, 2400))
+                    images.append((im.copy(), d["original_name"]))
+            elif ext == "pdf":
+                flush(images); images = []
+                for page in PdfReader(path).pages:
+                    writer.add_page(page)
+        except Exception:
+            continue
+    flush(images)
+    if len(writer.pages) == 0:
+        return None
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+@app.route("/hr/recruitment/<int:app_id>/print/<kind>")
+def recruitment_print_a4(app_id, kind):
+    """A4 print-out of one checklist item's files (e.g. the I/C: front and back on one page)."""
+    if kind not in PRINT_A4_KINDS:
+        abort(404)
+    db = get_db()
+    application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
+    if application is None:
+        abort(404)
+    if not _can_review_application(application):
+        abort(403)
+    label = next(lbl for k, lbl, _h, _i in CANDIDATE_DOC_CHECKLIST if k == kind)
+    docs = db.execute("SELECT * FROM job_application_documents WHERE application_id=? AND doc_type=? ORDER BY id",
+                      (app_id, label)).fetchall()
+    app_dir = os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(app_id))
+    pdf = _a4_print_pdf(app_dir, docs, f"{label} - {application['full_name']}", PRINT_A4_KINDS[kind])
+    if pdf is None:
+        return "No printable file has been uploaded for this item yet.", 404
+    safe = "".join(ch if ch.isalnum() or ch in " -_" else "" for ch in (application["full_name"] or "candidate")).strip().replace(" ", "_")
+    return send_file(io.BytesIO(pdf), mimetype="application/pdf", as_attachment=False,
+                     download_name=f"{kind}_{safe}_A4.pdf")
 
 
 @app.route("/hr/recruitment/<int:app_id>/combined-pdf")

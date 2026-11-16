@@ -7508,6 +7508,51 @@ def careers_documents_request_reupload(token):
     return redirect(url_for("careers_documents", token=token, asked="1"))
 
 
+def _ensure_doc_source(db):
+    """job_application_documents.source ('candidate' / 'hr') and a log of files a candidate deleted - added on first use."""
+    try:
+        cols = [r[1] for r in db.execute("PRAGMA table_info(job_application_documents)").fetchall()]
+        if cols and "source" not in cols:
+            db.execute("ALTER TABLE job_application_documents ADD COLUMN source TEXT")
+        db.execute("""CREATE TABLE IF NOT EXISTS candidate_doc_deletions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, application_id INTEGER NOT NULL, doc_type TEXT, original_name TEXT, deleted_at TEXT)""")
+        db.commit()
+    except sqlite3.OperationalError:
+        pass
+
+
+@app.route("/careers/documents/<token>/delete/<int:doc_id>", methods=["POST"])
+def careers_documents_delete(token, doc_id):
+    """A candidate removes a file THEY uploaded (e.g. the wrong one) - only while HR has not locked the documents."""
+    db = get_db()
+    _ensure_candidate_lock_columns(db)
+    _ensure_doc_source(db)
+    application = db.execute("SELECT * FROM job_applications WHERE bank_info_token=?", (token,)).fetchone()
+    if application is None:
+        abort(404)
+    if application["docs_locked"] != "Y":
+        doc = db.execute("SELECT * FROM job_application_documents WHERE id=? AND application_id=? AND source='candidate'",
+                         (doc_id, application["id"])).fetchone()
+        if doc is not None and doc["doc_type"] in {lbl for _k, lbl, _h, _i in CANDIDATE_DOC_CHECKLIST}:
+            try:
+                os.remove(os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(application["id"]), doc["stored_name"]))
+            except OSError:
+                pass
+            db.execute("DELETE FROM job_application_documents WHERE id=?", (doc_id,))
+            if application["photo_stored_name"] == doc["stored_name"]:
+                db.execute("UPDATE job_applications SET photo_stored_name=NULL WHERE id=?", (application["id"],))
+            db.execute("INSERT INTO candidate_doc_deletions (application_id, doc_type, original_name, deleted_at) VALUES (?,?,?,?)",
+                       (application["id"], doc["doc_type"], doc["original_name"], datetime.datetime.now(MYT).isoformat(timespec="seconds")))
+            db.commit()
+    return redirect(url_for("careers_documents", token=token, deleted="1"))
+
+
+def _deleted_by_candidate(db, app_id):
+    _ensure_doc_source(db)
+    return db.execute("SELECT doc_type, original_name, deleted_at FROM candidate_doc_deletions WHERE application_id=? ORDER BY id DESC LIMIT 8",
+                      (app_id,)).fetchall()
+
+
 def _candidate_letter_ready(db, application):
     """The candidate may open their Employment Letter once HR has prepared it (offer saved and a Ref number given,
     or an uploaded own-letter) - so nothing half-finished is shown, and viewing never hands out a new Ref number."""
@@ -7551,6 +7596,7 @@ def careers_documents(token):
     link is the authorisation, same as the bank-details page)."""
     db = get_db()
     _ensure_candidate_lock_columns(db)
+    _ensure_doc_source(db)
     application = db.execute("SELECT * FROM job_applications WHERE bank_info_token=?", (token,)).fetchone()
     if application is None:
         abort(404)
@@ -7588,8 +7634,8 @@ def careers_documents(token):
                 stored = f"{uuid.uuid4().hex}_{original}"
                 f.save(os.path.join(app_dir, stored))
                 db.execute(
-                    """INSERT INTO job_application_documents (application_id, doc_type, original_name, stored_name, uploaded_at)
-                       VALUES (?,?,?,?,?)""", (application["id"], label, original, stored, now))
+                    """INSERT INTO job_application_documents (application_id, doc_type, original_name, stored_name, uploaded_at, source)
+                       VALUES (?,?,?,?,?,'candidate')""", (application["id"], label, original, stored, now))
                 if key == "photo" and not application["photo_stored_name"] and ext in ALLOWED_PHOTO_EXTENSIONS:
                     db.execute("UPDATE job_applications SET photo_stored_name=? WHERE id=?", (stored, application["id"]))
                     application = db.execute("SELECT * FROM job_applications WHERE id=?", (application["id"],)).fetchone()
@@ -7609,7 +7655,14 @@ def careers_documents(token):
         pass
     if request.args.get("asked") and locked:
         message = "Your request has been sent to HR. They will let you know."
+    if request.args.get("deleted") and not locked:
+        message = "The file has been deleted. You can upload the correct one."
+    files_by_label = {}
+    for r in db.execute("SELECT id, doc_type, original_name, source FROM job_application_documents WHERE application_id=? ORDER BY id",
+                        (application["id"],)).fetchall():
+        files_by_label.setdefault(r["doc_type"], []).append(r)
     return render_template("careers_documents.html", a=application, items=checklist, token=token, locked=locked,
+                           files_by_label=files_by_label,
                            position=offered or application["position_applied"],   # the position offered, not the one applied for
                            letter_ready=_candidate_letter_ready(db, application),
                            done=sum(1 for i in checklist if i["done"]), total=len(checklist), message=message, errors=errors)
@@ -7664,6 +7717,7 @@ def recruitment_document_upload(app_id):
     """HR adds one or more files (resume, certificate, offer reply, etc.) to a
     candidate after the fact - they show under Supporting Documents."""
     db = get_db()
+    _ensure_doc_source(db)
     application = db.execute("SELECT * FROM job_applications WHERE id=?", (app_id,)).fetchone()
     if application is None:
         abort(404)
@@ -7689,8 +7743,8 @@ def recruitment_document_upload(app_id):
         stored_name = f"{uuid.uuid4().hex}_{original_name}"
         f.save(os.path.join(app_dir, stored_name))
         db.execute(
-            """INSERT INTO job_application_documents (application_id, doc_type, original_name, stored_name, uploaded_at)
-               VALUES (?,?,?,?,?)""",
+            """INSERT INTO job_application_documents (application_id, doc_type, original_name, stored_name, uploaded_at, source)
+               VALUES (?,?,?,?,?,'hr')""",
             (app_id, doc_type, original_name, stored_name, now),
         )
     db.commit()
@@ -7892,6 +7946,7 @@ def recruitment_detail(app_id):
         offer=_load_offer(db, application),
         custom_letter=_custom_letter_name(app_id),
         has_signature=_director_signature() is not None,
+        deleted_by_candidate=_deleted_by_candidate(db, app_id),
         checklist=_candidate_checklist(db, application),
         checklist_reminder=_candidate_reminder(application, _candidate_checklist(db, application)),
         family=json.loads(application["family_particulars_json"] or "[]"),

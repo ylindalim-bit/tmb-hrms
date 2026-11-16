@@ -97,6 +97,16 @@
       <label class="pick"><input type="file" name="file_{{ i.key }}" multiple accept="{{ '.jpg,.jpeg,.png' if i.images_only else '.pdf,.doc,.docx,.jpg,.jpeg,.png' }}">Choose file</label>
       <span class="fname">No file chosen</span>
     </div>
+    {% for f in files_by_label.get(i.label, []) %}
+    <div style="display:flex; align-items:center; gap:8px; margin-top:6px; font-size:12px;">
+      <span class="ok">&#10003;</span> <span style="flex:1; word-break:break-all;">{{ f.original_name }}</span>
+      {% if f.source == 'candidate' %}
+      <button type="submit" formaction="{{ url_for('careers_documents_delete', token=token, doc_id=f.id) }}" formmethod="post" formnovalidate
+              onclick="return confirm('Delete this file? You can upload the correct one afterwards.');"
+              style="font-size:11px; padding:2px 10px; border:1px solid #fca5a5; background:#fff; color:#b91c1c; border-radius:6px; cursor:pointer;">Delete</button>
+      {% else %}<span style="color:var(--muted);">added by HR</span>{% endif %}
+    </div>
+    {% endfor %}
   </div>
   {% endfor %}
   <div class="submit-bar"><button class="btn" type="submit">Upload</button></div>

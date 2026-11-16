@@ -24,7 +24,6 @@
   .filepick .pick { display: inline-block; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--border); background: #fff;
                     font-size: 13px; font-weight: 600; cursor: pointer; }
   .filepick .fname { font-size: 12px; color: var(--muted); }
-  .letterbox { background: #eff6ff; border: 1px solid #93c5fd; border-radius: 8px; padding: 8px 10px; margin: 6px 0 10px; font-size: 13px; }
   .submit-bar { text-align: center; margin-top: 16px; }
   .submit-bar button { font-size: 15px; padding: 12px 32px; }
 </style>
@@ -81,18 +80,6 @@
   <div class="item">
     <h2>{% if i.done %}<span class="ok">&#10003;</span>{% else %}<span class="todo">&#9675;</span>{% endif %} {{ i.label }}</h2>
     <p>{{ i.hint }}{% if i.done %} <strong class="ok">Received ({{ i.count }} file{{ 's' if i.count != 1 }}).</strong>{% endif %}</p>
-    {% if i.key == 'signed_loe' %}
-    <div class="letterbox">
-      {% if letter_ready %}
-      <strong>Step 1.</strong> Read your Letter of Employment:
-      <a href="{{ url_for('careers_documents_letter', token=token) }}" target="_blank" rel="noopener"><strong>View letter</strong></a> &middot;
-      <a href="{{ url_for('careers_documents_letter_pdf', token=token) }}"><strong>Save as PDF</strong></a><br>
-      <strong>Step 2.</strong> Print it, sign it, then upload a photo or scan below.
-      {% else %}
-      Your Letter of Employment will be available here once HR has prepared it. HR will tell you.
-      {% endif %}
-    </div>
-    {% endif %}
     <div class="filepick">
       <label class="pick"><input type="file" name="file_{{ i.key }}" multiple accept="{{ '.jpg,.jpeg,.png' if i.images_only else '.pdf,.doc,.docx,.jpg,.jpeg,.png' }}">Choose file</label>
       <span class="fname">No file chosen</span>

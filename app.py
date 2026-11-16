@@ -7537,7 +7537,14 @@ def careers_documents(token):
         elif not errors:
             message = "Please choose a file first."
     checklist = _candidate_checklist(db, application)
+    offered = None
+    try:
+        row = db.execute("SELECT position FROM job_application_offers WHERE application_id=?", (application["id"],)).fetchone()
+        offered = (row["position"] or "").strip() if row else None
+    except sqlite3.OperationalError:
+        pass
     return render_template("careers_documents.html", a=application, items=checklist, token=token,
+                           position=offered or application["position_applied"],   # the position offered, not the one applied for
                            letter_ready=_candidate_letter_ready(db, application),
                            done=sum(1 for i in checklist if i["done"]), total=len(checklist), message=message, errors=errors)
 

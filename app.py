@@ -411,7 +411,7 @@ except sqlite3.Error:
     pass
 DOCUMENT_TYPES =["Job Application Form", "IC / Passport Copy", "Letter of Employment", "Confirmation Letter",
                    "Warning Letter", "Show Cause Letter", "Resignation Letter", "CP22A", "e-Stamping Certificate",
-                   "TP3 (Prior Employer Income)", "Other"]
+                   "TP3 (Prior Employer Income)", "Transport Allw", "Other"]
 BUSINESS_TRIP_TYPES = ["Business Trip", "Out-Duty", "Training", "Unrecorded Leave", "Home Leave (Malaysia)"]
 # Home Leave (Malaysia) is no longer offered for new notices (existing ones, reports and totals still work).
 SELECTABLE_TRIP_TYPES = [t for t in BUSINESS_TRIP_TYPES if t != "Home Leave (Malaysia)"]

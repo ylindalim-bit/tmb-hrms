@@ -7448,6 +7448,43 @@ def _checklist_progress_map(db, applications):
     return out
 
 
+def _candidate_letter_ready(db, application):
+    """The candidate may open their Employment Letter once HR has prepared it (offer saved and a Ref number given,
+    or an uploaded own-letter) - so nothing half-finished is shown, and viewing never hands out a new Ref number."""
+    try:
+        has_offer = db.execute("SELECT 1 FROM job_application_offers WHERE application_id=?", (application["id"],)).fetchone() is not None
+        has_ref = bool(_loe_ref(db, application["id"], 0, assign=False))
+    except sqlite3.OperationalError:
+        return False
+    return (has_offer and has_ref) or bool(_custom_letter_name(application["id"]))
+
+
+@app.route("/careers/documents/<token>/letter")
+def careers_documents_letter(token):
+    """The candidate's own Employment Letter in the browser (Print / Save as PDF)."""
+    db = get_db()
+    application = db.execute("SELECT * FROM job_applications WHERE bank_info_token=?", (token,)).fetchone()
+    if application is None or not _candidate_letter_ready(db, application):
+        abort(404)
+    _app, content = _employment_letter_content(application["id"])
+    page = letter_render.render_html(
+        content, f"Letter of Employment - {application['full_name']}",
+        pdf_url=url_for("careers_documents_letter_pdf", token=token), word_url=None,
+        back_url=url_for("careers_documents", token=token), public=True)
+    return Response(page, mimetype="text/html")
+
+
+@app.route("/careers/documents/<token>/letter.pdf")
+def careers_documents_letter_pdf(token):
+    db = get_db()
+    application = db.execute("SELECT * FROM job_applications WHERE bank_info_token=?", (token,)).fetchone()
+    if application is None or not _candidate_letter_ready(db, application):
+        abort(404)
+    application, content = _employment_letter_content(application["id"])
+    return send_file(io.BytesIO(letter_render.render_pdf(content)), as_attachment=True,
+                     download_name=f"{_letter_file_stem(application)}.pdf", mimetype="application/pdf")
+
+
 @app.route("/careers/documents/<token>", methods=["GET", "POST"])
 def careers_documents(token):
     """Public page for a candidate to upload the documents HR asked for (no login - the long random token in the
@@ -7501,6 +7538,7 @@ def careers_documents(token):
             message = "Please choose a file first."
     checklist = _candidate_checklist(db, application)
     return render_template("careers_documents.html", a=application, items=checklist, token=token,
+                           letter_ready=_candidate_letter_ready(db, application),
                            done=sum(1 for i in checklist if i["done"]), total=len(checklist), message=message, errors=errors)
 
 

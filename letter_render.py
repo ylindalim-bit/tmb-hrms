@@ -234,7 +234,7 @@ def _letterhead_b64():
         return base64.b64encode(f.read()).decode("ascii")
 
 
-def render_html(docx_bytes, title, pdf_url, word_url, back_url):
+def render_html(docx_bytes, title, pdf_url, word_url, back_url, public=False):
     parts = []
     prev_space = True
     for b in parse(docx_bytes):
@@ -309,11 +309,11 @@ def render_html(docx_bytes, title, pdf_url, word_url, back_url):
   }}
 </style></head><body>
 <div class="bar">
-  <a href="{html.escape(back_url)}">&laquo; Back to candidate</a>
-  <button type="button" onclick="window.print()">Print</button>
+  <a href="{html.escape(back_url)}">&laquo; {"Back to my documents" if public else "Back to candidate"}</a>
+  <button type="button" onclick="window.print()">Print / Save as PDF</button>
   <a class="primary" href="{html.escape(pdf_url)}">Download PDF</a>
-  <a href="{html.escape(word_url)}">Download Word</a>
-  <span>Preview &mdash; edit the details on the candidate page, then view again.</span>
+  {"" if public else '<a href="' + html.escape(word_url) + '">Download Word</a>'}
+  <span>{"Please read your letter, sign it, then upload a photo or scan on the previous page." if public else "Preview &mdash; edit the details on the candidate page, then view again."}</span>
 </div>
 <div class="page">
   <div class="lh"><img alt="Tianma Precision Sdn. Bhd." src="data:image/png;base64,{_letterhead_b64()}"></div>

@@ -435,13 +435,26 @@
 </div>
 
 <div class="card no-print">
-  <h2 style="margin-top:0;" data-en="Family Particulars" data-zh="家庭成员资料">Family Particulars</h2>
+  <h2 style="margin-top:0;" id="family" data-en="Family Particulars" data-zh="家庭成员资料">Family Particulars</h2>
   <div class="table-wrap">
   <table>
     <thead><tr><th class="text" data-en="Name" data-zh="姓名">Name</th><th class="text" data-en="Relationship" data-zh="关系">Relationship</th><th class="text" data-en="DOB" data-zh="出生日期">DOB</th><th class="text" data-en="Occupation" data-zh="职业">Occupation</th><th class="text" data-en="Employer / School" data-zh="雇主/学校">Employer / School</th></tr></thead>
     <tbody>
       {% for r in family %}
-      <tr><td class="text">{{ r.name }}</td><td class="text">{{ r.relationship }}</td><td class="text">{{ r.dob }}</td><td class="text">{{ r.occupation }}</td><td class="text">{{ r.employer }}</td></tr>
+      <tr><td class="text">{{ r.name }}</td><td class="text">{{ r.relationship }}</td>
+        <td class="text" style="white-space:nowrap;">
+          {% set bad = r.dob and not (r.dob|length == 10 and r.dob[4] == '-' and r.dob[5:7]|int >= 1 and r.dob[5:7]|int <= 12 and r.dob[8:10]|int >= 1 and r.dob[8:10]|int <= 31) %}
+          <span id="fdob-view-{{ loop.index0 }}" {% if bad %}style="color:var(--danger); font-weight:700;" title="This is not a valid date - please correct it"{% endif %}>{{ r.dob }}
+            {% if hr_role != "approver" %}<a href="#" style="font-size:12px; margin-left:4px;" onclick="document.getElementById('fdob-view-{{ loop.index0 }}').style.display='none'; document.getElementById('fdob-form-{{ loop.index0 }}').style.display='inline-flex'; return false;">Edit</a>{% endif %}</span>
+          {% if hr_role != "approver" %}
+          <form id="fdob-form-{{ loop.index0 }}" method="post" action="{{ url_for('recruitment_set_family_dob', app_id=a.id, idx=loop.index0) }}" style="display:none; gap:4px; align-items:center;">
+            <input type="date" name="dob" required style="width:auto; font-size:12px;" value="{{ '' if bad else r.dob }}">
+            <button class="btn" type="submit" style="padding:2px 8px; font-size:12px;">Save</button>
+            <a href="#" style="font-size:12px;" onclick="document.getElementById('fdob-form-{{ loop.index0 }}').style.display='none'; document.getElementById('fdob-view-{{ loop.index0 }}').style.display=''; return false;">Cancel</a>
+          </form>
+          {% endif %}
+        </td>
+        <td class="text">{{ r.occupation }}</td><td class="text">{{ r.employer }}</td></tr>
       {% else %}<tr><td colspan="5" class="text" style="color:var(--muted);" data-en="None given." data-zh="未填写。">None given.</td></tr>{% endfor %}
     </tbody>
   </table>

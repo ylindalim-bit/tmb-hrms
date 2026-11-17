@@ -7486,6 +7486,30 @@ def recruitment_set_dob(app_id):
     return redirect(url_for("recruitment_detail", app_id=app_id) + "#personal-info")
 
 
+@app.route("/hr/recruitment/<int:app_id>/family-dob/<int:idx>", methods=["POST"])
+def recruitment_set_family_dob(app_id, idx):
+    """HR corrects the date of birth of one family member on the application (the list is kept in the
+    application's family_particulars_json)."""
+    if session.get("hr_role") == "approver":
+        abort(403)
+    db = get_db()
+    row = db.execute("SELECT family_particulars_json FROM job_applications WHERE id=?", (app_id,)).fetchone()
+    if row is None:
+        abort(404)
+    back = url_for("recruitment_detail", app_id=app_id) + "#family"
+    try:
+        family = json.loads(row["family_particulars_json"] or "[]")
+        dob = datetime.date.fromisoformat((request.form.get("dob") or "").strip())
+    except (ValueError, TypeError):
+        return redirect(back)
+    if not (0 <= idx < len(family)) or not (datetime.date(1900, 1, 1) <= dob <= datetime.datetime.now(MYT).date()):
+        return redirect(back)
+    family[idx]["dob"] = dob.isoformat()
+    db.execute("UPDATE job_applications SET family_particulars_json=? WHERE id=?", (json.dumps(family, ensure_ascii=False), app_id))
+    db.commit()
+    return redirect(back)
+
+
 @app.route("/hr/recruitment/<int:app_id>/sizes", methods=["POST"])
 def recruitment_set_sizes(app_id):
     """HR enters / corrects the candidate's workwear and shoe size (e.g. sent by WhatsApp)."""

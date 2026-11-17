@@ -149,10 +149,16 @@
       {% for i in checklist %}
       <tr><td class="text" style="width:26px;">{% if i.done %}<span style="color:#15803d; font-weight:700;">&#10003;</span>{% else %}<span style="color:#b45309;">&#9675;</span>{% endif %}</td>
           <td class="text">{{ i.label }}</td>
-          <td class="text" style="color:var(--muted);">{% if i.key == 'bank' %}{{ 'received' if i.done else 'missing' }}{% else %}{{ (i.count ~ ' file' ~ ('s' if i.count != 1 else '')) if i.done else 'missing' }}{% endif %}</td>
-          <td class="text">{% if i.done and i.key != 'bank' %}<a href="{{ url_for('recruitment_print_a4', app_id=a.id, kind=i.key) }}" target="_blank" rel="noopener" style="font-size:12px; font-weight:600;" title="Open as an A4 page, ready to print">Print A4</a>{% endif %}</td></tr>
+          <td class="text" style="color:var(--muted);">{% if i.key == 'bank' %}{{ 'received' if i.done else 'missing' }}{% elif i.key == 'sizes' %}{{ i.value if i.value else 'missing' }}{% else %}{{ (i.count ~ ' file' ~ ('s' if i.count != 1 else '')) if i.done else 'missing' }}{% endif %}</td>
+          <td class="text">{% if i.done and i.key not in ('bank', 'sizes') %}<a href="{{ url_for('recruitment_print_a4', app_id=a.id, kind=i.key) }}" target="_blank" rel="noopener" style="font-size:12px; font-weight:600;" title="Open as an A4 page, ready to print">Print A4</a>{% endif %}</td></tr>
       {% endfor %}
     </table>
+    <form method="post" action="{{ url_for('recruitment_set_sizes', app_id=a.id) }}" style="margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:12px;">
+      <span style="color:var(--muted);">Sizes (e.g. from WhatsApp):</span>
+      <select name="workwear_size" style="width:auto; font-size:12px;"><option value="">Workwear...</option>{% for s in workwear_sizes %}<option value="{{ s }}" {% if a.workwear_size == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+      <select name="shoe_size" style="width:auto; font-size:12px;"><option value="">Shoe...</option>{% for s in shoe_sizes %}<option value="{{ s }}" {% if a.shoe_size == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+      <button class="btn secondary" type="submit" style="padding:2px 10px; font-size:12px;">Save sizes</button>
+    </form>
     {% if new_candidate_files %}
     <div style="margin-top:10px; padding:8px 10px; background:#eff6ff; border:1px solid #93c5fd; border-radius:8px; font-size:13px;">
       &#128206; <strong>{{ new_candidate_files|length }} new file{{ 's' if new_candidate_files|length != 1 }} uploaded by the candidate since you last looked:</strong>

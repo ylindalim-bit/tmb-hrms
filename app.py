@@ -7412,6 +7412,8 @@ CANDIDATE_DOC_CHECKLIST = [
     ("photo", "Passport-size photo", "A recent passport-size photo (JPG or PNG).", True),
     ("bank_proof", "Bank account proof (statement or bank book)", "A bank statement, or the first page of your bank book, showing your name and account number.", False),
 ]
+WORKWEAR_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"]
+SHOE_SIZES = {str(n): 225 + (n - 35) * 5 for n in range(35, 46)}      # EU size -> foot length (mm), as on the factory's chart
 CANDIDATE_DOC_MAX_BYTES = 10 * 1024 * 1024
 CANDIDATE_DOC_MAX_PER_ITEM = 6
 
@@ -7424,6 +7426,14 @@ def _candidate_checklist(db, application):
         have[r["doc_type"]] = r["n"]
     items = [{"key": k, "label": lbl, "hint": hint, "images_only": img, "count": have.get(lbl, 0), "done": have.get(lbl, 0) > 0}
              for k, lbl, hint, img in CANDIDATE_DOC_CHECKLIST]
+    ww, shoe = (application["workwear_size"] or "") if "workwear_size" in application.keys() else "", \
+               (application["shoe_size"] or "") if "shoe_size" in application.keys() else ""
+    sizes_done = bool(ww and shoe)
+    sizes_item = {"key": "sizes", "label": "Workwear size and shoe size", "hint": "For your work uniform and safety shoes.", "images_only": False,
+                  "count": 1 if sizes_done else 0, "done": sizes_done, "workwear": ww, "shoe": shoe,
+                  "value": (f"{ww} / shoe {shoe}" if sizes_done else ((f"{ww}" if ww else "") + (f" / shoe {shoe}" if shoe else "")).strip(" /"))}
+    idx = next((n for n, i in enumerate(items) if i["key"] == "photo"), len(items) - 1) + 1
+    items.insert(idx, sizes_item)
     bank_done = bool((application["bank_name"] or "").strip() and (application["bank_account_no"] or "").strip())
     items.append({"key": "bank", "label": "Bank name and account number", "hint": "For salary payment.", "images_only": False,
                   "count": 1 if bank_done else 0, "done": bank_done})
@@ -7436,6 +7446,22 @@ def _candidate_link(application):
     if url.startswith("http://") and not url.startswith(("http://localhost", "http://127.0.0.1")):
         url = "https://" + url[len("http://"):]
     return url
+
+
+@app.route("/hr/recruitment/<int:app_id>/sizes", methods=["POST"])
+def recruitment_set_sizes(app_id):
+    """HR enters / corrects the candidate's workwear and shoe size (e.g. sent by WhatsApp)."""
+    if session.get("hr_role") == "approver":
+        abort(403)
+    db = get_db()
+    _ensure_candidate_lock_columns(db)
+    if db.execute("SELECT 1 FROM job_applications WHERE id=?", (app_id,)).fetchone() is None:
+        abort(404)
+    ww, shoe = request.form.get("workwear_size", ""), request.form.get("shoe_size", "")
+    db.execute("UPDATE job_applications SET workwear_size=?, shoe_size=? WHERE id=?",
+               (ww if ww in WORKWEAR_SIZES else None, shoe if shoe in SHOE_SIZES else None, app_id))
+    db.commit()
+    return redirect(url_for("recruitment_detail", app_id=app_id) + "#employment-letter")
 
 
 def _candidate_reminder(application, checklist):
@@ -7452,7 +7478,7 @@ def _candidate_reminder(application, checklist):
 
 def _checklist_progress_map(db, applications):
     """{application_id: (done, total)} for the Recruitment list."""
-    total = len(CANDIDATE_DOC_CHECKLIST) + 1
+    total = len(CANDIDATE_DOC_CHECKLIST) + 2        # + sizes + bank details
     labels = {lbl: k for k, lbl, _h, _i in CANDIDATE_DOC_CHECKLIST}
     have = {}
     for r in db.execute("SELECT DISTINCT application_id, doc_type FROM job_application_documents").fetchall():
@@ -7462,6 +7488,8 @@ def _checklist_progress_map(db, applications):
     for a in applications:
         done = len(have.get(a["id"], ()))
         if (a["bank_name"] or "").strip() and (a["bank_account_no"] or "").strip():
+            done += 1
+        if "workwear_size" in a.keys() and a["workwear_size"] and a["shoe_size"]:
             done += 1
         out[a["id"]] = (done, total)
     return out
@@ -7481,7 +7509,8 @@ def _ensure_candidate_lock_columns(db):
     """Columns for "HR has reviewed the documents - locked" and the candidate's re-upload request (added on first use)."""
     try:
         cols = [r[1] for r in db.execute("PRAGMA table_info(job_applications)").fetchall()]
-        for col in ("docs_locked", "docs_locked_by", "docs_locked_at", "reupload_request", "reupload_requested_at", "docs_seen_at"):
+        for col in ("docs_locked", "docs_locked_by", "docs_locked_at", "reupload_request", "reupload_requested_at", "docs_seen_at",
+                    "workwear_size", "shoe_size"):
             if col not in cols:
                 db.execute(f"ALTER TABLE job_applications ADD COLUMN {col} TEXT")
         db.commit()
@@ -7625,6 +7654,14 @@ def careers_documents(token):
         app_dir = os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(application["id"]))
         now = datetime.datetime.now(MYT).isoformat(timespec="seconds")
         saved = 0
+        ww, shoe = request.form.get("workwear_size", ""), request.form.get("shoe_size", "")
+        if ww in WORKWEAR_SIZES or shoe in SHOE_SIZES:
+            db.execute("UPDATE job_applications SET workwear_size=COALESCE(NULLIF(?, ''), workwear_size), "
+                       "shoe_size=COALESCE(NULLIF(?, ''), shoe_size) WHERE id=?",
+                       (ww if ww in WORKWEAR_SIZES else "", shoe if shoe in SHOE_SIZES else "", application["id"]))
+            db.commit()
+            application = db.execute("SELECT * FROM job_applications WHERE id=?", (application["id"],)).fetchone()
+            saved += 1
         existing = {r["doc_type"]: r["n"] for r in db.execute(
             "SELECT doc_type, COUNT(*) AS n FROM job_application_documents WHERE application_id=? GROUP BY doc_type",
             (application["id"],)).fetchall()}
@@ -7660,7 +7697,7 @@ def careers_documents(token):
                 saved += 1
         db.commit()
         if saved:
-            message = f"Thank you - {saved} file(s) received."
+            message = "Thank you - your upload / sizes have been received."
         elif not errors:
             message = "Please choose a file first."
     checklist = _candidate_checklist(db, application)
@@ -7679,6 +7716,7 @@ def careers_documents(token):
                         (application["id"],)).fetchall():
         files_by_label.setdefault(r["doc_type"], []).append(r)
     return render_template("careers_documents.html", a=application, items=checklist, token=token, locked=locked,
+                           workwear_sizes=WORKWEAR_SIZES, shoe_sizes=SHOE_SIZES,
                            files_by_label=files_by_label,
                            position=offered or application["position_applied"],   # the position offered, not the one applied for
                            done=sum(1 for i in checklist if i["done"]), total=len(checklist), message=message, errors=errors)
@@ -7858,7 +7896,7 @@ def recruitment_list():
         interview_n = 0
     return render_template(
         "recruitment_list.html", applications=applications, status_filter=status_filter, counts=counts,
-        doc_progress=_checklist_progress_map(db, applications), unseen_uploads=_unseen_uploads_map(db),
+        doc_progress=_checklist_progress_map(db, applications), unseen_uploads=_unseen_uploads_map(db), doc_total=len(CANDIDATE_DOC_CHECKLIST) + 2,
         interview_n=interview_n, today_iso=datetime.datetime.now(MYT).date().isoformat(),
         apply_url=url_for("careers_apply", _external=True), reviewers=reviewers,
         reviewer_names={r["username"]: r["full_name"] for r in reviewers},
@@ -7963,6 +8001,7 @@ def recruitment_detail(app_id):
         custom_letter=_custom_letter_name(app_id),
         has_signature=_director_signature() is not None,
         deleted_by_candidate=_deleted_by_candidate(db, app_id),
+        workwear_sizes=WORKWEAR_SIZES, shoe_sizes=SHOE_SIZES,
         new_candidate_files=_take_new_candidate_files(db, application),
         candidate_link=_candidate_link(application) if application["bank_info_token"] else None,
         checklist=_candidate_checklist(db, application),

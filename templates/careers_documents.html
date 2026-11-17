@@ -51,7 +51,7 @@
 {% for i in items %}
 <div class="item">
   <h2><span class="ok">&#10003;</span> {{ i.label }}</h2>
-  <p>{% if i.key == 'bank' %}Received.{% else %}<strong class="ok">Received ({{ i.count }} file{{ 's' if i.count != 1 }}).</strong>{% endif %}</p>
+  <p>{% if i.key == 'bank' %}Received.{% elif i.key == 'sizes' %}<strong class="ok">{{ i.value }}</strong>{% else %}<strong class="ok">Received ({{ i.count }} file{{ 's' if i.count != 1 }}).</strong>{% endif %}</p>
 </div>
 {% endfor %}
 {% if a.reupload_request %}
@@ -77,6 +77,29 @@
   </div>
   {% endfor %}
   {% endif %}
+  {% if i.key == 'sizes' %}
+  <div class="item">
+    <h2>{% if i.done %}<span class="ok">&#10003;</span>{% else %}<span class="todo">&#9675;</span>{% endif %} {{ i.label }}</h2>
+    <p>{{ i.hint }} Choose your sizes, then click <strong>Upload</strong> at the bottom.</p>
+    <div style="display:flex; gap:12px; flex-wrap:wrap;">
+      <label style="font-size:12px;">Workwear size<br>
+        <select name="workwear_size" style="font:inherit; padding:7px; border:1px solid var(--border); border-radius:6px; min-width:130px;">
+          <option value="">Choose...</option>
+          {% for s in workwear_sizes %}<option value="{{ s }}" {% if i.workwear == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+        </select></label>
+      <label style="font-size:12px;">Shoe size<br>
+        <select name="shoe_size" style="font:inherit; padding:7px; border:1px solid var(--border); border-radius:6px; min-width:170px;">
+          <option value="">Choose...</option>
+          {% for s, mm in shoe_sizes.items() %}<option value="{{ s }}" {% if i.shoe == s %}selected{% endif %}>{{ s }} (foot {{ mm }} mm)</option>{% endfor %}
+        </select></label>
+    </div>
+    <details style="margin-top:8px; font-size:12px;">
+      <summary style="cursor:pointer; color:#1d4ed8;">Not sure? See the workwear size chart (height / weight)</summary>
+      <img src="{{ url_for('static', filename='img/workwear_size_chart.jpg') }}" alt="Workwear size chart" style="width:100%; margin-top:6px; border:1px solid var(--border); border-radius:6px;">
+      <p style="margin:4px 0 0;">Find your height (cm, across the top) and your weight (kg, down the side). The cell shows your size. Shoe size: measure your foot length in mm and match it to the list above.</p>
+    </details>
+  </div>
+  {% else %}
   <div class="item">
     <h2>{% if i.done %}<span class="ok">&#10003;</span>{% else %}<span class="todo">&#9675;</span>{% endif %} {{ i.label }}</h2>
     <p>{{ i.hint }}{% if i.done %} <strong class="ok">Received ({{ i.count }} file{{ 's' if i.count != 1 }}).</strong>{% endif %}</p>
@@ -95,6 +118,7 @@
     </div>
     {% endfor %}
   </div>
+  {% endif %}
   {% endfor %}
   <div class="submit-bar"><button class="btn" type="submit">Upload</button></div>
 </form>

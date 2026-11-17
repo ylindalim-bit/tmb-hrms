@@ -564,9 +564,20 @@ def inject_pending_counts():
             pending_recruitment_count = db.execute(
                 "SELECT COUNT(*) AS c FROM job_applications WHERE status='New'"
             ).fetchone()["c"]
+        pending_candidate_docs_count = 0
+        if session.get("hr_role") != "approver":
+            _ensure_candidate_lock_columns(db)
+            _ensure_doc_source(db)
+            pending_candidate_docs_count = db.execute(
+                """SELECT COUNT(*) AS c FROM job_applications ja
+                   WHERE (ja.reupload_request IS NOT NULL AND ja.reupload_request != '')
+                      OR EXISTS (SELECT 1 FROM job_application_documents d WHERE d.application_id = ja.id AND d.source='candidate'
+                                 AND d.uploaded_at > COALESCE(ja.docs_seen_at, ''))"""
+            ).fetchone()["c"]
     except sqlite3.OperationalError:
         return {}
-    return {"pending_leave_count": pending_leave_count, "pending_trip_count": pending_trip_count,
+    return {"pending_candidate_docs_count": pending_candidate_docs_count,
+            "pending_leave_count": pending_leave_count, "pending_trip_count": pending_trip_count,
             "pending_medical_claim_count": pending_medical_claim_count,
             "pending_appraisal_count": pending_appraisal_count,
             "pending_profile_update_count": pending_profile_update_count,
@@ -7470,7 +7481,7 @@ def _ensure_candidate_lock_columns(db):
     """Columns for "HR has reviewed the documents - locked" and the candidate's re-upload request (added on first use)."""
     try:
         cols = [r[1] for r in db.execute("PRAGMA table_info(job_applications)").fetchall()]
-        for col in ("docs_locked", "docs_locked_by", "docs_locked_at", "reupload_request", "reupload_requested_at"):
+        for col in ("docs_locked", "docs_locked_by", "docs_locked_at", "reupload_request", "reupload_requested_at", "docs_seen_at"):
             if col not in cols:
                 db.execute(f"ALTER TABLE job_applications ADD COLUMN {col} TEXT")
         db.commit()
@@ -7559,6 +7570,35 @@ def careers_documents_delete(token, doc_id):
                        (application["id"], doc["doc_type"], doc["original_name"], datetime.datetime.now(MYT).isoformat(timespec="seconds")))
             db.commit()
     return redirect(url_for("careers_documents", token=token, deleted="1"))
+
+
+def _take_new_candidate_files(db, application):
+    """Files the candidate uploaded since HR last opened this page (shown once), then marks them seen."""
+    if session.get("hr_role") == "approver":
+        return []
+    _ensure_doc_source(db)
+    seen = ""
+    try:
+        seen = application["docs_seen_at"] or ""
+    except (IndexError, KeyError):
+        pass
+    rows = db.execute("""SELECT doc_type, original_name, uploaded_at FROM job_application_documents
+                         WHERE application_id=? AND source='candidate' AND uploaded_at > ? ORDER BY id""",
+                      (application["id"], seen)).fetchall()
+    db.execute("UPDATE job_applications SET docs_seen_at=? WHERE id=?",
+               (datetime.datetime.now(MYT).isoformat(timespec="seconds"), application["id"]))
+    db.commit()
+    return rows
+
+
+def _unseen_uploads_map(db):
+    """{application_id: number of candidate files HR has not looked at yet} for the Recruitment list."""
+    _ensure_candidate_lock_columns(db)
+    _ensure_doc_source(db)
+    return {r["application_id"]: r["n"] for r in db.execute(
+        """SELECT d.application_id, COUNT(*) AS n FROM job_application_documents d
+           JOIN job_applications ja ON ja.id = d.application_id
+           WHERE d.source='candidate' AND d.uploaded_at > COALESCE(ja.docs_seen_at, '') GROUP BY d.application_id""").fetchall()}
 
 
 def _deleted_by_candidate(db, app_id):
@@ -7818,7 +7858,7 @@ def recruitment_list():
         interview_n = 0
     return render_template(
         "recruitment_list.html", applications=applications, status_filter=status_filter, counts=counts,
-        doc_progress=_checklist_progress_map(db, applications),
+        doc_progress=_checklist_progress_map(db, applications), unseen_uploads=_unseen_uploads_map(db),
         interview_n=interview_n, today_iso=datetime.datetime.now(MYT).date().isoformat(),
         apply_url=url_for("careers_apply", _external=True), reviewers=reviewers,
         reviewer_names={r["username"]: r["full_name"] for r in reviewers},
@@ -7923,6 +7963,7 @@ def recruitment_detail(app_id):
         custom_letter=_custom_letter_name(app_id),
         has_signature=_director_signature() is not None,
         deleted_by_candidate=_deleted_by_candidate(db, app_id),
+        new_candidate_files=_take_new_candidate_files(db, application),
         candidate_link=_candidate_link(application) if application["bank_info_token"] else None,
         checklist=_candidate_checklist(db, application),
         checklist_reminder=_candidate_reminder(application, _candidate_checklist(db, application)),

@@ -153,6 +153,12 @@
           <td class="text">{% if i.done and i.key != 'bank' %}<a href="{{ url_for('recruitment_print_a4', app_id=a.id, kind=i.key) }}" target="_blank" rel="noopener" style="font-size:12px; font-weight:600;" title="Open as an A4 page, ready to print">Print A4</a>{% endif %}</td></tr>
       {% endfor %}
     </table>
+    {% if new_candidate_files %}
+    <div style="margin-top:10px; padding:8px 10px; background:#eff6ff; border:1px solid #93c5fd; border-radius:8px; font-size:13px;">
+      &#128206; <strong>{{ new_candidate_files|length }} new file{{ 's' if new_candidate_files|length != 1 }} uploaded by the candidate since you last looked:</strong>
+      <ul style="margin:4px 0 0 18px; padding:0;">{% for f in new_candidate_files %}<li>{{ f.doc_type }} &ndash; {{ f.original_name }} <span style="color:var(--muted); font-size:11px;">({{ f.uploaded_at[:16].replace('T', ' ') }})</span></li>{% endfor %}</ul>
+    </div>
+    {% endif %}
     {% if deleted_by_candidate %}
     <p style="font-size:12px; color:var(--muted); margin:10px 0 0;">Deleted by the candidate:
       {% for d in deleted_by_candidate %}{{ d.doc_type }} &ndash; {{ d.original_name }} ({{ d.deleted_at[:10] }}){% if not loop.last %}; {% endif %}{% endfor %}</p>

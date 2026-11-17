@@ -7463,6 +7463,29 @@ def _candidate_link(application):
     return url
 
 
+@app.route("/hr/recruitment/<int:app_id>/date-of-birth", methods=["POST"])
+def recruitment_set_dob(app_id):
+    """HR corrects a candidate's date of birth (e.g. the candidate typed day and month the wrong way round); the
+    age is worked out again from it."""
+    if session.get("hr_role") == "approver":
+        abort(403)
+    db = get_db()
+    if db.execute("SELECT 1 FROM job_applications WHERE id=?", (app_id,)).fetchone() is None:
+        abort(404)
+    raw = (request.form.get("date_of_birth") or "").strip()
+    try:
+        dob = datetime.date.fromisoformat(raw)
+    except ValueError:
+        return redirect(url_for("recruitment_detail", app_id=app_id))
+    today = datetime.datetime.now(MYT).date()
+    if not (datetime.date(1940, 1, 1) <= dob <= today):
+        return redirect(url_for("recruitment_detail", app_id=app_id))
+    age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    db.execute("UPDATE job_applications SET date_of_birth=?, age=? WHERE id=?", (dob.isoformat(), str(age), app_id))
+    db.commit()
+    return redirect(url_for("recruitment_detail", app_id=app_id) + "#personal-info")
+
+
 @app.route("/hr/recruitment/<int:app_id>/sizes", methods=["POST"])
 def recruitment_set_sizes(app_id):
     """HR enters / corrects the candidate's workwear and shoe size (e.g. sent by WhatsApp)."""

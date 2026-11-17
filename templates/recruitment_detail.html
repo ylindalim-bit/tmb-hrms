@@ -402,7 +402,17 @@
     <div><label data-en="IC / Passport No" data-zh="身份证/护照号码">IC / Passport No</label>{{ a.ic_passport_no or "-" }}</div>
     <div><label data-en="Marital Status" data-zh="婚姻状况">Marital Status</label>{{ biv(a.marital_status, MARITAL_ZH) }}</div>
     <div><label data-en="IC Colour" data-zh="身份证颜色">IC Colour</label>{{ a.ic_color or "-" }}</div>
-    <div><label data-en="Date of Birth" data-zh="出生日期">Date of Birth</label>{{ a.date_of_birth or "-" }}</div>
+    <div id="personal-info"><label data-en="Date of Birth" data-zh="出生日期">Date of Birth</label>
+      <span id="dob-view">{{ a.date_of_birth or "-" }}
+        {% if hr_role != "approver" %}<a href="#" onclick="document.getElementById('dob-view').style.display='none'; document.getElementById('dob-form').style.display='flex'; return false;" style="font-size:12px; margin-left:6px;">Edit</a>{% endif %}</span>
+      {% if hr_role != "approver" %}
+      <form id="dob-form" method="post" action="{{ url_for('recruitment_set_dob', app_id=a.id) }}" style="display:none; gap:6px; align-items:center; flex-wrap:wrap;">
+        <input type="date" name="date_of_birth" value="{{ a.date_of_birth if a.date_of_birth and a.date_of_birth|length == 10 and a.date_of_birth[4] == '-' else '' }}" required style="width:auto;">
+        <button class="btn" type="submit" style="padding:3px 10px; font-size:12px;">Save</button>
+        <a href="#" onclick="document.getElementById('dob-form').style.display='none'; document.getElementById('dob-view').style.display=''; return false;" style="font-size:12px;">Cancel</a>
+      </form>
+      {% endif %}
+    </div>
     <div><label data-en="Age" data-zh="年龄">Age</label>{{ a.age or "-" }}</div>
     <div><label data-en="Height (cm)" data-zh="身高（厘米）">Height (cm)</label>{{ a.height_cm or "-" }}</div>
     <div><label data-en="Weight (kg)" data-zh="体重（公斤）">Weight (kg)</label>{{ a.weight_kg or "-" }}</div>

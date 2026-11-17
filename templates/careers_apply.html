@@ -81,7 +81,7 @@
       <div><label data-en="Marital Status" data-zh="婚姻状况">Marital Status</label>
         <select name="marital_status"><option value=""></option><option data-en="Single" data-zh="单身">Single</option><option data-en="Married" data-zh="已婚">Married</option><option data-en="Divorced" data-zh="离异">Divorced</option><option data-en="Widowed" data-zh="丧偶">Widowed</option></select></div>
       <div><label data-en="Identity Card Colour" data-zh="身份证颜色">Identity Card Colour</label><input type="text" name="ic_color"></div>
-      <div><label data-en="Date of Birth" data-zh="出生日期">Date of Birth</label><input type="text" name="date_of_birth" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"></div>
+      <div><label data-en="Date of Birth" data-zh="出生日期">Date of Birth</label><input type="date" name="date_of_birth"></div>
       <div><label data-en="Age" data-zh="年龄">Age</label><input type="text" name="age"></div>
       <div><label data-en="Height (cm)" data-zh="身高（厘米）">Height (cm)</label><input type="text" name="height_cm"></div>
       <div><label data-en="Weight (kg)" data-zh="体重（公斤）">Weight (kg)</label><input type="text" name="weight_kg"></div>
@@ -116,7 +116,7 @@
       <div class="form-grid">
         <div><label data-en="Name" data-zh="姓名">Name</label><input type="text" name="family_name_{{ i }}"></div>
         <div><label data-en="Relationship" data-zh="关系">Relationship</label><input type="text" name="family_relationship_{{ i }}"></div>
-        <div><label data-en="Date of Birth" data-zh="出生日期">Date of Birth</label><input type="text" name="family_dob_{{ i }}" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"></div>
+        <div><label data-en="Date of Birth" data-zh="出生日期">Date of Birth</label><input type="date" name="family_dob_{{ i }}"></div>
         <div><label data-en="Occupation" data-zh="职业">Occupation</label><input type="text" name="family_occupation_{{ i }}"></div>
         <div><label data-en="Name of Employer / School" data-zh="雇主/学校名称">Name of Employer / School</label><input type="text" name="family_employer_{{ i }}"></div>
       </div>
@@ -220,7 +220,7 @@
     {% endfor %}
     <div class="form-grid" style="margin-top:10px;">
       <div><label data-en="Length of Notice Required" data-zh="所需通知期">Length of Notice Required</label><input type="text" name="notice_period"></div>
-      <div><label data-en="Earliest Start Date" data-zh="最早可上班日期">Earliest Start Date</label><input type="text" name="earliest_start_date" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"></div>
+      <div><label data-en="Earliest Start Date" data-zh="最早可上班日期">Earliest Start Date</label><input type="date" name="earliest_start_date"></div>
       <div><label data-en="Expected Salary" data-zh="期望薪金">Expected Salary</label><input type="text" name="expected_salary"></div>
     </div>
   </fieldset>
@@ -349,7 +349,7 @@
       <label><input type="checkbox" name="declaration_agreed" required> <span data-en="I have read and agree to the above declaration, and I am typing my full name above as my electronic signature *" data-zh="本人已阅读并同意以上声明，并以上方所填写的姓名作为本人的电子签名 *">I have read and agree to the above declaration, and I am typing my full name above as my electronic signature *</span></label>
     </div>
     <div class="form-grid" style="margin-top:10px;">
-      <div><label class="required" data-en="Date" data-zh="日期">Date</label><input type="text" name="declaration_date" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}" required></div>
+      <div><label class="required" data-en="Date" data-zh="日期">Date</label><input type="date" name="declaration_date" required></div>
     </div>
   </fieldset>
 
@@ -390,6 +390,26 @@
     var saved = null;
     try { saved = localStorage.getItem('careers_apply_lang'); } catch (e) {}
     if (saved === 'zh') setLang('zh');
+  })();
+
+  // Dates are chosen with the date picker (no typing, so day and month cannot be swapped).
+  (function () {
+    var today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    document.querySelectorAll('input[name="date_of_birth"], input[name^="family_dob_"]').forEach(function (el) {
+      el.min = '1930-01-01'; el.max = today;
+    });
+    var dob = document.querySelector('input[name="date_of_birth"]'), age = document.querySelector('input[name="age"]');
+    if (dob && age) {
+      dob.addEventListener('change', function () {
+        if (!dob.value) return;
+        var d = new Date(dob.value), t = new Date();
+        var a = t.getFullYear() - d.getFullYear(), m = t.getMonth() - d.getMonth();
+        if (m < 0 || (m === 0 && t.getDate() < d.getDate())) a--;
+        if (a >= 0 && a < 110) age.value = a;
+      });
+    }
+    var decl = document.querySelector('input[name="declaration_date"]');
+    if (decl && !decl.value) decl.value = today;
   })();
 </script>
 </body>

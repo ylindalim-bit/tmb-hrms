@@ -30,11 +30,11 @@
 
 {% if saved %}
 <div class="check">&#10003;</div>
-<p style="text-align:center; color:var(--muted); font-size:14px;">Thank you, {{ a.full_name }} - your details have been received.</p>
+<p style="text-align:center; color:var(--muted); font-size:14px;">Thank you, <strong>{{ a.full_name }}</strong> - your details have been received.</p>
 <p style="text-align:center;"><a class="btn secondary" href="{{ url_for('careers_documents', token=token) }}" style="display:inline-block;">&laquo; Back to my documents</a></p>
 {% else %}
 <p style="color:var(--muted); font-size:13px;">
-  Hi {{ a.full_name }}, please fill in your bank details below for
+  Hi <strong>{{ a.full_name }}</strong>, please fill in your bank details below for
   {{ position or "your application" }}. You can come back to this page to update them if needed.
 </p>
 <form method="post">

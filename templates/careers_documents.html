@@ -55,6 +55,13 @@
 <div class="item">
   <h2><span class="ok">&#10003;</span> {{ i.label }}</h2>
   <p>{% if i.key == 'bank' %}Received.{% elif i.key == 'sizes' %}<strong class="ok">{{ i.value }}</strong>{% else %}<strong class="ok">Received ({{ i.count }} file{{ 's' if i.count != 1 }}).</strong>{% endif %}</p>
+  {% for f in files_by_label.get(i.label, []) %}
+  <div style="display:flex; align-items:center; gap:8px; margin-top:4px; font-size:12px;">
+    <span class="ok">&#10003;</span> <span style="flex:1; word-break:break-all;">{{ f.original_name }}</span>
+    <a href="{{ url_for('careers_documents_file', token=token, doc_id=f.id) }}" target="_blank" rel="noopener"
+       style="font-size:11px; padding:2px 10px; border:1px solid #93c5fd; background:#fff; color:#1d4ed8; border-radius:6px; text-decoration:none; font-weight:600;">View</a>
+  </div>
+  {% endfor %}
 </div>
 {% endfor %}
 {% if a.reupload_request %}
@@ -130,6 +137,8 @@
     {% for f in files_by_label.get(i.label, []) %}
     <div style="display:flex; align-items:center; gap:8px; margin-top:6px; font-size:12px;">
       <span class="ok">&#10003;</span> <span style="flex:1; word-break:break-all;">{{ f.original_name }}</span>
+      <a href="{{ url_for('careers_documents_file', token=token, doc_id=f.id) }}" target="_blank" rel="noopener"
+         style="font-size:11px; padding:2px 10px; border:1px solid #93c5fd; background:#fff; color:#1d4ed8; border-radius:6px; text-decoration:none; font-weight:600;">View</a>
       {% if f.source == 'candidate' %}
       <button type="submit" formaction="{{ url_for('careers_documents_delete', token=token, doc_id=f.id) }}" formmethod="post" formnovalidate
               onclick="return confirm('Delete this file? You can upload the correct one afterwards.');"

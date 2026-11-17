@@ -7590,6 +7590,23 @@ def _ensure_doc_source(db):
         pass
 
 
+@app.route("/careers/documents/<token>/file/<int:doc_id>")
+def careers_documents_file(token, doc_id):
+    """The candidate opens a file that is on his checklist (uploaded by him, or added by HR for him)."""
+    db = get_db()
+    application = db.execute("SELECT * FROM job_applications WHERE bank_info_token=?", (token,)).fetchone()
+    if application is None:
+        abort(404)
+    doc = db.execute("SELECT * FROM job_application_documents WHERE id=? AND application_id=?", (doc_id, application["id"])).fetchone()
+    if doc is None or doc["doc_type"] not in {lbl for _k, lbl, _h, _i in CANDIDATE_DOC_CHECKLIST}:
+        abort(404)
+    resp = send_from_directory(os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(application["id"])), doc["stored_name"],
+                               as_attachment=False, download_name=doc["original_name"])
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["Cache-Control"] = "private, no-store"
+    return resp
+
+
 @app.route("/careers/documents/<token>/delete/<int:doc_id>", methods=["POST"])
 def careers_documents_delete(token, doc_id):
     """A candidate removes a file THEY uploaded (e.g. the wrong one) - only while HR has not locked the documents."""

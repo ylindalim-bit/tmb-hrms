@@ -93,11 +93,28 @@
           {% for s, mm in shoe_sizes.items() %}<option value="{{ s }}" {% if i.shoe == s %}selected{% endif %}>{{ s }} (foot {{ mm }} mm)</option>{% endfor %}
         </select></label>
     </div>
-    <details style="margin-top:8px; font-size:12px;">
-      <summary style="cursor:pointer; color:#1d4ed8;">Not sure? See the workwear size chart (height / weight)</summary>
-      <img src="{{ url_for('static', filename='img/workwear_size_chart.jpg') }}" alt="Workwear size chart" style="width:100%; margin-top:6px; border:1px solid var(--border); border-radius:6px;">
-      <p style="margin:4px 0 0;">Find your height (cm, across the top) and your weight (kg, down the side). The cell shows your size. Shoe size: measure your foot length in mm and match it to the list above.</p>
-    </details>
+    <div style="margin-top:10px; font-size:12px;">
+      <strong>Workwear size chart</strong> &mdash; find your weight (down the side) and your height (across the top); the box shows your size.
+      <div style="overflow-x:auto; margin-top:6px; border:1px solid var(--border); border-radius:6px;">
+        <table style="border-collapse:collapse; width:100%; min-width:430px; text-align:center; font-size:12px;">
+          <thead>
+            <tr style="background:#f1f5f9;">
+              <th style="padding:5px 6px; border:1px solid var(--border); text-align:left; white-space:nowrap;">Weight \ Height</th>
+              {% for h in chart_heights %}<th style="padding:5px 4px; border:1px solid var(--border);">{{ h }} cm</th>{% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for kg, cells in chart_rows %}
+            <tr>
+              <th style="padding:5px 6px; border:1px solid var(--border); background:#f1f5f9; text-align:left; white-space:nowrap;">{{ kg }} kg</th>
+              {% for c in cells %}<td style="padding:5px 4px; border:1px solid var(--border); font-weight:600;{% if c %} background:#fff;{% else %} background:#fafafa;{% endif %}">{{ c }}</td>{% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p style="margin:4px 0 0; color:var(--muted);">Two sizes in one box (for example &ldquo;S, M&rdquo;) means either fits &mdash; choose the one you prefer. Empty box = no size listed; choose the nearest. Shoe size: measure your foot length in mm and match it to the list above.</p>
+    </div>
   </div>
   {% else %}
   <div class="item">

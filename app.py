@@ -7413,6 +7413,21 @@ CANDIDATE_DOC_CHECKLIST = [
     ("bank_proof", "Bank account proof (statement or bank book)", "A bank statement, or the first page of your bank book, showing your name and account number.", False),
 ]
 WORKWEAR_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"]
+# The factory's workwear chart: weight (kg) down, height (cm) across; "" = no size listed for that combination.
+WORKWEAR_CHART_HEIGHTS = [154, 158, 162, 166, 170, 174, 178, 182, 186]
+WORKWEAR_CHART = [
+    (40, ["XS", "XS", "", "", "", "", "", "", ""]),
+    (45, ["XS", "XS", "XS", "", "", "", "", "", ""]),
+    (50, ["S", "S", "XS, S", "XS", "S", "M", "", "", ""]),
+    (55, ["M", "M", "S, M", "S, M", "S", "M", "", "", ""]),
+    (60, ["", "L", "M, L", "M", "S, M", "M", "", "", ""]),
+    (65, ["", "", "L, XL", "L", "M", "L", "XL", "XXL", ""]),
+    (70, ["", "", "XL", "XL", "L", "L", "XL", "XXL", "XXL"]),
+    (75, ["", "", "", "XXL", "XL", "XL", "XXL", "XXL", "XXL"]),
+    (80, ["", "", "", "XXL", "XXL", "XL", "XXL", "XXL", "XXXL"]),
+    (85, ["", "", "", "", "XXXL", "XXL", "XXXL", "XXXL", "XXXL"]),
+    (90, ["", "", "", "", "", "XXXL", "XXXL", "XXXL", "XXXL"]),
+]
 SHOE_SIZES = {str(n): 225 + (n - 35) * 5 for n in range(35, 46)}      # EU size -> foot length (mm), as on the factory's chart
 CANDIDATE_DOC_MAX_BYTES = 10 * 1024 * 1024
 CANDIDATE_DOC_MAX_PER_ITEM = 6
@@ -7717,6 +7732,7 @@ def careers_documents(token):
         files_by_label.setdefault(r["doc_type"], []).append(r)
     return render_template("careers_documents.html", a=application, items=checklist, token=token, locked=locked,
                            workwear_sizes=WORKWEAR_SIZES, shoe_sizes=SHOE_SIZES,
+                           chart_heights=WORKWEAR_CHART_HEIGHTS, chart_rows=WORKWEAR_CHART,
                            files_by_label=files_by_label,
                            position=offered or application["position_applied"],   # the position offered, not the one applied for
                            done=sum(1 for i in checklist if i["done"]), total=len(checklist), message=message, errors=errors)

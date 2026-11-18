@@ -1436,6 +1436,17 @@ def _eis_applies(dob_str, eis_flag):
     return 18 <= age < 60
 
 
+def _age_from_dob(dob_str):
+    """Completed years as of today from a YYYY-MM-DD date of birth (None if blank/invalid)."""
+    try:
+        dob = datetime.date.fromisoformat((dob_str or "").strip())
+    except ValueError:
+        return None
+    today = datetime.date.today()
+    age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    return age if 0 <= age < 110 else None
+
+
 @app.route("/employees")
 def employees():
     db = get_db()
@@ -1454,9 +1465,10 @@ def employees():
     eis_applies = {e["emp_id"]: _eis_applies(e["date_of_birth"], e["eis_flag"]) for e in rows}
     depts = sorted({e["department"] for e in rows if e["department"]})
     positions = sorted({e["position"] for e in rows if e["position"]})
+    ages = {e["emp_id"]: _age_from_dob(e["date_of_birth"]) for e in rows}
     return render_template("employees.html", employees=rows, view=view,
                             inactive_count=inactive_count, eis_applies=eis_applies,
-                            depts=depts, positions=positions)
+                            depts=depts, positions=positions, ages=ages)
 
 
 EMPLOYEE_EXPORT_COLUMNS = [
@@ -1464,7 +1476,7 @@ EMPLOYEE_EXPORT_COLUMNS = [
     ("Position", "position"), ("Join Date", "date_joined"), ("Confirm Date", "confirmation_date"),
     ("Resign Date", "last_working_day"), ("EIS", "eis"), ("Basic (RM)", "basic_salary"),
     ("Bank", "bank_name"), ("Account No.", "bank_account_no"), ("IC / Passport No.", "ic_passport_no"),
-    ("Date of Birth", "date_of_birth"), ("Race", "race"), ("Religion", "religion"),
+    ("Date of Birth", "date_of_birth"), ("Age", "age"), ("Race", "race"), ("Religion", "religion"),
     ("Marital Status", "marital_status"), ("Phone Number", "phone_number"), ("HP No.", "hp_no"),
     ("Email", "email"), ("Work Pattern", "work_pattern"), ("Probation End", "probation_end_date"),
     ("SKBBK", "skbbk_flag"), ("Days/Week", "working_days_week"),
@@ -1509,6 +1521,7 @@ def employees_export():
         eis_value = "?" if applies is None else ("Yes" if applies else "No")
         values = dict(e)
         values["eis"] = eis_value
+        values["age"] = _age_from_dob(e["date_of_birth"])
         for col_idx, (label, key) in enumerate(EMPLOYEE_EXPORT_COLUMNS, start=1):
             cell = ws.cell(row=row_idx, column=col_idx, value=values.get(key))
             if label in ("Basic (RM)",) and values.get(key) is not None:

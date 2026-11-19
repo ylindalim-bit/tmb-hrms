@@ -16,10 +16,10 @@
         <td class="text"><strong>{{ it.year }}</strong></td>
         <td class="text">
           {% if it.released %}<span class="pill finalized">Available</span>
-          {% else %}<span class="pill draft">Not released yet</span>{% endif %}
+          {% else %}<span class="pill draft">Not released yet</span>{% if hr_preview %} <span style="font-size:11px; color:var(--muted);">(staff can't see this yet - HR preview only)</span>{% endif %}{% endif %}
         </td>
         <td class="text">
-          {% if it.released %}
+          {% if it.released or hr_preview %}
           <a class="btn" href="{{ url_for('portal_ea_form_pdf', year=it.year) }}" target="_blank" style="padding:4px 12px;">View PDF</a>
           <a class="btn secondary" href="{{ url_for('portal_ea_form_pdf', year=it.year, download=1) }}" style="padding:4px 12px; margin-left:6px;">Download</a>
           {% else %}<span style="color:var(--muted); font-size:12px;">HR will release it after the year-end payroll.</span>{% endif %}

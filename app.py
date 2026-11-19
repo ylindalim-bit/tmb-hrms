@@ -11363,6 +11363,11 @@ def ea_form_release():
     return redirect(url_for("ea_form_page", year=year, scope=request.form.get("scope") or "resigned"))
 
 
+def _is_hr_preview():
+    """HR looking at the Staff Portal as an employee (Employees > View) - not the employee's own login."""
+    return bool(session.get("hr_username") and session.get("portal_emp_id") and not session.get("portal_self_login"))
+
+
 @app.route("/portal/ea-form")
 @portal_login_required
 def portal_ea_form():
@@ -11375,7 +11380,7 @@ def portal_ea_form():
                          (emp["emp_id"], y)).fetchone()["c"]
         if has:
             items.append({"year": y, "released": _ea_released(db, y)})
-    return render_template("portal_ea_form.html", emp=emp, items=items)
+    return render_template("portal_ea_form.html", emp=emp, items=items, hr_preview=_is_hr_preview())
 
 
 @app.route("/portal/ea-form/<int:year>/pdf")
@@ -11383,7 +11388,7 @@ def portal_ea_form():
 def portal_ea_form_pdf(year):
     db = get_db()
     emp = current_portal_employee(db)
-    if not _ea_released(db, year):
+    if not _ea_released(db, year) and not _is_hr_preview():     # HR can preview before releasing
         abort(404)
     rows = [r for r in _ea_rows(db, year, "all") if r["emp_id"] == emp["emp_id"]]
     if not rows:

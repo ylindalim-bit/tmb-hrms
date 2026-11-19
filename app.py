@@ -11065,13 +11065,27 @@ def _ea_rows(db, year, scope):
             missing.append("income tax no.")
         if row["epf"] > 0 and not (e["epf_no"] or "").strip():
             missing.append("EPF no.")
+        _sn = (e["socso_no"] or "").strip()
+        if _sn not in ("", "0") and len("".join(ch for ch in _sn if ch.isdigit())) < 8:
+            missing.append(f"SOCSO no. looks wrong ('{_sn}')")
         if not e["date_joined"]:
             missing.append("date joined")
-        if not left or left_guessed:
+        if e["status"] == "Inactive" and (not left or left_guessed):
             missing.append("date left")
         row["missing"] = missing
         out.append(row)
     return out
+
+
+def _ea_socso_no(e):
+    """SOCSO (PERKESO) member no. for the EA Form. PERKESO uses a Malaysian's IC number as the member number, so a blank,
+    "0" or obviously too-short entry (e.g. "7") falls back to the IC; a foreign worker keeps what is recorded."""
+    raw = (e["socso_no"] or "").strip()
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    if raw and len(digits) >= 8:
+        return raw
+    ic = (e["ic_passport_no"] or "").strip()
+    return ic if ic.replace("-", "").isdigit() and len(ic.replace("-", "")) == 12 else ""
 
 
 def _ea_args(db):
@@ -11199,7 +11213,7 @@ def _ea_story(row, year, employer, styles):
                                ("TOPPADDING", (0, 0), (-1, -1), 1.4), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.4)]))
     a_grid = fields([("2", "Job Designation", e["position"]), ("3", "Staff No. / Payroll No.", e["emp_id"]),
                      ("4", "New I.C. No", ic if is_ic else ""), ("5", "Passport No.", "" if is_ic else ic),
-                     ("6", "EPF No.", e["epf_no"]), ("7", "SOCSO No.", e["socso_no"]),
+                     ("6", "EPF No.", e["epf_no"]), ("7", "SOCSO No.", _ea_socso_no(e)),
                      ("8", "Children qualified for tax relief", str(children) if tp else ""), ("", "", "")])
     a_nine = Table([[Paragraph("9", base), Paragraph("If the period of employment is less than a year, please state:", base)]], colWidths=[0.6 * cm, W - 0.6 * cm])
     a_nine.setStyle(TableStyle([("TOPPADDING", (0, 0), (-1, -1), 1.4), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
@@ -11324,7 +11338,7 @@ def ea_form_xlsx():
         c.font, c.fill = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="1D4ED8")
     for ri, r in enumerate(rows, start=4):
         e = r["emp"]
-        vals = [e["emp_id"], r["name"], e["ic_passport_no"], e["tax_no"], e["epf_no"], e["socso_no"], e["position"], r["joined"], r["left"],
+        vals = [e["emp_id"], r["name"], e["ic_passport_no"], e["tax_no"], e["epf_no"], _ea_socso_no(e), e["position"], r["joined"], r["left"],
                 r["months"], r["gross"], r["pcb"], r["epf"], r["socso"], r["eis"], ", ".join(r["missing"])]
         for ci, v in enumerate(vals, start=1):
             c = ws.cell(row=ri, column=ci, value=v)

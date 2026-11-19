@@ -11054,7 +11054,10 @@ def _ea_rows(db, year, scope):
         row = {"emp": e, "emp_id": e["emp_id"], "name": e["full_name"], "runs": runs, "months": len(runs),
                "joined": e["date_joined"], "left": left, "left_guessed": left_guessed,
                "gross": tot("gross_pay"), "epf": tot("epf_employee"), "socso": tot("socso_employee"),
-               "eis": tot("eis_employee"), "pcb": tot("pcb")}
+               "eis": tot("eis_employee"), "pcb": tot("pcb"),
+               "allow_fixed": tot("fixed_allowance"), "allow_transport": tot("transport_allowance"),
+               "allow_meal": tot("meal_allowance"), "allow_cewi": tot("cewi_allowance"),
+               "tax": db.execute("SELECT * FROM tax_profile WHERE emp_id=?", (e["emp_id"],)).fetchone()}
         missing = []
         if not (e["ic_passport_no"] or "").strip():
             missing.append("IC / passport no.")
@@ -11092,102 +11095,170 @@ def _ea_money(v):
 
 
 def _ea_story(row, year, employer, styles):
+    """One page laid out like LHDN's Form EA (C.P.8A - Pin. 2023: parts A-F), then an annexure page of monthly figures."""
     e = row["emp"]
-    small = ParagraphStyle("eas", parent=styles["Normal"], fontSize=8.5, leading=10.5)
-    cell = ParagraphStyle("eac", parent=styles["Normal"], fontSize=8.8, leading=10.5)
-    cellr = ParagraphStyle("eacr", parent=cell, alignment=2, fontName="Helvetica-Bold")
-    bold = ParagraphStyle("eab", parent=cell, fontName="Helvetica-Bold")
-    title = ParagraphStyle("eat", parent=styles["Title"], fontSize=15, leading=18, spaceAfter=0)
-    sub = ParagraphStyle("eau", parent=styles["Normal"], fontSize=9.5, alignment=1, leading=12)
-    sec = ParagraphStyle("eash", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", textColor=colors.white)
-    esc = lambda x: xml_escape(str(x) if x not in (None, "") else "-")
+    tp = row.get("tax")
+    base = ParagraphStyle("eab0", parent=styles["Normal"], fontSize=7.9, leading=9.2)
+    bold = ParagraphStyle("eab1", parent=base, fontName="Helvetica-Bold")
+    tiny = ParagraphStyle("eat1", parent=base, fontSize=7.4, leading=9, textColor=colors.HexColor("#444444"))
+    right = ParagraphStyle("ear", parent=base, alignment=2)
+    ctr = ParagraphStyle("eac1", parent=base, alignment=1, leading=12)
+    ctrb = ParagraphStyle("eac2", parent=bold, alignment=1)
+    banner = ParagraphStyle("eaba", parent=bold, textColor=colors.white, alignment=1, fontSize=8.8)
+    box = ParagraphStyle("eabx", parent=bold, textColor=colors.white, alignment=1, fontSize=9)
+    W = 18 * cm
+    money = lambda v: f"{v:,.2f}"
+    esc = lambda x: xml_escape(str(x)) if x not in (None, "") else ""
+    ic = (e["ic_passport_no"] or "").strip()
+    is_ic = ic.replace("-", "").isdigit() and len(ic.replace("-", "")) == 12
     address = ", ".join(x.strip().rstrip(",") for x in (employer.get("company_address") or "").replace("\r", "").split("\n") if x.strip())
-    e_no = employer.get("income_tax_employer_no") or ""
+    children = 0
+    if tp:
+        children = sum(int(tp[k] or 0) for k in ("children_full_relief", "children_half_relief", "children_study_full", "children_study_half"))
+    tp1 = bool(tp and (tp["tp1_submitted"] or "") == "Y")
+    zakat_other = float(tp["zakat_paid_ytd"] or 0) if (tp and tp1) else 0.0
+    allow_names = [(lbl, row[k]) for lbl, k in (("fixed allowance", "allow_fixed"), ("transport allowance", "allow_transport"),
+                                                ("meal allowance", "allow_meal"), ("CEWI allowance", "allow_cewi")) if row[k]]
+    allow_total = round(sum(v for _, v in allow_names), 2)
+    part_a_income = round(row["gross"] - allow_total, 2)
+    socso_total = round(row["socso"] + row["eis"], 2)
+    joined, left = row["joined"] or "", row["left"] or ""
+    if row["left_guessed"]:
+        left = ""
 
-    def head(text):
-        t = Table([[Paragraph(text, sec)]], colWidths=[18 * cm])
-        t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#1D4ED8")),
-                               ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
+    def box_head(letter, text, extra=""):
+        t = Table([[Paragraph(letter, ParagraphStyle("eabxx", parent=box, leading=9)), Paragraph(f"<b>{text}</b> {extra}", base)]], colWidths=[0.55 * cm, W - 0.55 * cm])
+        t.setStyle(TableStyle([("BACKGROUND", (0, 0), (0, 0), colors.black), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                               ("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
+                               ("LEFTPADDING", (1, 0), (1, 0), 6)]))
         return t
 
-    def kv(rows_, w=(5.6 * cm, 12.4 * cm)):
-        t = Table([[Paragraph(f"<b>{xml_escape(k)}</b>", cell), Paragraph(esc(v), cell)] for k, v in rows_], colWidths=list(w))
-        t.setStyle(TableStyle([("LINEBELOW", (0, 0), (-1, -1), 0.25, colors.HexColor("#BFBFBF")),
-                               ("VALIGN", (0, 0), (-1, -1), "TOP"), ("TOPPADDING", (0, 0), (-1, -1), 2),
-                               ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
+    def fields(pairs, cols=2):
+        """pairs: [(no, label, value)] arranged in `cols` columns like the official form."""
+        data, cw = [], []
+        per = W / cols
+        for i in range(0, len(pairs), cols):
+            line = []
+            for no, label, val in pairs[i:i + cols]:
+                line += [Paragraph(f"{no}", base), Paragraph(label, base), Paragraph(esc(val), bold)]
+            while len(line) < cols * 3:
+                line += ["", "", ""]
+            data.append(line)
+        cw = ([0.8 * cm, 4.3 * cm, per - 5.1 * cm]) * cols
+        t = Table(data, colWidths=cw)
+        t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "BOTTOM"), ("TOPPADDING", (0, 0), (-1, -1), 1.4), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.4),
+                               ("LINEBELOW", (2, 0), (2, -1), 0.4, colors.HexColor("#888888")),
+                               ("LINEBELOW", (5, 0), (5, -1), 0.4, colors.HexColor("#888888")) if cols == 2 else ("FONTSIZE", (0, 0), (0, 0), 8)]))
         return t
 
-    def amounts(rows_, total=None):
-        data = [[Paragraph(l, cell), "RM", _ea_money(v)] for l, v in rows_]
-        if total is not None:
-            data.append([Paragraph("<b>" + total[0] + "</b>", cell), "RM", Paragraph(_ea_money(total[1]), cellr)])
-        t = Table(data, colWidths=[13 * cm, 1.2 * cm, 3.8 * cm])
-        st = [("LINEBELOW", (0, 0), (-1, -1), 0.25, colors.HexColor("#BFBFBF")), ("ALIGN", (2, 0), (2, -1), "RIGHT"),
-              ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]
-        if total is not None:
-            st.append(("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#F1F5F9")))
+    def lines(items, with_total=None):
+        """items: [(no, label, amount or None, indent)]; amounts shown right-aligned in the RM column."""
+        data = []
+        for no, label, amt, indent in items:
+            data.append([Paragraph(no, base), Paragraph(label, base), Paragraph(money(amt) if amt is not None else "", right)])
+        t = Table(data, colWidths=[0.9 * cm, W - 0.9 * cm - 3.2 * cm, 3.2 * cm])
+        st = [("VALIGN", (0, 0), (-1, -1), "BOTTOM"), ("TOPPADDING", (0, 0), (-1, -1), 1.1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.1),
+              ("LINEBELOW", (2, 0), (2, -1), 0.4, colors.HexColor("#888888"))]
         t.setStyle(TableStyle(st))
         return t
 
-    left = row["left"] or "-"
-    if row["left_guessed"]:
-        left += " (last month paid - please confirm)"
-    story = [
-        Paragraph("BORANG EA / FORM EA", title),
-        Paragraph("Penyata Saraan daripada Pekerjaan / Statement of Remuneration from Employment", sub),
-        Paragraph(f"Bagi tahun berakhir 31 Disember {year} / For the year ended 31 December {year}", sub),
-        Paragraph("(Subsection 83(1A) Income Tax Act 1967)", sub), Spacer(1, 4),
-        head("A. EMPLOYER'S PARTICULARS / MAKLUMAT MAJIKAN"),
-        kv([("Employer's name", employer.get("company_name")), ("Address", address),
-            ("Employer's tax reference no. (E)", e_no), ("EPF employer no.", employer.get("epf_employer_no")),
-            ("SOCSO / EIS employer code", employer.get("socso_eis_employer_code"))]),
-        Spacer(1, 4),
-        head("B. EMPLOYEE'S PARTICULARS / MAKLUMAT PEKERJA"),
-        kv([("Full name", row["name"]), ("Designation", e["position"]), ("Employee no.", e["emp_id"]),
-            ("NRIC / Passport no.", e["ic_passport_no"]), ("Income tax no.", e["tax_no"]),
-            ("EPF no.", e["epf_no"]), ("SOCSO no.", e["socso_no"]),
-            ("Date commenced employment", row["joined"]), ("Date ceased employment", left)]),
-        Spacer(1, 4),
-        head("C. EMPLOYMENT INCOME / PENDAPATAN PEKERJAAN"),
-        amounts([
-            ("1(a) Gross salary, fees (including director's fee), leave pay, wages, overtime, commission, bonus and allowances", row["gross"]),
-            ("1(b) Gratuities, perquisites, allowances / benefits not in 1(a)", 0),
-            ("1(c) Value of benefits-in-kind", 0), ("1(d) Value of living accommodation provided by employer", 0),
-            ("1(e) Refund from unapproved provident / pension fund", 0), ("1(f) Compensation for loss of employment", 0),
-            ("2. Pension and others", 0)],
-            total=("3. Total employment income", row["gross"])),
-        Spacer(1, 4),
-        head("D. DEDUCTIONS / POTONGAN"),
-        amounts([("1. Monthly tax deductions (MTD / PCB) remitted to LHDN", row["pcb"]),
-                 ("2. Deductions under a CP38 notice", 0), ("3. Zakat paid through salary deduction", 0)],
-                total=("Total deductions", row["pcb"])),
-        Spacer(1, 4),
-        head("E. CONTRIBUTIONS PAID BY THE EMPLOYEE / CARUMAN PEKERJA"),
-        amounts([("1. Employees Provident Fund (KWSP) - employee's contribution", row["epf"]),
-                 ("2. Social Security Organisation (PERKESO / SOCSO) - employee's contribution", row["socso"]),
-                 ("3. Employment Insurance System (EIS) - employee's contribution", row["eis"])]),
-        Spacer(1, 6),
-        Paragraph("I declare that the particulars above are correct and complete.", cell), Spacer(1, 14),
-        Table([[Paragraph("______________________________<br/>Authorised signatory<br/>"
-                          f"<b>{xml_escape(employer.get('director_name') or '')}</b><br/>{xml_escape(employer.get('company_name') or '')}", cell),
-                Paragraph("Date: ______________________", cell)]], colWidths=[11 * cm, 7 * cm]),
-        Spacer(1, 8),
-        Paragraph(f"Prepared from {row['months']} finalised payroll month(s) of {year}. Please check the figures against the official "
-                  "LHDN Form EA before issuing it to the employee.", small),
-        PageBreak(),
-        Paragraph(f"<b>Annexure - monthly payroll figures {year}: {xml_escape(row['name'])} ({xml_escape(e['emp_id'])})</b>", cell), Spacer(1, 6),
-    ]
+    head = Table([[Paragraph("(C.P.8A - Pin. 2023)", base), Paragraph("MALAYSIA<br/><font size=12><b>INCOME TAX</b></font>", ctr),
+                   Paragraph("PRIVATE SECTOR Employee's<br/>Statement of Remuneration", bold), Paragraph("<font size=22><b>EA</b></font>", base)]],
+                 colWidths=[3.3 * cm, 5.6 * cm, 6.2 * cm, 2.9 * cm])
+    head.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("BOX", (2, 0), (2, 0), 0.8, colors.black)]))
+    sub = Table([[Paragraph("Serial No. ................", base),
+                  Paragraph(f"<b>STATEMENT OF REMUNERATION FROM EMPLOYMENT<br/>FOR THE YEAR ENDED 31 DECEMBER {year}</b>", ctr),
+                  Paragraph(f"Employee's Tax Identification No. (TIN)<br/><b>{esc(e['tax_no'])}</b>", base)],
+                 [Paragraph(f"Employer's No. E &nbsp;<b>{esc(employer.get('income_tax_employer_no'))}</b>", base), "",
+                  Paragraph("LHDNM State ......................", base)]],
+                colWidths=[5.2 * cm, 7.6 * cm, 5.2 * cm])
+    sub.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("SPAN", (1, 0), (1, 1))]))
+    ban = Table([[Paragraph("THIS FORM EA MUST BE PREPARED AND PROVIDED TO THE EMPLOYEE FOR INCOME TAX PURPOSE", banner)]], colWidths=[W])
+    ban.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.black), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
+
+    a_rows = [("1", "Full Name of Employee / Pensioner (Mr./Miss/Madam)", row["name"])]
+    a_top = Table([[Paragraph("1", base), Paragraph("Full Name of Employee / Pensioner (Mr./Miss/Madam)", base), Paragraph(esc(row["name"]), bold)]],
+                  colWidths=[0.6 * cm, 7.9 * cm, W - 8.5 * cm])
+    a_top.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "BOTTOM"), ("LINEBELOW", (2, 0), (2, 0), 0.4, colors.HexColor("#888888")),
+                               ("TOPPADDING", (0, 0), (-1, -1), 1.4), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.4)]))
+    a_grid = fields([("2", "Job Designation", e["position"]), ("3", "Staff No. / Payroll No.", e["emp_id"]),
+                     ("4", "New I.C. No", ic if is_ic else ""), ("5", "Passport No.", "" if is_ic else ic),
+                     ("6", "EPF No.", e["epf_no"]), ("7", "SOCSO No.", e["socso_no"]),
+                     ("8", "Children qualified for tax relief", str(children) if tp else ""), ("", "", "")])
+    a_nine = Table([[Paragraph("9", base), Paragraph("If the period of employment is less than a year, please state:", base)]], colWidths=[0.6 * cm, W - 0.6 * cm])
+    a_nine.setStyle(TableStyle([("TOPPADDING", (0, 0), (-1, -1), 1.4), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+    a_dates = fields([("(a)", "Date of commencement", joined), ("(b)", "Date of cessation", left)], cols=2)
+
+    allow_detail = ", ".join(f"{lbl} RM{v:,.2f}" for lbl, v in allow_names) or "-"
+    b_items = [
+        ("1.", "(a) Gross salary, wages or leave pay (including overtime pay)", part_a_income, 0),
+        ("", "(b) Fees (including director fees), commission or bonus", 0.0, 0),
+        ("", f"(c) Gross tips, perquisites, awards / rewards or other allowances &nbsp;<font size=7>(Details of payment: {xml_escape(allow_detail)})</font>", allow_total, 0),
+        ("", "(d) Income tax borne by the employer in respect of his employee", 0.0, 0),
+        ("", "(e) Employee Share Option Scheme (ESOS) benefit", 0.0, 0),
+        ("", "(f) Gratuity for the period from ................................ to ................................", 0.0, 0),
+        ("2.", "Details of arrears and others for preceding years paid in the current year: Type of income (a) ......................  (b) ......................", 0.0, 0),
+        ("3.", "Benefits in kind (Specify: ............................................................................)", 0.0, 0),
+        ("4.", "Value of living accommodation provided (Address: ..................................................................)", 0.0, 0),
+        ("5.", "Refund from unapproved Provident / Pension Fund", 0.0, 0),
+        ("6.", "Compensation for loss of employment", 0.0, 0)]
+    c_items = [("1.", "Pension", 0.0, 0), ("2.", "Annuities or other periodical payments", 0.0, 0)]
+    total_row = Table([[Paragraph("<b>TOTAL</b>", base), Paragraph(money(row["gross"]), ParagraphStyle("eat9", parent=right, fontName="Helvetica-Bold"))]],
+                      colWidths=[W - 3.2 * cm, 3.2 * cm])
+    total_row.setStyle(TableStyle([("LINEABOVE", (1, 0), (1, 0), 0.8, colors.black), ("LINEBELOW", (1, 0), (1, 0), 0.8, colors.black),
+                                   ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2), ("LEFTPADDING", (0, 0), (0, 0), 0.9 * cm)]))
+    d_items = [
+        ("1.", "Monthly tax deductions (MTD) remitted to LHDNM", row["pcb"], 0),
+        ("2.", "CP38 deductions remitted to LHDNM", 0.0, 0),
+        ("3.", "<i>Zakat</i> paid via salary deduction", 0.0, 0),
+        ("4.", "Approved donations / gifts / contributions via salary deduction", 0.0, 0),
+        ("5.", "Total claim for deduction by employee via Form TP1 in respect of: &nbsp; (a) Relief RM ................  "
+               f"(b) <i>Zakat</i> other than that paid via monthly salary deduction RM {money(zakat_other) if zakat_other else '................'}", None, 0),
+        ("6.", "Total qualifying child relief", None, 0)]
+    e_items = [
+        ("1.", "Name of Provident Fund: <b>Employees Provident Fund (KWSP)</b><br/>Amount of compulsory contribution paid (state the employee's share of contribution only) &nbsp;RM", row["epf"], 0),
+        ("2.", f"SOCSO: Amount of compulsory contribution paid (state the employee's share of contribution only) &nbsp;RM<br/>"
+               f"<font size=7>(PERKESO total: SOCSO RM{row['socso']:,.2f} + EIS RM{row['eis']:,.2f})</font>", socso_total, 0)]
+    f_row = Table([[Paragraph("<b>TOTAL TAX EXEMPT ALLOWANCES / PERQUISITES / GIFTS / BENEFITS</b>", base),
+                    Paragraph("RM", bold), Paragraph(money(row.get("exempt", 0.0)), right)]], colWidths=[W - 5 * cm, 1.2 * cm, 3.8 * cm])
+    f_row.setStyle(TableStyle([("LINEBELOW", (2, 0), (2, 0), 0.4, colors.HexColor("#888888")), ("VALIGN", (0, 0), (-1, -1), "BOTTOM")]))
+
+    sign = Table([[Paragraph("Date: ..............................", base),
+                   Table([[Paragraph("Name of Officer", base), Paragraph(esc(employer.get("director_name")), bold)],
+                          [Paragraph("Designation", base), Paragraph("Director", bold)],
+                          [Paragraph("Name and Address of Employer", base), Paragraph(esc(employer.get("company_name")), bold)],
+                          ["", Paragraph(esc(address), base)],
+                          [Paragraph("Employer's Telephone No.", base), Paragraph(esc(employer.get("company_tel")), bold)]],
+                         colWidths=[4.2 * cm, 8.8 * cm], style=TableStyle([("LINEBELOW", (1, 0), (1, -1), 0.4, colors.HexColor("#888888")),
+                                                                           ("VALIGN", (0, 0), (-1, -1), "BOTTOM")]))]],
+                 colWidths=[4.5 * cm, 13.5 * cm])
+    sign.setStyle(TableStyle([("VALIGN", (0, 0), (0, 0), "BOTTOM"), ("BOX", (1, 0), (1, 0), 0.8, colors.black),
+                              ("LEFTPADDING", (1, 0), (1, 0), 6), ("TOPPADDING", (1, 0), (1, 0), 6), ("BOTTOMPADDING", (1, 0), (1, 0), 6)]))
+
+    gap = lambda n=4: Spacer(1, n)
+    story = [head, sub, gap(3), ban, gap(6),
+             box_head("A", "PARTICULARS OF EMPLOYEE"), a_top, a_grid, a_nine, a_dates, gap(4),
+             box_head("B", "EMPLOYMENT INCOME, BENEFITS AND LIVING ACCOMMODATION",
+                      "<br/><font size=7.5><b>(Excluding Tax Exempt Allowances / Perquisites / Gifts / Benefits)</b></font>"),
+             lines(b_items), gap(3),
+             box_head("C", "PENSION AND OTHERS"), lines(c_items), total_row, gap(3),
+             box_head("D", "TOTAL DEDUCTION"), lines(d_items), gap(3),
+             box_head("E", "CONTRIBUTIONS PAID BY EMPLOYEE TO APPROVED PROVIDENT / PENSION FUND AND SOCSO"), lines(e_items), gap(3),
+             box_head("F", ""), f_row, gap(4), sign, gap(3),
+             PageBreak(),
+             Paragraph(f"<b>Annexure - monthly payroll figures {year}: {xml_escape(row['name'])} ({xml_escape(e['emp_id'])})</b>", base), Spacer(1, 6)]
     data = [["Month", "Gross pay", "EPF (emp.)", "SOCSO (emp.)", "EIS (emp.)", "PCB"]]
     for r in row["runs"]:
-        data.append([f"{MONTH_NAMES[r['month']]} {year}", _ea_money(r["gross_pay"] or 0), _ea_money(r["epf_employee"] or 0),
-                     _ea_money(r["socso_employee"] or 0), _ea_money(r["eis_employee"] or 0), _ea_money(r["pcb"] or 0)])
-    data.append(["Total", _ea_money(row["gross"]), _ea_money(row["epf"]), _ea_money(row["socso"]), _ea_money(row["eis"]), _ea_money(row["pcb"])])
+        data.append([f"{MONTH_NAMES[r['month']]} {year}", money(r["gross_pay"] or 0), money(r["epf_employee"] or 0),
+                     money(r["socso_employee"] or 0), money(r["eis_employee"] or 0), money(r["pcb"] or 0)])
+    data.append(["Total", money(row["gross"]), money(row["epf"]), money(row["socso"]), money(row["eis"]), money(row["pcb"])])
     t = Table(data, colWidths=[4 * cm, 3.2 * cm, 2.8 * cm, 2.8 * cm, 2.6 * cm, 2.6 * cm], repeatRows=1)
     t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1D4ED8")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 8.5),
                            ("ALIGN", (1, 0), (-1, -1), "RIGHT"), ("LINEBELOW", (0, 1), (-1, -1), 0.25, colors.HexColor("#BFBFBF")),
                            ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"), ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#F1F5F9"))]))
-    story.append(t)
+    story += [t, Spacer(1, 8), Paragraph(f"Prepared from {row['months']} finalised payroll month(s) of {year}. Amounts for items not recorded in the payroll system "
+                       "(bonus, benefits-in-kind, tax-exempt allowances, TP1 reliefs) are shown as zero / blank - please check before issuing.", tiny)]
     return story
 
 
@@ -11209,7 +11280,7 @@ def ea_form_pdf():
             story.append(PageBreak())
         story += _ea_story(row, year, employer, styles)
     buf = io.BytesIO()
-    SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.5 * cm, rightMargin=1.5 * cm, topMargin=1.2 * cm, bottomMargin=1.2 * cm,
+    SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.5 * cm, rightMargin=1.5 * cm, topMargin=0.9 * cm, bottomMargin=0.9 * cm,
                       title=f"EA Form {year}").build(story)
     buf.seek(0)
     name = f"EA_Form_{year}_" + (only if only else ("All_Staff" if scope == "all" else "Resigned"))

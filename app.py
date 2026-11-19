@@ -11008,6 +11008,230 @@ def leave_report_xlsx():
                     headers={"Content-Disposition": f"attachment; filename={_leave_file_name(d, 'xlsx')}"})
 
 
+# ---------------- EA Form (Borang EA) ----------------
+# Annual statement of remuneration from employment that the employer gives each employee (and which the employee uses
+# for the personal income-tax return). Built from the finalised payroll runs of the year. Default list: staff who left
+# during the year (Inactive); "all staff" can be chosen too (for the normal year-end run in January / February).
+
+def _ea_rows(db, year, scope):
+    """One dict per employee with payroll in `year`. scope 'resigned' = Inactive staff only, 'all' = everyone."""
+    emps = db.execute("SELECT * FROM employees ORDER BY emp_id").fetchall()
+    out = []
+    for e in emps:
+        if scope != "all" and e["status"] != "Inactive":
+            continue
+        runs = db.execute(
+            """SELECT * FROM payroll_runs WHERE emp_id=? AND year=? AND finalized_at IS NOT NULL
+               AND (gross_pay > 0 OR epf_employee > 0 OR pcb > 0) ORDER BY month""",
+            (e["emp_id"], year)).fetchall()
+        if not runs:
+            continue
+        left = e["last_working_day"] or e["resignation_date"]
+        left_guessed = False
+        if not left and e["status"] == "Inactive":
+            left, left_guessed = f"{year}-{runs[-1]['month']:02d}", True      # month of the last payroll only
+        if scope != "all" and left and not left.startswith(str(year)):
+            continue                                                           # left in another year
+        tot = lambda k: round(sum((r[k] or 0) for r in runs), 2)
+        row = {"emp": e, "emp_id": e["emp_id"], "name": e["full_name"], "runs": runs, "months": len(runs),
+               "joined": e["date_joined"], "left": left, "left_guessed": left_guessed,
+               "gross": tot("gross_pay"), "epf": tot("epf_employee"), "socso": tot("socso_employee"),
+               "eis": tot("eis_employee"), "pcb": tot("pcb")}
+        missing = []
+        if not (e["ic_passport_no"] or "").strip():
+            missing.append("IC / passport no.")
+        if not (e["tax_no"] or "").strip():
+            missing.append("income tax no.")
+        if row["epf"] > 0 and not (e["epf_no"] or "").strip():
+            missing.append("EPF no.")
+        if not e["date_joined"]:
+            missing.append("date joined")
+        if not left or left_guessed:
+            missing.append("date left")
+        row["missing"] = missing
+        out.append(row)
+    return out
+
+
+def _ea_args(db):
+    year = request.args.get("year", type=int) or datetime.date.today().year
+    scope = "all" if request.args.get("scope") == "all" else "resigned"
+    return year, scope
+
+
+@app.route("/ea-form")
+def ea_form_page():
+    db = get_db()
+    year, scope = _ea_args(db)
+    rows = _ea_rows(db, year, scope)
+    years = [r["year"] for r in db.execute("SELECT DISTINCT year FROM payroll_runs ORDER BY year DESC").fetchall()] or [year]
+    return render_template("ea_form.html", rows=rows, year=year, scope=scope, years=years,
+                           employer=get_employer_info(db), today=datetime.date.today())
+
+
+def _ea_money(v):
+    return f"{v:,.2f}"
+
+
+def _ea_story(row, year, employer, styles):
+    e = row["emp"]
+    small = ParagraphStyle("eas", parent=styles["Normal"], fontSize=8.5, leading=10.5)
+    cell = ParagraphStyle("eac", parent=styles["Normal"], fontSize=8.8, leading=10.5)
+    cellr = ParagraphStyle("eacr", parent=cell, alignment=2, fontName="Helvetica-Bold")
+    bold = ParagraphStyle("eab", parent=cell, fontName="Helvetica-Bold")
+    title = ParagraphStyle("eat", parent=styles["Title"], fontSize=15, leading=18, spaceAfter=0)
+    sub = ParagraphStyle("eau", parent=styles["Normal"], fontSize=9.5, alignment=1, leading=12)
+    sec = ParagraphStyle("eash", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", textColor=colors.white)
+    esc = lambda x: xml_escape(str(x) if x not in (None, "") else "-")
+    address = ", ".join(x.strip().rstrip(",") for x in (employer.get("company_address") or "").replace("\r", "").split("\n") if x.strip())
+    e_no = employer.get("income_tax_employer_no") or ""
+
+    def head(text):
+        t = Table([[Paragraph(text, sec)]], colWidths=[18 * cm])
+        t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#1D4ED8")),
+                               ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
+        return t
+
+    def kv(rows_, w=(5.6 * cm, 12.4 * cm)):
+        t = Table([[Paragraph(f"<b>{xml_escape(k)}</b>", cell), Paragraph(esc(v), cell)] for k, v in rows_], colWidths=list(w))
+        t.setStyle(TableStyle([("LINEBELOW", (0, 0), (-1, -1), 0.25, colors.HexColor("#BFBFBF")),
+                               ("VALIGN", (0, 0), (-1, -1), "TOP"), ("TOPPADDING", (0, 0), (-1, -1), 2),
+                               ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
+        return t
+
+    def amounts(rows_, total=None):
+        data = [[Paragraph(l, cell), "RM", _ea_money(v)] for l, v in rows_]
+        if total is not None:
+            data.append([Paragraph("<b>" + total[0] + "</b>", cell), "RM", Paragraph(_ea_money(total[1]), cellr)])
+        t = Table(data, colWidths=[13 * cm, 1.2 * cm, 3.8 * cm])
+        st = [("LINEBELOW", (0, 0), (-1, -1), 0.25, colors.HexColor("#BFBFBF")), ("ALIGN", (2, 0), (2, -1), "RIGHT"),
+              ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]
+        if total is not None:
+            st.append(("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#F1F5F9")))
+        t.setStyle(TableStyle(st))
+        return t
+
+    left = row["left"] or "-"
+    if row["left_guessed"]:
+        left += " (last month paid - please confirm)"
+    story = [
+        Paragraph("BORANG EA / FORM EA", title),
+        Paragraph("Penyata Saraan daripada Pekerjaan / Statement of Remuneration from Employment", sub),
+        Paragraph(f"Bagi tahun berakhir 31 Disember {year} / For the year ended 31 December {year}", sub),
+        Paragraph("(Subsection 83(1A) Income Tax Act 1967)", sub), Spacer(1, 4),
+        head("A. EMPLOYER'S PARTICULARS / MAKLUMAT MAJIKAN"),
+        kv([("Employer's name", employer.get("company_name")), ("Address", address),
+            ("Employer's tax reference no. (E)", e_no), ("EPF employer no.", employer.get("epf_employer_no")),
+            ("SOCSO / EIS employer code", employer.get("socso_eis_employer_code"))]),
+        Spacer(1, 4),
+        head("B. EMPLOYEE'S PARTICULARS / MAKLUMAT PEKERJA"),
+        kv([("Full name", row["name"]), ("Designation", e["position"]), ("Employee no.", e["emp_id"]),
+            ("NRIC / Passport no.", e["ic_passport_no"]), ("Income tax no.", e["tax_no"]),
+            ("EPF no.", e["epf_no"]), ("SOCSO no.", e["socso_no"]),
+            ("Date commenced employment", row["joined"]), ("Date ceased employment", left)]),
+        Spacer(1, 4),
+        head("C. EMPLOYMENT INCOME / PENDAPATAN PEKERJAAN"),
+        amounts([
+            ("1(a) Gross salary, fees (including director's fee), leave pay, wages, overtime, commission, bonus and allowances", row["gross"]),
+            ("1(b) Gratuities, perquisites, allowances / benefits not in 1(a)", 0),
+            ("1(c) Value of benefits-in-kind", 0), ("1(d) Value of living accommodation provided by employer", 0),
+            ("1(e) Refund from unapproved provident / pension fund", 0), ("1(f) Compensation for loss of employment", 0),
+            ("2. Pension and others", 0)],
+            total=("3. Total employment income", row["gross"])),
+        Spacer(1, 4),
+        head("D. DEDUCTIONS / POTONGAN"),
+        amounts([("1. Monthly tax deductions (MTD / PCB) remitted to LHDN", row["pcb"]),
+                 ("2. Deductions under a CP38 notice", 0), ("3. Zakat paid through salary deduction", 0)],
+                total=("Total deductions", row["pcb"])),
+        Spacer(1, 4),
+        head("E. CONTRIBUTIONS PAID BY THE EMPLOYEE / CARUMAN PEKERJA"),
+        amounts([("1. Employees Provident Fund (KWSP) - employee's contribution", row["epf"]),
+                 ("2. Social Security Organisation (PERKESO / SOCSO) - employee's contribution", row["socso"]),
+                 ("3. Employment Insurance System (EIS) - employee's contribution", row["eis"])]),
+        Spacer(1, 6),
+        Paragraph("I declare that the particulars above are correct and complete.", cell), Spacer(1, 14),
+        Table([[Paragraph("______________________________<br/>Authorised signatory<br/>"
+                          f"<b>{xml_escape(employer.get('director_name') or '')}</b><br/>{xml_escape(employer.get('company_name') or '')}", cell),
+                Paragraph("Date: ______________________", cell)]], colWidths=[11 * cm, 7 * cm]),
+        Spacer(1, 8),
+        Paragraph(f"Prepared from {row['months']} finalised payroll month(s) of {year}. Please check the figures against the official "
+                  "LHDN Form EA before issuing it to the employee.", small),
+        PageBreak(),
+        Paragraph(f"<b>Annexure - monthly payroll figures {year}: {xml_escape(row['name'])} ({xml_escape(e['emp_id'])})</b>", cell), Spacer(1, 6),
+    ]
+    data = [["Month", "Gross pay", "EPF (emp.)", "SOCSO (emp.)", "EIS (emp.)", "PCB"]]
+    for r in row["runs"]:
+        data.append([f"{MONTH_NAMES[r['month']]} {year}", _ea_money(r["gross_pay"] or 0), _ea_money(r["epf_employee"] or 0),
+                     _ea_money(r["socso_employee"] or 0), _ea_money(r["eis_employee"] or 0), _ea_money(r["pcb"] or 0)])
+    data.append(["Total", _ea_money(row["gross"]), _ea_money(row["epf"]), _ea_money(row["socso"]), _ea_money(row["eis"]), _ea_money(row["pcb"])])
+    t = Table(data, colWidths=[4 * cm, 3.2 * cm, 2.8 * cm, 2.8 * cm, 2.6 * cm, 2.6 * cm], repeatRows=1)
+    t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1D4ED8")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                           ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+                           ("ALIGN", (1, 0), (-1, -1), "RIGHT"), ("LINEBELOW", (0, 1), (-1, -1), 0.25, colors.HexColor("#BFBFBF")),
+                           ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"), ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#F1F5F9"))]))
+    story.append(t)
+    return story
+
+
+@app.route("/ea-form/pdf")
+def ea_form_pdf():
+    db = get_db()
+    year, scope = _ea_args(db)
+    rows = _ea_rows(db, year, scope)
+    only = (request.args.get("emp_id") or "").strip()
+    if only:
+        rows = [r for r in rows if r["emp_id"] == only]
+    if not rows:
+        return "No EA Form data for this selection.", 404
+    employer = get_employer_info(db)
+    styles = getSampleStyleSheet()
+    story = []
+    for i, row in enumerate(rows):
+        if i:
+            story.append(PageBreak())
+        story += _ea_story(row, year, employer, styles)
+    buf = io.BytesIO()
+    SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.5 * cm, rightMargin=1.5 * cm, topMargin=1.2 * cm, bottomMargin=1.2 * cm,
+                      title=f"EA Form {year}").build(story)
+    buf.seek(0)
+    name = f"EA_Form_{year}_" + (only if only else ("All_Staff" if scope == "all" else "Resigned"))
+    return Response(buf.getvalue(), mimetype="application/pdf", headers={"Content-Disposition": f"inline; filename={name}.pdf"})
+
+
+@app.route("/ea-form/export.xlsx")
+def ea_form_xlsx():
+    db = get_db()
+    year, scope = _ea_args(db)
+    rows = _ea_rows(db, year, scope)
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = f"EA {year}"
+    ws.cell(row=1, column=1, value=f"EA Form {year} - summary ({'all staff' if scope == 'all' else 'staff who left in ' + str(year)})").font = Font(bold=True, size=13)
+    heads = ["Emp ID", "Name", "NRIC / Passport", "Income tax no.", "EPF no.", "SOCSO no.", "Designation", "Date joined", "Date left",
+             "Months paid", "Gross pay (1a / total income)", "PCB (MTD)", "EPF (employee)", "SOCSO (employee)", "EIS (employee)", "Missing details"]
+    for ci, h in enumerate(heads, start=1):
+        c = ws.cell(row=3, column=ci, value=h)
+        c.font, c.fill = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="1D4ED8")
+    for ri, r in enumerate(rows, start=4):
+        e = r["emp"]
+        vals = [e["emp_id"], r["name"], e["ic_passport_no"], e["tax_no"], e["epf_no"], e["socso_no"], e["position"], r["joined"], r["left"],
+                r["months"], r["gross"], r["pcb"], r["epf"], r["socso"], r["eis"], ", ".join(r["missing"])]
+        for ci, v in enumerate(vals, start=1):
+            c = ws.cell(row=ri, column=ci, value=v)
+            if 11 <= ci <= 15:
+                c.number_format = "#,##0.00"
+    for ci in range(1, len(heads) + 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = 16
+    ws.column_dimensions["B"].width = 36
+    ws.column_dimensions["P"].width = 34
+    ws.freeze_panes = "C4"
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return Response(buf.getvalue(), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename=EA_Form_{year}_summary.xlsx"})
+
+
 # ---------------- Training Records ----------------
 # One row per staff member per course. Staff add their own (Staff Portal > My Training, or automatically
 # from an approved Training notice); HR can add for several staff at once, adjust anything, add cost / HRD claim

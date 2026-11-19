@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}EA Form {{ year }} - TMB Payroll{% endblock %}
+{% block content %}
+{% set qs = dict(year=year, scope=scope) %}
+<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+  <h1 style="margin-bottom:0;">EA Form (Borang EA) &mdash; {{ year }}</h1>
+  <span>
+    {% if rows %}
+    <a class="btn" href="{{ url_for('ea_form_pdf', **qs) }}" target="_blank">View PDF &mdash; all listed ({{ rows|length }})</a>
+    <a class="btn secondary" href="{{ url_for('ea_form_xlsx', **qs) }}" style="margin-left:6px;">Download Excel summary</a>
+    {% endif %}
+  </span>
+</div>
+<form method="get" style="display:flex; flex-wrap:wrap; gap:10px 16px; align-items:flex-end; margin:10px 0;">
+  <div><label style="margin:0; font-weight:600; font-size:12px;">Year</label><br>
+    <select name="year" style="width:auto;" onchange="this.form.submit()">
+      {% for y in years %}<option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+    </select></div>
+  <div><label style="margin:0; font-weight:600; font-size:12px;">Staff</label><br>
+    <select name="scope" style="width:auto;" onchange="this.form.submit()">
+      <option value="resigned" {% if scope == 'resigned' %}selected{% endif %}>Resigned in {{ year }} (Inactive)</option>
+      <option value="all" {% if scope == 'all' %}selected{% endif %}>All staff with payroll in {{ year }}</option>
+    </select></div>
+</form>
+<p style="color:var(--muted); font-size:13px;">
+  Built from the <strong>finalised</strong> payroll runs of {{ year }}: total income = gross pay, tax deduction = PCB, and the employee's EPF, SOCSO and EIS.
+  {% if scope == 'all' %}For staff still working, the figures only run up to the last finalised month - issue their EA Forms after December is finalised.{% endif %}
+  Please check against the official LHDN Form EA before giving it to the employee.
+</p>
+<div class="card table-wrap frozen-header">
+<table>
+  <thead><tr>
+    <th class="text">Emp ID</th><th class="text">Name</th><th class="text">Joined</th><th class="text">Left</th><th>Months</th>
+    <th>Gross pay (RM)</th><th>PCB (RM)</th><th>EPF (RM)</th><th>SOCSO (RM)</th><th>EIS (RM)</th><th class="text">Check</th><th></th>
+  </tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td class="text">{{ r.emp_id }}</td>
+    <td class="text">{{ r.name }}</td>
+    <td class="text">{{ r.joined or "-" }}</td>
+    <td class="text">{{ r.left or "-" }}{% if r.left_guessed %} <span style="font-size:11px; color:var(--muted);">(last month paid)</span>{% endif %}</td>
+    <td>{{ r.months }}</td>
+    <td>{{ "{:,.2f}".format(r.gross) }}</td>
+    <td>{{ "{:,.2f}".format(r.pcb) }}</td>
+    <td>{{ "{:,.2f}".format(r.epf) }}</td>
+    <td>{{ "{:,.2f}".format(r.socso) }}</td>
+    <td>{{ "{:,.2f}".format(r.eis) }}</td>
+    <td class="text" style="white-space:normal; min-width:150px;">
+      {% if r.missing %}<span style="color:var(--danger); font-size:12px; font-weight:600;">Missing: {{ r.missing|join(', ') }}</span>
+      {% else %}<span style="color:var(--good); font-size:12px;">OK</span>{% endif %}
+    </td>
+    <td class="text"><a class="emp-link" href="{{ url_for('ea_form_pdf', emp_id=r.emp_id, **qs) }}" target="_blank">View PDF</a>
+      &nbsp;<a class="emp-link" href="{{ url_for('edit_employee', emp_id=r.emp_id) }}">Edit staff</a></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="12" class="text" style="color:var(--muted);">No staff with finalised payroll for this selection.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

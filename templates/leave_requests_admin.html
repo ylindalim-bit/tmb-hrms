@@ -57,7 +57,7 @@
         <td class="text">{{ lr.destination or "-" }}</td>
         <td class="text">{{ lr.start_date }}{% if lr.half_day %}<div style="font-size:11px; color:var(--muted);">Half day &mdash; {{ {'AM': 'morning off', 'PM': 'afternoon off', 'tAM': 'morning', 'tPM': 'afternoon'}[lr.half_day] }}</div>{% else %} &ndash; {{ lr.end_date }}{% endif %}</td>
         <td>{{ lr.days }}</td>
-        <td class="text">{{ lr.reason or "" }}{% if lr.source == "leave" and hr_role != "approver" %}
+        <td class="text" style="white-space:normal; min-width:220px; max-width:380px; word-break:break-word;">{{ lr.reason or "" }}{% if lr.source == "leave" and hr_role != "approver" %}
           <form method="post" action="{{ url_for('leave_request_set_reason', request_id=lr.id) }}" class="no-print" style="display:block; margin-top:2px;"
                 onsubmit="var m = prompt('Reason for this leave:', this.reason.value); if (m === null) return false; this.reason.value = m; return true;">
             <input type="hidden" name="reason" value="{{ lr.reason or '' }}">
@@ -152,7 +152,7 @@
         <td class="text">{{ lr.destination or "-" }}</td>
         <td class="text">{{ lr.start_date }}{% if lr.half_day %}<div style="font-size:11px; color:var(--muted);">Half day &mdash; {{ {'AM': 'morning off', 'PM': 'afternoon off', 'tAM': 'morning', 'tPM': 'afternoon'}[lr.half_day] }}</div>{% else %} &ndash; {{ lr.end_date }}{% endif %}</td>
         <td>{{ lr.days }}</td>
-        <td class="text">{{ lr.reason or "" }}{% if lr.source == "leave" and hr_role != "approver" %}
+        <td class="text" style="white-space:normal; min-width:220px; max-width:380px; word-break:break-word;">{{ lr.reason or "" }}{% if lr.source == "leave" and hr_role != "approver" %}
           <form method="post" action="{{ url_for('leave_request_set_reason', request_id=lr.id) }}" class="no-print" style="display:block; margin-top:2px;"
                 onsubmit="var m = prompt('Reason for this leave:', this.reason.value); if (m === null) return false; this.reason.value = m; return true;">
             <input type="hidden" name="reason" value="{{ lr.reason or '' }}">

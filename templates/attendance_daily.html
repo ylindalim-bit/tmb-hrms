@@ -41,6 +41,25 @@
 </div>
 {% endif %}
 
+<div class="card no-print" id="date-picker-card" style="padding:10px 14px;">
+  <div style="display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center;">
+    <strong>Dates to show:</strong>
+    <button type="button" class="btn secondary" style="padding:3px 10px; font-size:12px;" onclick="pickDays('all')">All</button>
+    <button type="button" class="btn secondary" style="padding:3px 10px; font-size:12px;" onclick="pickDays('none')">None</button>
+    <button type="button" class="btn secondary" style="padding:3px 10px; font-size:12px;" onclick="pickDays('weekdays')">Mon&ndash;Fri</button>
+    <button type="button" class="btn secondary" style="padding:3px 10px; font-size:12px;" onclick="pickDays('problems')">Problem days (red / amber)</button>
+    <span id="date-picker-count" style="color:var(--muted); font-size:12px;"></span>
+  </div>
+  <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;">
+    {% for d in days %}
+    <label style="display:flex; flex-direction:column; align-items:center; gap:1px; border:1px solid var(--border); border-radius:6px; padding:3px 7px; cursor:pointer; font-size:12px; margin:0; font-weight:400; min-width:42px;{% if d.weekday in ('Sat', 'Sun') %} background:var(--bg);{% endif %}">
+      <input type="checkbox" class="day-pick" value="{{ d.day }}" checked style="width:auto; margin:0;">
+      <span><strong>{{ d.day }}</strong></span><span style="color:var(--muted); font-size:10px;">{{ d.weekday }}</span>
+    </label>
+    {% endfor %}
+  </div>
+  <div style="font-size:11px; color:var(--muted); margin-top:6px;">Only changes which rows you see. Hidden dates are still saved with the month and still counted in the totals.</div>
+</div>
 <form method="post">
 <div class="card table-wrap frozen-header">
 <table>
@@ -54,7 +73,7 @@
 <tbody>
 {% for d in days %}
 {% set r = d.row %}
-<tr{% if d.problem %} style="background:#fee2e2;"{% elif d.unrecorded %} style="background:#fef3c7;"{% elif d.late_kind == 'personal' %} style="background:#ffedd5;"{% elif (d.late_in or d.early_out) and not d.late_kind %} style="background:#dbeafe;"{% endif %}>
+<tr class="dayrow" data-day="{{ d.day }}" data-wd="{{ d.weekday }}" data-problem="{{ 1 if (d.problem or d.unrecorded) else 0 }}"{% if d.problem %} style="background:#fee2e2;"{% elif d.unrecorded %} style="background:#fef3c7;"{% elif d.late_kind == 'personal' %} style="background:#ffedd5;"{% elif (d.late_in or d.early_out) and not d.late_kind %} style="background:#dbeafe;"{% endif %}>
   <td class="text">{{ d.date }}</td>
   <td class="text">{{ d.weekday }}</td>
   <td class="text">
@@ -199,6 +218,26 @@ document.querySelectorAll('input[name^="time_in__"], input[name^="time_out__"], 
   });
 });
 {% endif %}
+// Tick the dates to see - rows of unticked dates are hidden (their fields are still submitted on Save).
+function applyDayPick() {
+  var on = {}, n = 0, all = document.querySelectorAll('.day-pick');
+  all.forEach(function (cb) { on[cb.value] = cb.checked; if (cb.checked) n++; });
+  document.querySelectorAll('tr.dayrow').forEach(function (tr) { tr.style.display = on[tr.dataset.day] ? '' : 'none'; });
+  var c = document.getElementById('date-picker-count');
+  if (c) c.textContent = n === all.length ? '(all ' + n + ' days shown)' : '(' + n + ' of ' + all.length + ' days shown)';
+}
+function pickDays(mode) {
+  document.querySelectorAll('.day-pick').forEach(function (cb) {
+    var tr = document.querySelector('tr.dayrow[data-day="' + cb.value + '"]');
+    if (mode === 'all') cb.checked = true;
+    else if (mode === 'none') cb.checked = false;
+    else if (mode === 'weekdays') cb.checked = !(tr && (tr.dataset.wd === 'Sat' || tr.dataset.wd === 'Sun'));
+    else if (mode === 'problems') cb.checked = !!(tr && tr.dataset.problem === '1');
+  });
+  applyDayPick();
+}
+document.querySelectorAll('.day-pick').forEach(function (cb) { cb.addEventListener('change', applyDayPick); });
+applyDayPick();
 updateAttendanceTotals();
 // Switching to another staff member: warn first if this page has unsaved changes.
 (function () {

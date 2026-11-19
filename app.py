@@ -11169,12 +11169,12 @@ def _ea_story(row, year, employer, styles):
         return t
 
     dots = lambda n=24: "." * n
-    ptitle = ParagraphStyle("eapt", parent=bold, fontSize=8, leading=9.6, textColor=colors.white)
-    tbox = Table([[Paragraph("PRIVATE SECTOR<br/>Employee's Statement<br/>of Remuneration", ptitle),
+    ptitle = ParagraphStyle("eapt", parent=bold, fontSize=7.6, leading=9.6)
+    tbox = Table([[Paragraph("PRIVATE SECTOR Employee's<br/>Statement of Remuneration", ptitle),
                    Paragraph("<font size=22><b>EA</b></font>", ParagraphStyle("eaee", parent=base, alignment=2, leading=24))]],
-                 colWidths=[3.6 * cm, 1.4 * cm])
-    tbox.setStyle(TableStyle([("BACKGROUND", (0, 0), (0, 0), colors.black), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                              ("LEFTPADDING", (0, 0), (0, 0), 5), ("RIGHTPADDING", (1, 0), (1, 0), 0),
+                 colWidths=[4.5 * cm, 1.3 * cm])
+    tbox.setStyle(TableStyle([("BOX", (0, 0), (0, 0), 0.8, colors.black), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                              ("LEFTPADDING", (0, 0), (0, 0), 4), ("RIGHTPADDING", (0, 0), (0, 0), 2), ("LEFTPADDING", (1, 0), (1, 0), 4), ("RIGHTPADDING", (1, 0), (1, 0), 0),
                               ("TOPPADDING", (0, 0), (0, 0), 3), ("BOTTOMPADDING", (0, 0), (0, 0), 3)]))
     big = ParagraphStyle("eabig", parent=ctrb, fontSize=13, leading=15)
     head = Table([
@@ -11185,7 +11185,7 @@ def _ea_story(row, year, employer, styles):
          Paragraph(f"Employee's Tax Identification No. (TIN)<br/><b>{esc(e['tax_no'])}</b>", base)],
         [Paragraph(f"Employer's No. E &nbsp;<b>{esc(employer.get('income_tax_employer_no'))}</b>", base), "",
          Paragraph(f"LHDNM State {dots(20)}", base)]],
-        colWidths=[4.8 * cm, 7.8 * cm, 5.4 * cm])
+        colWidths=[5.0 * cm, 7.2 * cm, 5.8 * cm])
     head.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 1.5),
                               ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5), ("ALIGN", (2, 0), (2, 0), "RIGHT")]))
     sub = Spacer(1, 0)

@@ -11127,11 +11127,17 @@ def _ea_story(row, year, employer, styles):
         left = ""
 
     def box_head(letter, text, extra=""):
-        t = Table([[Paragraph(letter, ParagraphStyle("eabxx", parent=box, leading=9)), Paragraph(f"<b>{text}</b> {extra}", base)]], colWidths=[0.55 * cm, W - 0.55 * cm])
+        lt = ParagraphStyle("eabl", parent=box, fontSize=9, leading=11, alignment=1)
+        tt = ParagraphStyle("eabt", parent=bold, fontSize=8.6, leading=11)
+        t = Table([[Paragraph(letter, lt), Paragraph(text, tt)]], colWidths=[0.5 * cm, W - 0.5 * cm], rowHeights=[0.5 * cm])
         t.setStyle(TableStyle([("BACKGROUND", (0, 0), (0, 0), colors.black), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                               ("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
-                               ("LEFTPADDING", (1, 0), (1, 0), 6)]))
-        return t
+                               ("LEFTPADDING", (0, 0), (0, 0), 0), ("RIGHTPADDING", (0, 0), (0, 0), 0),
+                               ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                               ("LEFTPADDING", (1, 0), (1, 0), 7)]))
+        if not extra:
+            return t
+        sub_style = ParagraphStyle("eabs", parent=tiny, fontName="Helvetica-Bold", fontSize=7.4, leftIndent=0.5 * cm + 7)
+        return KeepTogether([t, Paragraph(extra, sub_style)])
 
     def fields(pairs, cols=2):
         """pairs: [(no, label, value)] arranged in `cols` columns like the official form."""
@@ -11162,17 +11168,26 @@ def _ea_story(row, year, employer, styles):
         t.setStyle(TableStyle(st))
         return t
 
-    head = Table([[Paragraph("(C.P.8A - Pin. 2023)", base), Paragraph("MALAYSIA<br/><font size=12><b>INCOME TAX</b></font>", ctr),
-                   Paragraph("PRIVATE SECTOR Employee's<br/>Statement of Remuneration", bold), Paragraph("<font size=22><b>EA</b></font>", base)]],
-                 colWidths=[3.3 * cm, 5.6 * cm, 6.2 * cm, 2.9 * cm])
-    head.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("BOX", (2, 0), (2, 0), 0.8, colors.black)]))
-    sub = Table([[Paragraph("Serial No. ................", base),
-                  Paragraph(f"<b>STATEMENT OF REMUNERATION FROM EMPLOYMENT<br/>FOR THE YEAR ENDED 31 DECEMBER {year}</b>", ctr),
-                  Paragraph(f"Employee's Tax Identification No. (TIN)<br/><b>{esc(e['tax_no'])}</b>", base)],
-                 [Paragraph(f"Employer's No. E &nbsp;<b>{esc(employer.get('income_tax_employer_no'))}</b>", base), "",
-                  Paragraph("LHDNM State ......................", base)]],
-                colWidths=[5.2 * cm, 7.6 * cm, 5.2 * cm])
-    sub.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("SPAN", (1, 0), (1, 1))]))
+    dots = lambda n=24: "." * n
+    ptitle = ParagraphStyle("eapt", parent=bold, fontSize=8, leading=9.6)
+    tbox = Table([[Paragraph("PRIVATE SECTOR<br/>Employee's Statement<br/>of Remuneration", ptitle),
+                   Paragraph("<font size=22><b>EA</b></font>", ParagraphStyle("eaee", parent=base, alignment=2, leading=24))]],
+                 colWidths=[3.6 * cm, 1.4 * cm])
+    tbox.setStyle(TableStyle([("BOX", (0, 0), (0, 0), 0.8, colors.black), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                              ("LEFTPADDING", (0, 0), (0, 0), 4), ("RIGHTPADDING", (1, 0), (1, 0), 0)]))
+    big = ParagraphStyle("eabig", parent=ctrb, fontSize=13, leading=15)
+    head = Table([
+        [Paragraph("(C.P.8A - Pin. 2023)", base), Paragraph("MALAYSIA", ctr), tbox],
+        [Paragraph(f"Serial No. {dots(18)}", base), Paragraph("INCOME TAX", big),
+         Paragraph(f"Employee's Tax Identification No. (TIN)<br/><b>{esc(e['tax_no'])}</b>", base)],
+        [Paragraph(f"Employer's No. E &nbsp;<b>{esc(employer.get('income_tax_employer_no'))}</b>", base),
+         Paragraph("<b>STATEMENT OF REMUNERATION FROM EMPLOYMENT</b>", ctr),
+         Paragraph(f"LHDNM State {dots(20)}", base)],
+        ["", Paragraph(f"<b>FOR THE YEAR ENDED 31 DECEMBER {year}</b>", ctr), ""]],
+        colWidths=[4.6 * cm, 8.4 * cm, 5.0 * cm])
+    head.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 1.5),
+                              ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5), ("ALIGN", (2, 0), (2, 0), "RIGHT")]))
+    sub = Spacer(1, 0)
     ban = Table([[Paragraph("THIS FORM EA MUST BE PREPARED AND PROVIDED TO THE EMPLOYEE FOR INCOME TAX PURPOSE", banner)]], colWidths=[W])
     ban.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.black), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
 
@@ -11219,9 +11234,14 @@ def _ea_story(row, year, employer, styles):
         ("1.", "Name of Provident Fund: <b>Employees Provident Fund (KWSP)</b><br/>Amount of compulsory contribution paid (state the employee's share of contribution only) &nbsp;RM", row["epf"], 0),
         ("2.", f"SOCSO: Amount of compulsory contribution paid (state the employee's share of contribution only) &nbsp;RM<br/>"
                f"<font size=7>(PERKESO total: SOCSO RM{row['socso']:,.2f} + EIS RM{row['eis']:,.2f})</font>", socso_total, 0)]
-    f_row = Table([[Paragraph("<b>TOTAL TAX EXEMPT ALLOWANCES / PERQUISITES / GIFTS / BENEFITS</b>", base),
-                    Paragraph("RM", bold), Paragraph(money(row.get("exempt", 0.0)), right)]], colWidths=[W - 5 * cm, 1.2 * cm, 3.8 * cm])
-    f_row.setStyle(TableStyle([("LINEBELOW", (2, 0), (2, 0), 0.4, colors.HexColor("#888888")), ("VALIGN", (0, 0), (-1, -1), "BOTTOM")]))
+    lt_f = ParagraphStyle("eabl2", parent=box, fontSize=9, leading=11, alignment=1)
+    f_row = Table([[Paragraph("F", lt_f), Paragraph("<b>TOTAL TAX EXEMPT ALLOWANCES / PERQUISITES / GIFTS / BENEFITS</b>", base),
+                    Paragraph("<b>RM</b>", right), Paragraph(money(row.get("exempt", 0.0)), right)]],
+                  colWidths=[0.5 * cm, W - 0.5 * cm - 5 * cm, 1.2 * cm, 3.8 * cm], rowHeights=[0.5 * cm])
+    f_row.setStyle(TableStyle([("BACKGROUND", (0, 0), (0, 0), colors.black), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                               ("LEFTPADDING", (0, 0), (0, 0), 0), ("RIGHTPADDING", (0, 0), (0, 0), 0), ("LEFTPADDING", (1, 0), (1, 0), 7),
+                               ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                               ("LINEBELOW", (3, 0), (3, 0), 0.4, colors.HexColor("#888888"))]))
 
     sign = Table([[Paragraph("Date: ..............................", base),
                    Table([[Paragraph("Name of Officer", base), Paragraph(esc(employer.get("director_name")), bold)],
@@ -11239,12 +11259,12 @@ def _ea_story(row, year, employer, styles):
     story = [head, sub, gap(3), ban, gap(6),
              box_head("A", "PARTICULARS OF EMPLOYEE"), a_top, a_grid, a_nine, a_dates, gap(4),
              box_head("B", "EMPLOYMENT INCOME, BENEFITS AND LIVING ACCOMMODATION",
-                      "<br/><font size=7.5><b>(Excluding Tax Exempt Allowances / Perquisites / Gifts / Benefits)</b></font>"),
+                      "(Excluding Tax Exempt Allowances / Perquisites / Gifts / Benefits)"),
              lines(b_items), gap(3),
              box_head("C", "PENSION AND OTHERS"), lines(c_items), total_row, gap(3),
              box_head("D", "TOTAL DEDUCTION"), lines(d_items), gap(3),
              box_head("E", "CONTRIBUTIONS PAID BY EMPLOYEE TO APPROVED PROVIDENT / PENSION FUND AND SOCSO"), lines(e_items), gap(3),
-             box_head("F", ""), f_row, gap(4), sign, gap(3),
+             f_row, gap(4), sign, gap(3),
              PageBreak(),
              Paragraph(f"<b>Annexure - monthly payroll figures {year}: {xml_escape(row['name'])} ({xml_escape(e['emp_id'])})</b>", base), Spacer(1, 6)]
     data = [["Month", "Gross pay", "EPF (emp.)", "SOCSO (emp.)", "EIS (emp.)", "PCB"]]

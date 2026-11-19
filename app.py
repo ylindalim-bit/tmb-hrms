@@ -10730,14 +10730,14 @@ LEAVE_REPORT_TYPES = {
 }
 
 
-@app.route("/leave-report")
-def leave_report():
-    db = get_db()
-    year = request.args.get("year", type=int) or datetime.date.today().year
-    as_at = request.args.get("month", type=int) or 12   # entitlement/used counted up to the END of this month
+def _leave_report_data(db, args):
+    """Everything the Leave Taken Report page, its PDF and its Excel file show.
+    Filters: emp_id, base, dept, leave (one or more type codes, e.g. leave=AL&leave=MC; none = all types),
+    taken=1 (only staff who took one of the ticked leave types). month = entitlement / leave counted to end of this month."""
+    year = args.get("year", type=int) or datetime.date.today().year
+    as_at = args.get("month", type=int) or 12
     if as_at < 1 or as_at > 12:
         as_at = 12
-
     all_emps = db.execute(
         """SELECT emp_id, full_name, base, department, date_joined, last_working_day, resignation_date,
                   annual_leave_entitlement, al_bf_days, al_adjustment_days, mc_entitlement
@@ -10745,14 +10745,10 @@ def leave_report():
            WHERE status != 'Inactive'
            ORDER BY emp_id""",
     ).fetchall()  # Inactive (resigned/left) staff are not listed - HR's choice
-    # Filters: employee / base / department / type of leave (+ "only staff who took it").
-    flt = {"emp_id": (request.args.get("emp_id") or "").strip(),
-           "base": (request.args.get("base") or "").strip(),
-           "dept": (request.args.get("dept") or "").strip(),
-           "leave": (request.args.get("leave") or "").strip().upper(),
-           "taken": request.args.get("taken") == "1"}
-    if flt["leave"] not in LEAVE_REPORT_TYPES:
-        flt["leave"] = ""
+    ticked = {(x or "").strip().upper() for x in args.getlist("leave")}
+    types = [c for c in LEAVE_REPORT_TYPES if c in ticked]          # in the usual order
+    flt = {"emp_id": (args.get("emp_id") or "").strip(), "base": (args.get("base") or "").strip(),
+           "dept": (args.get("dept") or "").strip(), "types": types, "taken": args.get("taken") == "1"}
     emps = [e for e in all_emps
             if (not flt["emp_id"] or e["emp_id"] == flt["emp_id"])
             and (not flt["base"] or (e["base"] or "") == flt["base"])
@@ -10788,36 +10784,196 @@ def leave_report():
             "hl_used": round(totals["hl"], 2), "ul_used": round(totals["ul"], 2),
             "other_used": round(totals["other"], 2),
         })
+    if types and flt["taken"]:
+        rows = [r for r in rows if any(r[LEAVE_REPORT_TYPES[c][1]] > 0 for c in types)]
 
-    if flt["leave"] and flt["taken"]:
-        used_key = LEAVE_REPORT_TYPES[flt["leave"]][1]
-        rows = [r for r in rows if r[used_key] > 0]
+    # Leave taken month by month (Jan-Dec), one table per ticked type (Annual Leave if nothing is ticked).
+    month_types = types or ["AL"]
+    for code in month_types:
+        by_month = {}
+        for m in db.execute(
+            "SELECT emp_id, month, COALESCE(SUM(%s),0) AS d FROM attendance_monthly WHERE year=? GROUP BY emp_id, month"
+            % LEAVE_REPORT_TYPES[code][2], (year,)).fetchall():
+            by_month.setdefault(m["emp_id"], {})[m["month"]] = m["d"]
+        for r in rows:
+            mm = by_month.get(r["emp_id"], {})
+            r.setdefault("months", {})[code] = [round(mm.get(i, 0), 2) for i in range(1, 13)]
+            r.setdefault("months_used", {})[code] = round(sum(r["months"][code][:as_at]), 2)
+    month_totals = {code: [round(sum(r["months"][code][i] for r in rows), 2) for i in range(12)] for code in month_types}
 
-    years = db.execute("SELECT DISTINCT year FROM attendance_monthly ORDER BY year DESC").fetchall()
-    if not years:
-        years = [{"year": year}]
+    years = db.execute("SELECT DISTINCT year FROM attendance_monthly ORDER BY year DESC").fetchall() or [{"year": year}]
+    return {"rows": rows, "year": year, "years": years, "as_at": as_at, "flt": flt, "month_types": month_types,
+            "month_totals": month_totals, "month_labels": MONTH_NAMES[1:], "leave_types": LEAVE_REPORT_TYPES,
+            "emp_choices": all_emps,
+            "bases": sorted({e["base"] for e in all_emps if e["base"]}),
+            "depts": sorted({e["department"] for e in all_emps if e["department"]})}
 
-    # Leave taken month by month (Jan-Dec) - same attendance_monthly figures as "Used".
-    # AL unless another type of leave is chosen in the filter.
-    month_col = LEAVE_REPORT_TYPES.get(flt["leave"] or "AL")[2]
-    by_month = {}
-    for r in db.execute(
-        "SELECT emp_id, month, COALESCE(SUM(%s),0) AS d FROM attendance_monthly WHERE year=? GROUP BY emp_id, month" % month_col,
-        (year,),
-    ).fetchall():
-        by_month.setdefault(r["emp_id"], {})[r["month"]] = r["d"]
-    for r in rows:
-        mm = by_month.get(r["emp_id"], {})
-        r["lv_months"] = [round(mm.get(m, 0), 2) for m in range(1, 13)]
-        r["lv_used"] = round(sum(r["lv_months"][:as_at]), 2)
-    month_totals = [round(sum(r["lv_months"][i] for r in rows), 2) for i in range(12)]
 
-    return render_template("leave_report.html", rows=rows, year=year, years=years, as_at=as_at,
-                           month_totals=month_totals, month_labels=MONTH_NAMES[1:], flt=flt,
-                           leave_types=LEAVE_REPORT_TYPES,
-                           emp_choices=all_emps,
-                           bases=sorted({e["base"] for e in all_emps if e["base"]}),
-                           depts=sorted({e["department"] for e in all_emps if e["department"]}))
+def _leave_main_columns(types):
+    """(header, row key) for the main table - only the ticked leave types (all when none ticked)."""
+    cols = [("Emp ID", "emp_id"), ("Name", "full_name"), ("Base", "base"), ("Department", "department")]
+    if not types or "AL" in types:
+        cols += [("AL Entitlement", "al_entitlement"), ("AL B/F", "al_bf"), ("AL Adj", "al_adj"),
+                 ("AL Total Available", "al_total_available"), ("AL Used", "al_used"), ("AL Balance", "al_balance")]
+    if not types or "MC" in types:
+        cols += [("MC Entitlement", "mc_entitlement"), ("MC Used", "mc_used"), ("MC Balance", "mc_balance")]
+    if not types or "HL" in types:
+        cols += [("Hospitalisation Used", "hl_used")]
+    if not types or "UL" in types:
+        cols += [("Unpaid Leave", "ul_used")]
+    if not types or "OTHER" in types:
+        cols += [("Other Paid Leave", "other_used")]
+    return cols
+
+
+def _leave_report_title(d):
+    f = d["flt"]
+    bits = []
+    if f["emp_id"]:
+        bits.append("Employee " + f["emp_id"])
+    if f["base"]:
+        bits.append("Base " + f["base"])
+    if f["dept"]:
+        bits.append(f["dept"])
+    if f["types"]:
+        bits.append(", ".join(LEAVE_REPORT_TYPES[c][0] for c in f["types"]))
+    title = f"Leave Taken Report - {d['year']}"
+    if d["as_at"] < 12:
+        title += f" (counted to end of {d['month_labels'][d['as_at'] - 1]})"
+    return title, ", ".join(bits)
+
+
+@app.route("/leave-report")
+def leave_report():
+    d = _leave_report_data(get_db(), request.args)
+    return render_template("leave_report.html", **d)
+
+
+def _leave_file_name(d, ext):
+    name = f"Leave_Taken_{d['year']}"
+    for part in (d["flt"]["emp_id"], d["flt"]["base"], d["flt"]["dept"], *d["flt"]["types"]):
+        if part:
+            name += "_" + "".join(ch for ch in part if ch.isalnum())
+    return name + "." + ext
+
+
+@app.route("/leave-report/pdf")
+def leave_report_pdf():
+    d = _leave_report_data(get_db(), request.args)
+    title_text, filt_text = _leave_report_title(d)
+    styles = getSampleStyleSheet()
+    small = ParagraphStyle("lrsm", parent=styles["Normal"], fontSize=7.5, leading=9)
+    title = ParagraphStyle("lrtt", parent=styles["Title"], fontSize=15, spaceAfter=2, alignment=0)
+    sub = ParagraphStyle("lrsb", parent=styles["Normal"], fontSize=11, leading=14)
+    h2 = ParagraphStyle("lrh2", parent=styles["Normal"], fontSize=11, leading=14, fontName="Helvetica-Bold", spaceBefore=10, spaceAfter=4)
+
+    def style_table(t, ncols_text, last_total=False):
+        st = [("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1D4ED8")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+              ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+              ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (ncols_text, 0), (-1, -1), "RIGHT"),
+              ("LINEBELOW", (0, 1), (-1, -1), 0.25, colors.HexColor("#BFBFBF")),
+              ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]
+        if last_total:
+            st += [("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"), ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#F1F5F9"))]
+        t.setStyle(TableStyle(st))
+        return t
+
+    def num(v):
+        return f"{v:g}"
+
+    cols = _leave_main_columns(d["flt"]["types"])
+    data = [[h for h, _ in cols]]
+    for r in d["rows"]:
+        line = []
+        for h, k in cols:
+            v = r[k]
+            if k == "full_name":
+                line.append(Paragraph(xml_escape(v or ""), small))
+            elif k in ("emp_id", "base", "department"):
+                line.append(v or "-")
+            else:
+                line.append(num(v))
+        data.append(line)
+    if len(data) == 1:
+        data.append(["No employees match."] + [""] * (len(cols) - 1))
+    usable = 29.7 * cm - 3 * cm
+    widths = [1.5 * cm, 5.2 * cm, 1.2 * cm, 2.6 * cm]
+    rest = (usable - sum(widths)) / max(len(cols) - 4, 1)
+    widths += [rest] * (len(cols) - 4)
+    t1 = style_table(Table(data, colWidths=widths, repeatRows=1), 4)
+    # a negative balance shows in red
+    for ri, r in enumerate(d["rows"], start=1):
+        for ci, (h, k) in enumerate(cols):
+            if k in ("al_balance", "mc_balance") and r[k] < 0:
+                t1.setStyle(TableStyle([("TEXTCOLOR", (ci, ri), (ci, ri), colors.HexColor("#B91C1C"))]))
+    story = [Paragraph("TIANMA PRECISION SDN BHD", title), Paragraph(f"<b>{xml_escape(title_text)}</b>", sub)]
+    if filt_text:
+        story.append(Paragraph("Filter: " + xml_escape(filt_text), small))
+    story += [Paragraph(f"Printed {datetime.date.today().strftime('%d %B %Y')} - {len(d['rows'])} employees", small), Spacer(1, 6), t1]
+
+    for code in d["month_types"]:
+        label = LEAVE_REPORT_TYPES[code][0]
+        mh = [m[:3] for m in d["month_labels"][:d["as_at"]]]
+        mdata = [["Emp ID", "Name"] + mh + [code + " Used"]]
+        for r in d["rows"]:
+            mdata.append([r["emp_id"], Paragraph(xml_escape(r["full_name"] or ""), small)]
+                         + [num(v) if v else "-" for v in r["months"][code][:d["as_at"]]] + [num(r["months_used"][code])])
+        mdata.append(["Total", ""] + [num(v) if v else "-" for v in d["month_totals"][code][:d["as_at"]]]
+                     + [num(round(sum(r["months_used"][code] for r in d["rows"]), 2))])
+        mw = [1.5 * cm, 5.2 * cm]
+        mrest = (usable - sum(mw)) / (len(mdata[0]) - 2)
+        story += [Paragraph(f"{xml_escape(label)} taken by month - {d['year']}", h2),
+                  style_table(Table(mdata, colWidths=mw + [mrest] * (len(mdata[0]) - 2), repeatRows=1), 2, last_total=True)]
+
+    buf = io.BytesIO()
+    SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=1.5 * cm, rightMargin=1.5 * cm, topMargin=1.2 * cm,
+                      bottomMargin=1.2 * cm, title=title_text).build(story)
+    buf.seek(0)
+    return Response(buf.getvalue(), mimetype="application/pdf",
+                    headers={"Content-Disposition": f"inline; filename={_leave_file_name(d, 'pdf')}"})
+
+
+@app.route("/leave-report/export.xlsx")
+def leave_report_xlsx():
+    d = _leave_report_data(get_db(), request.args)
+    title_text, filt_text = _leave_report_title(d)
+    wb = openpyxl.Workbook()
+    hfont, hfill = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="1D4ED8")
+
+    def sheet(ws, headings, lines, total=None):
+        ws.cell(row=1, column=1, value="TIANMA PRECISION SDN BHD").font = Font(bold=True, size=14)
+        ws.cell(row=2, column=1, value=title_text + (" - " + filt_text if filt_text else "")).font = Font(bold=True)
+        for ci, h in enumerate(headings, start=1):
+            c = ws.cell(row=4, column=ci, value=h)
+            c.font, c.fill = hfont, hfill
+        for ri, line in enumerate(lines, start=5):
+            for ci, v in enumerate(line, start=1):
+                ws.cell(row=ri, column=ci, value=v)
+        if total:
+            ri = 5 + len(lines)
+            for ci, v in enumerate(total, start=1):
+                ws.cell(row=ri, column=ci, value=v).font = Font(bold=True)
+        ws.freeze_panes = "C5"
+        ws.column_dimensions["A"].width = 9
+        ws.column_dimensions["B"].width = 38
+        for ci in range(3, len(headings) + 1):
+            ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = 13
+
+    cols = _leave_main_columns(d["flt"]["types"])
+    ws = wb.active
+    ws.title = "Leave Taken"
+    sheet(ws, [h for h, _ in cols], [[r[k] for _, k in cols] for r in d["rows"]])
+    for code in d["month_types"]:
+        w = wb.create_sheet(LEAVE_REPORT_TYPES[code][0][:28] + " by month")
+        mh = [m[:3] for m in d["month_labels"][:d["as_at"]]]
+        lines = [[r["emp_id"], r["full_name"]] + r["months"][code][:d["as_at"]] + [r["months_used"][code]] for r in d["rows"]]
+        total = ["Total", ""] + d["month_totals"][code][:d["as_at"]] + [round(sum(r["months_used"][code] for r in d["rows"]), 2)]
+        sheet(w, ["Emp ID", "Name"] + mh + [code + " Used"], lines, total)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return Response(buf.getvalue(), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename={_leave_file_name(d, 'xlsx')}"})
 
 
 # ---------------- Training Records ----------------

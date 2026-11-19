@@ -2,6 +2,15 @@
 {% block title %}Recruitment - TMB Payroll{% endblock %}
 {% block content %}
 <h1>Recruitment</h1>
+{% if pending_candidate_docs_list %}
+<div class="card" style="background:#dbeafe; border-color:#93c5fd; max-width:900px;">
+  <strong>&#128206; New from candidates:</strong>
+  {% for c in pending_candidate_docs_list %}
+  <div style="margin-top:4px;"><a href="{{ url_for('recruitment_detail', app_id=c.id) }}" style="font-weight:700;">{{ c.name }}</a>
+    {% if c.what %}&mdash; uploaded {{ c.what|join(', ') }}{% endif %}{% if c.reupload %} &mdash; asked to re-upload{% endif %}</div>
+  {% endfor %}
+</div>
+{% endif %}
 
 {% if hr_role != "approver" %}
 <div class="card" style="max-width:640px;">

@@ -565,6 +565,7 @@ def inject_pending_counts():
                 "SELECT COUNT(*) AS c FROM job_applications WHERE status='New'"
             ).fetchone()["c"]
         pending_candidate_docs_count = 0
+        pending_candidate_docs_list = []
         if session.get("hr_role") != "approver":
             _ensure_candidate_lock_columns(db)
             _ensure_doc_source(db)
@@ -574,9 +575,26 @@ def inject_pending_counts():
                       OR EXISTS (SELECT 1 FROM job_application_documents d WHERE d.application_id = ja.id AND d.source='candidate'
                                  AND d.uploaded_at > COALESCE(ja.docs_seen_at, ''))"""
             ).fetchone()["c"]
+            if pending_candidate_docs_count:
+                # who, and what - shown in the menu badge's tooltip and as a note on the Recruitment page
+                for ja in db.execute(
+                    """SELECT ja.id, ja.full_name, ja.reupload_request FROM job_applications ja
+                       WHERE (ja.reupload_request IS NOT NULL AND ja.reupload_request != '')
+                          OR EXISTS (SELECT 1 FROM job_application_documents d WHERE d.application_id = ja.id AND d.source='candidate'
+                                     AND d.uploaded_at > COALESCE(ja.docs_seen_at, ''))
+                       ORDER BY ja.id""").fetchall():
+                    what = [r["doc_type"] for r in db.execute(
+                        """SELECT DISTINCT d.doc_type FROM job_application_documents d
+                           JOIN job_applications x ON x.id = d.application_id
+                           WHERE d.application_id=? AND d.source='candidate' AND d.uploaded_at > COALESCE(x.docs_seen_at, '')""",
+                        (ja["id"],)).fetchall()]
+                    pending_candidate_docs_list.append({
+                        "id": ja["id"], "name": ja["full_name"], "what": [w for w in what if w],
+                        "reupload": bool((ja["reupload_request"] or "").strip())})
     except sqlite3.OperationalError:
         return {}
     return {"pending_candidate_docs_count": pending_candidate_docs_count,
+            "pending_candidate_docs_list": pending_candidate_docs_list,
             "pending_leave_count": pending_leave_count, "pending_trip_count": pending_trip_count,
             "pending_medical_claim_count": pending_medical_claim_count,
             "pending_appraisal_count": pending_appraisal_count,

@@ -71,7 +71,7 @@
     </a>
     <a href="{{ url_for('recruitment_list') }}">Recruitment
       {% if pending_recruitment_count %}<span class="pill draft" style="margin-left:3px;">{{ pending_recruitment_count }}</span>{% endif %}
-      {% if pending_candidate_docs_count %}<span class="pill" style="margin-left:3px; background:#dbeafe; color:#1d4ed8;" title="Candidates have uploaded new documents or asked to re-upload">&#128206; {{ pending_candidate_docs_count }}</span>{% endif %}
+      {% if pending_candidate_docs_count %}<span class="pill" style="margin-left:3px; background:#dbeafe; color:#1d4ed8;" title="{% for c in pending_candidate_docs_list %}{{ c.name }}{% if c.what %} - {{ c.what|join(', ') }}{% endif %}{% if not loop.last %}&#10;{% endif %}{% endfor %}">&#128206; {% if pending_candidate_docs_count == 1 and pending_candidate_docs_list %}{{ pending_candidate_docs_list[0].name.split()[0] }}{% else %}{{ pending_candidate_docs_count }}{% endif %}</span>{% endif %}
     </a>
     <a href="{{ url_for('payroll_settings_page') }}">Settings</a>
     <a href="{{ url_for('clockin_locations_page') }}">Clock-In Locations</a>

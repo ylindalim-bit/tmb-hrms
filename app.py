@@ -9879,6 +9879,9 @@ def portal_leave():
     db = get_db()
     emp = current_portal_employee(db)
     error = None
+    if request.args.get("doc_msg") == "last":
+        error = ("A medical leave request must keep at least one document. Upload the correct file first "
+                 "(+ Add), then delete the wrong one.")
     if request.method == "POST":
         leave_type = request.form.get("leave_type", "").strip()
         start_date = request.form.get("start_date", "")
@@ -10099,6 +10102,35 @@ def portal_leave_document_add(request_id):
             (request_id, original_name, stored_name, datetime.datetime.now().isoformat(timespec="seconds")),
         )
     db.commit()
+    return redirect(url_for("portal_leave"))
+
+
+@app.route("/portal/leave/document/<int:doc_id>/delete", methods=["POST"])
+@portal_login_required
+def portal_leave_document_delete(doc_id):
+    """Lets an employee remove a wrong attachment from their own leave request - only while it is
+    still Pending. A Medical / Hospitalisation request must keep at least one document, so the
+    last one can only be replaced (upload the right file first, then delete the wrong one)."""
+    db = get_db()
+    emp = current_portal_employee(db)
+    doc = db.execute(
+        """SELECT lrd.*, lr.leave_type FROM leave_request_documents lrd
+           JOIN leave_requests lr ON lr.id = lrd.leave_request_id
+           WHERE lrd.id=? AND lr.emp_id=? AND lr.status='Pending'""",
+        (doc_id, emp["emp_id"]),
+    ).fetchone()
+    if doc is None:
+        abort(404)
+    remaining = db.execute("SELECT COUNT(*) AS c FROM leave_request_documents WHERE leave_request_id=?",
+                           (doc["leave_request_id"],)).fetchone()["c"]
+    if doc["leave_type"] in LEAVE_DOC_REQUIRED_TYPES and remaining <= 1:
+        return redirect(url_for("portal_leave", doc_msg="last"))
+    db.execute("DELETE FROM leave_request_documents WHERE id=?", (doc_id,))
+    db.commit()
+    try:
+        os.remove(os.path.join(UPLOAD_DIR, emp["emp_id"], doc["stored_name"]))
+    except OSError:
+        pass
     return redirect(url_for("portal_leave"))
 
 

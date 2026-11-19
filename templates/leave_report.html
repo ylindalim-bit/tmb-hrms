@@ -22,16 +22,43 @@
   <div class="month-nav">
     <span>Year:</span>
     {% for y in years %}
-    <a href="{{ url_for('leave_report', year=y.year, month=as_at) }}" style="{% if y.year == year %}font-weight:700;{% endif %}">{{ y.year }}</a>
+    <a href="{{ url_for('leave_report', year=y.year, month=as_at, emp_id=flt.emp_id, base=flt.base, dept=flt.dept, leave=flt.leave, taken=1 if flt.taken else None) }}" style="{% if y.year == year %}font-weight:700;{% endif %}">{{ y.year }}</a>
     {% endfor %}
-    <form method="get" style="display:inline-flex; gap:6px; align-items:center; margin-left:24px;">
-      <input type="hidden" name="year" value="{{ year }}">
-      <label style="margin:0; font-weight:600;">Entitlement &amp; leave counted up to end of:</label>
+  </div>
+  <form method="get" id="lr-form" style="display:flex; flex-wrap:wrap; gap:10px 16px; align-items:flex-end; margin-top:6px;">
+    <input type="hidden" name="year" value="{{ year }}">
+    <div><label style="margin:0; font-weight:600; font-size:12px;">Employee</label><br>
+      <select name="emp_id" style="width:auto; max-width:230px;" onchange="this.form.submit()">
+        <option value="">All employees</option>
+        {% for e in emp_choices %}<option value="{{ e.emp_id }}" {% if e.emp_id == flt.emp_id %}selected{% endif %}>{{ e.emp_id }} - {{ e.full_name }}</option>{% endfor %}
+      </select></div>
+    <div><label style="margin:0; font-weight:600; font-size:12px;">Base</label><br>
+      <select name="base" style="width:auto;" onchange="this.form.submit()">
+        <option value="">All bases</option>
+        {% for b in bases %}<option value="{{ b }}" {% if b == flt.base %}selected{% endif %}>{{ b }}</option>{% endfor %}
+      </select></div>
+    <div><label style="margin:0; font-weight:600; font-size:12px;">Department</label><br>
+      <select name="dept" style="width:auto;" onchange="this.form.submit()">
+        <option value="">All departments</option>
+        {% for d in depts %}<option value="{{ d }}" {% if d == flt.dept %}selected{% endif %}>{{ d }}</option>{% endfor %}
+      </select></div>
+    <div><label style="margin:0; font-weight:600; font-size:12px;">Type of leave</label><br>
+      <select name="leave" style="width:auto;" onchange="this.form.submit()">
+        <option value="">All types</option>
+        {% for code, t in leave_types.items() %}<option value="{{ code }}" {% if code == flt.leave %}selected{% endif %}>{{ t[0] }}</option>{% endfor %}
+      </select></div>
+    <div><label style="margin:0; font-weight:600; font-size:12px;">Counted up to end of</label><br>
       <select name="month" style="width:auto;" onchange="this.form.submit()">
         {% for m in month_labels %}<option value="{{ loop.index }}" {% if loop.index == as_at %}selected{% endif %}>{{ m }}{% if loop.index == 12 %} (full year){% endif %}</option>{% endfor %}
-      </select>
-    </form>
-  </div>
+      </select></div>
+    {% if flt.leave %}
+    <label style="margin:0 0 6px; font-size:13px; display:flex; align-items:center; gap:5px;">
+      <input type="checkbox" name="taken" value="1" {% if flt.taken %}checked{% endif %} onchange="this.form.submit()" style="width:auto;"> Only staff who took {{ leave_types[flt.leave][0] }}</label>
+    {% endif %}
+    {% if flt.emp_id or flt.base or flt.dept or flt.leave %}
+    <a class="btn secondary" href="{{ url_for('leave_report', year=year, month=as_at) }}" style="margin-bottom:4px;">Clear filters</a>
+    {% endif %}
+  </form>
   <div style="font-size:12px; color:var(--muted); margin-top:4px;">
     AL Entitlement = full-year days &times; days from 1 Jan (or Date Joined, if later) to the end of {{ month_labels[as_at-1] }}
     (or Last Working Day, if earlier) &divide; days in {{ year }}. Leave Used is Jan&ndash;{{ month_labels[as_at-1][:3] }} only.
@@ -40,16 +67,21 @@
 <div class="print-only" style="margin-bottom:12px;">
   <strong>TIANMA PRECISION SDN BHD</strong><br>
   Leave Taken Report &mdash; {{ year }}{% if as_at < 12 %} (entitlement and leave counted to end of {{ month_labels[as_at-1] }}){% endif %}
+  {% if flt.emp_id or flt.base or flt.dept or flt.leave %}<br>Filter:
+    {% if flt.emp_id %}Employee {{ flt.emp_id }}{% endif %}{% if flt.base %} Base {{ flt.base }}{% endif %}{% if flt.dept %} Dept {{ flt.dept }}{% endif %}{% if flt.leave %} Leave: {{ leave_types[flt.leave][0] }}{% endif %}{% endif %}
 </div>
 
+{% set lv = flt.leave %}
 <div class="card table-wrap frozen-header">
 <table>
 <thead>
 <tr>
-  <th class="text">Emp ID</th><th class="text">Name</th><th class="text">Department</th>
-  <th>AL Entitlement</th><th>AL B/F</th><th>AL Adj</th><th>AL Total Available</th><th>AL Used</th><th>AL Balance</th>
-  <th>MC Entitlement</th><th>MC Used</th><th>MC Balance</th>
-  <th>Hospitalisation Used</th><th>Unpaid Leave</th><th>Other Paid Leave</th>
+  <th class="text">Emp ID</th><th class="text">Name</th><th class="text">Base</th><th class="text">Department</th>
+  {% if lv in ('', 'AL') %}<th>AL Entitlement</th><th>AL B/F</th><th>AL Adj</th><th>AL Total Available</th><th>AL Used</th><th>AL Balance</th>{% endif %}
+  {% if lv in ('', 'MC') %}<th>MC Entitlement</th><th>MC Used</th><th>MC Balance</th>{% endif %}
+  {% if lv in ('', 'HL') %}<th>Hospitalisation Used</th>{% endif %}
+  {% if lv in ('', 'UL') %}<th>Unpaid Leave</th>{% endif %}
+  {% if lv in ('', 'OTHER') %}<th>Other Paid Leave</th>{% endif %}
 </tr>
 </thead>
 <tbody>
@@ -57,41 +89,47 @@
 <tr>
   <td class="text">{{ r.emp_id }}</td>
   <td class="text">{{ r.full_name }}
-    {% if r.al_note %}<br><span style="font-size:11px; color:var(--muted); font-style:italic;">{{ r.al_note }}</span>{% endif %}
+    {% if r.al_note and lv in ('', 'AL') %}<br><span style="font-size:11px; color:var(--muted); font-style:italic;">{{ r.al_note }}</span>{% endif %}
   </td>
+  <td class="text">{{ r.base or "-" }}</td>
   <td class="text">{{ r.department or "-" }}</td>
+  {% if lv in ('', 'AL') %}
   <td>{{ r.al_entitlement }}</td>
   <td>{{ r.al_bf }}</td>
   <td>{{ r.al_adj }}</td>
   <td>{{ r.al_total_available }}</td>
   <td>{{ r.al_used }}</td>
   <td {% if r.al_balance < 0 %}style="color:var(--danger); font-weight:700;"{% endif %}>{{ r.al_balance }}</td>
+  {% endif %}
+  {% if lv in ('', 'MC') %}
   <td>{{ r.mc_entitlement }}</td>
   <td>{{ r.mc_used }}</td>
   <td {% if r.mc_balance < 0 %}style="color:var(--danger); font-weight:700;"{% endif %}>{{ r.mc_balance }}</td>
-  <td>{{ r.hl_used }}</td>
-  <td>{{ r.ul_used }}</td>
-  <td>{{ r.other_used }}</td>
+  {% endif %}
+  {% if lv in ('', 'HL') %}<td>{{ r.hl_used }}</td>{% endif %}
+  {% if lv in ('', 'UL') %}<td>{{ r.ul_used }}</td>{% endif %}
+  {% if lv in ('', 'OTHER') %}<td>{{ r.other_used }}</td>{% endif %}
 </tr>
 {% endfor %}
 {% if not rows %}
-<tr><td class="text" colspan="15">No active employees.</td></tr>
+<tr><td class="text" colspan="15">No employees match.</td></tr>
 {% endif %}
 </tbody>
 </table>
 </div>
 <p><strong>Total Headcount: {{ rows|length }} employees</strong></p>
 
-<h2 style="margin-top:24px;">Annual Leave Taken by Month &mdash; {{ year }} (Jan&ndash;{{ month_labels[as_at-1][:3] }})</h2>
-<p style="color:var(--muted); font-size:12px; margin-top:-6px;">Days of Annual Leave taken in each month (half-day = 0.5). AL Used is the sum of Jan&ndash;Dec; AL Balance = AL Total Available &minus; AL Used.</p>
+{% set lname = leave_types[lv or 'AL'][0] %}
+<h2 style="margin-top:24px;">{{ lname }} Taken by Month &mdash; {{ year }} (Jan&ndash;{{ month_labels[as_at-1][:3] }})</h2>
+<p style="color:var(--muted); font-size:12px; margin-top:-6px;">Days of {{ lname }} taken in each month (half-day = 0.5).{% if lv in ('', 'AL') %} AL Balance = AL Total Available &minus; AL Used.{% endif %}</p>
 <div class="card table-wrap frozen-header">
 <table>
 <thead>
 <tr>
   <th class="text">Emp ID</th><th class="text">Name</th>
-  <th>AL Entitlement</th><th>AL B/F</th><th>AL Adj</th><th>AL Total Available</th>
+  {% if lv in ('', 'AL') %}<th>AL Entitlement</th><th>AL B/F</th><th>AL Adj</th><th>AL Total Available</th>{% endif %}
   {% for m in month_labels[:as_at] %}<th>{{ m[:3] }}</th>{% endfor %}
-  <th>AL Used</th><th>AL Balance</th>
+  <th>{{ lv or 'AL' }} Used</th>{% if lv in ('', 'AL') %}<th>AL Balance</th>{% endif %}
 </tr>
 </thead>
 <tbody>
@@ -99,24 +137,28 @@
 <tr>
   <td class="text">{{ r.emp_id }}</td>
   <td class="text">{{ r.full_name }}</td>
+  {% if lv in ('', 'AL') %}
   <td>{{ '%g'|format(r.al_entitlement) }}</td>
   <td>{{ '%g'|format(r.al_bf) }}</td>
   <td>{{ '%g'|format(r.al_adj) }}</td>
   <td>{{ '%g'|format(r.al_total_available) }}</td>
-  {% for v in r.al_months[:as_at] %}<td{% if not v %} style="color:var(--muted);"{% endif %}>{{ ('%g'|format(v)) if v else '-' }}</td>{% endfor %}
-  <td><strong>{{ '%g'|format(r.al_used) }}</strong></td>
-  <td {% if r.al_balance < 0 %}style="color:var(--danger); font-weight:700;"{% endif %}>{{ '%g'|format(r.al_balance) }}</td>
+  {% endif %}
+  {% for v in r.lv_months[:as_at] %}<td{% if not v %} style="color:var(--muted);"{% endif %}>{{ ('%g'|format(v)) if v else '-' }}</td>{% endfor %}
+  <td><strong>{{ '%g'|format(r.lv_used) }}</strong></td>
+  {% if lv in ('', 'AL') %}<td {% if r.al_balance < 0 %}style="color:var(--danger); font-weight:700;"{% endif %}>{{ '%g'|format(r.al_balance) }}</td>{% endif %}
 </tr>
 {% endfor %}
 <tr style="font-weight:700; background:#f1f5f9;">
-  <td class="text" colspan="2">Total all staff</td>
+  <td class="text" colspan="2">Total {% if flt.emp_id or flt.base or flt.dept %}(filtered){% else %}all staff{% endif %}</td>
+  {% if lv in ('', 'AL') %}
   <td>{{ '%g'|format(rows|sum(attribute='al_entitlement')|round(2)) }}</td>
   <td>{{ '%g'|format(rows|sum(attribute='al_bf')|round(2)) }}</td>
   <td>{{ '%g'|format(rows|sum(attribute='al_adj')|round(2)) }}</td>
   <td>{{ '%g'|format(rows|sum(attribute='al_total_available')|round(2)) }}</td>
+  {% endif %}
   {% for v in month_totals[:as_at] %}<td>{{ ('%g'|format(v)) if v else '-' }}</td>{% endfor %}
-  <td>{{ '%g'|format(rows|sum(attribute='al_used')|round(2)) }}</td>
-  <td>{{ '%g'|format(rows|sum(attribute='al_balance')|round(2)) }}</td>
+  <td>{{ '%g'|format(rows|sum(attribute='lv_used')|round(2)) }}</td>
+  {% if lv in ('', 'AL') %}<td>{{ '%g'|format(rows|sum(attribute='al_balance')|round(2)) }}</td>{% endif %}
 </tr>
 </tbody>
 </table>

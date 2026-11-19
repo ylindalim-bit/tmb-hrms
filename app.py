@@ -10720,6 +10720,16 @@ def _al_entitlement_as_at(e, year, month):
     return round(full * days / days_in_year, 2), note
 
 
+# code -> (label, key of the "used" figure in the report rows, attendance_monthly column)
+LEAVE_REPORT_TYPES = {
+    "AL": ("Annual Leave", "al_used", "al_days"),
+    "MC": ("Medical Leave (MC)", "mc_used", "mc_days"),
+    "HL": ("Hospitalisation Leave", "hl_used", "hl_days"),
+    "UL": ("Unpaid Leave", "ul_used", "ul_days"),
+    "OTHER": ("Other Paid Leave", "other_used", "other_paid_leave"),
+}
+
+
 @app.route("/leave-report")
 def leave_report():
     db = get_db()
@@ -10728,13 +10738,25 @@ def leave_report():
     if as_at < 1 or as_at > 12:
         as_at = 12
 
-    emps = db.execute(
-        """SELECT emp_id, full_name, department, date_joined, last_working_day, resignation_date,
+    all_emps = db.execute(
+        """SELECT emp_id, full_name, base, department, date_joined, last_working_day, resignation_date,
                   annual_leave_entitlement, al_bf_days, al_adjustment_days, mc_entitlement
            FROM employees
            WHERE status != 'Inactive'
            ORDER BY emp_id""",
     ).fetchall()  # Inactive (resigned/left) staff are not listed - HR's choice
+    # Filters: employee / base / department / type of leave (+ "only staff who took it").
+    flt = {"emp_id": (request.args.get("emp_id") or "").strip(),
+           "base": (request.args.get("base") or "").strip(),
+           "dept": (request.args.get("dept") or "").strip(),
+           "leave": (request.args.get("leave") or "").strip().upper(),
+           "taken": request.args.get("taken") == "1"}
+    if flt["leave"] not in LEAVE_REPORT_TYPES:
+        flt["leave"] = ""
+    emps = [e for e in all_emps
+            if (not flt["emp_id"] or e["emp_id"] == flt["emp_id"])
+            and (not flt["base"] or (e["base"] or "") == flt["base"])
+            and (not flt["dept"] or (e["department"] or "") == flt["dept"])]
 
     rows = []
     for e in emps:
@@ -10756,7 +10778,7 @@ def leave_report():
             bf_only = adj_only = 0
         al_total_available = al_entitlement + al_bf
         rows.append({
-            "emp_id": e["emp_id"], "full_name": e["full_name"], "department": e["department"],
+            "emp_id": e["emp_id"], "full_name": e["full_name"], "department": e["department"], "base": e["base"],
             "al_entitlement": round(al_entitlement, 2), "al_bf": round(bf_only, 2), "al_adj": round(adj_only, 2),
             "al_total_available": round(al_total_available, 2),
             "al_used": round(totals["al"], 2),
@@ -10767,24 +10789,35 @@ def leave_report():
             "other_used": round(totals["other"], 2),
         })
 
+    if flt["leave"] and flt["taken"]:
+        used_key = LEAVE_REPORT_TYPES[flt["leave"]][1]
+        rows = [r for r in rows if r[used_key] > 0]
+
     years = db.execute("SELECT DISTINCT year FROM attendance_monthly ORDER BY year DESC").fetchall()
     if not years:
         years = [{"year": year}]
 
-    # AL taken month by month (Jan-Dec) - same attendance_monthly figures as "AL Used".
+    # Leave taken month by month (Jan-Dec) - same attendance_monthly figures as "Used".
+    # AL unless another type of leave is chosen in the filter.
+    month_col = LEAVE_REPORT_TYPES.get(flt["leave"] or "AL")[2]
     by_month = {}
     for r in db.execute(
-        "SELECT emp_id, month, COALESCE(SUM(al_days),0) AS al FROM attendance_monthly WHERE year=? GROUP BY emp_id, month",
+        "SELECT emp_id, month, COALESCE(SUM(%s),0) AS d FROM attendance_monthly WHERE year=? GROUP BY emp_id, month" % month_col,
         (year,),
     ).fetchall():
-        by_month.setdefault(r["emp_id"], {})[r["month"]] = r["al"]
+        by_month.setdefault(r["emp_id"], {})[r["month"]] = r["d"]
     for r in rows:
         mm = by_month.get(r["emp_id"], {})
-        r["al_months"] = [round(mm.get(m, 0), 2) for m in range(1, 13)]
-    month_totals = [round(sum(r["al_months"][i] for r in rows), 2) for i in range(12)]
+        r["lv_months"] = [round(mm.get(m, 0), 2) for m in range(1, 13)]
+        r["lv_used"] = round(sum(r["lv_months"][:as_at]), 2)
+    month_totals = [round(sum(r["lv_months"][i] for r in rows), 2) for i in range(12)]
 
     return render_template("leave_report.html", rows=rows, year=year, years=years, as_at=as_at,
-                           month_totals=month_totals, month_labels=MONTH_NAMES[1:])
+                           month_totals=month_totals, month_labels=MONTH_NAMES[1:], flt=flt,
+                           leave_types=LEAVE_REPORT_TYPES,
+                           emp_choices=all_emps,
+                           bases=sorted({e["base"] for e in all_emps if e["base"]}),
+                           depts=sorted({e["department"] for e in all_emps if e["department"]}))
 
 
 # ---------------- Training Records ----------------

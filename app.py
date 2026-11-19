@@ -11177,13 +11177,13 @@ def _ea_story(row, year, employer, styles):
                               ("LEFTPADDING", (0, 0), (0, 0), 4), ("RIGHTPADDING", (1, 0), (1, 0), 0)]))
     big = ParagraphStyle("eabig", parent=ctrb, fontSize=13, leading=15)
     head = Table([
-        [Paragraph("(C.P.8A - Pin. 2023)", base), Paragraph("MALAYSIA", ctr), tbox],
-        [Paragraph(f"Serial No. {dots(18)}", base), Paragraph("INCOME TAX", big),
+        [Paragraph("(C.P.8A - Pin. 2023)", base),
+         Paragraph("MALAYSIA<br/><font size=13><b>INCOME TAX</b></font>", ParagraphStyle("eamy", parent=ctr, leading=15)), tbox],
+        [Paragraph(f"Serial No. {dots(18)}", base),
+         Paragraph("<b>STATEMENT OF REMUNERATION FROM EMPLOYMENT<br/>FOR THE YEAR ENDED 31 DECEMBER " + str(year) + "</b>", ctr),
          Paragraph(f"Employee's Tax Identification No. (TIN)<br/><b>{esc(e['tax_no'])}</b>", base)],
-        [Paragraph(f"Employer's No. E &nbsp;<b>{esc(employer.get('income_tax_employer_no'))}</b>", base),
-         Paragraph("<b>STATEMENT OF REMUNERATION FROM EMPLOYMENT</b>", ctr),
-         Paragraph(f"LHDNM State {dots(20)}", base)],
-        ["", Paragraph(f"<b>FOR THE YEAR ENDED 31 DECEMBER {year}</b>", ctr), ""]],
+        [Paragraph(f"Employer's No. E &nbsp;<b>{esc(employer.get('income_tax_employer_no'))}</b>", base), "",
+         Paragraph(f"LHDNM State {dots(20)}", base)]],
         colWidths=[4.6 * cm, 8.4 * cm, 5.0 * cm])
     head.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 1.5),
                               ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5), ("ALIGN", (2, 0), (2, 0), "RIGHT")]))

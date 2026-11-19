@@ -11775,6 +11775,22 @@ def hr_add_leave_request():
                             leave_types=LEAVE_TYPES)
 
 
+@app.route("/leave-requests/<int:request_id>/reason", methods=["POST"])
+def leave_request_set_reason(request_id):
+    """HR: add or change the reason text on a leave request (pending or already reviewed), e.g. 'Personal matter'.
+    Only the reason text changes - dates, days and status are untouched."""
+    if session.get("hr_role") == "approver":
+        abort(403)
+    db = get_db()
+    lr = db.execute("SELECT id FROM leave_requests WHERE id=?", (request_id,)).fetchone()
+    if lr is None:
+        abort(404)
+    reason = (request.form.get("reason") or "").strip()[:300] or None
+    db.execute("UPDATE leave_requests SET reason=? WHERE id=?", (reason, request_id))
+    db.commit()
+    return redirect(request.referrer or url_for("leave_requests_admin"))
+
+
 @app.route("/leave-requests/<int:request_id>/delete", methods=["POST"])
 def delete_leave_request(request_id):
     """HR-only: removes a leave request record entirely (e.g. test/bad

@@ -57,7 +57,12 @@
         <td class="text">{{ lr.destination or "-" }}</td>
         <td class="text">{{ lr.start_date }}{% if lr.half_day %}<div style="font-size:11px; color:var(--muted);">Half day &mdash; {{ {'AM': 'morning off', 'PM': 'afternoon off', 'tAM': 'morning', 'tPM': 'afternoon'}[lr.half_day] }}</div>{% else %} &ndash; {{ lr.end_date }}{% endif %}</td>
         <td>{{ lr.days }}</td>
-        <td class="text">{{ lr.reason or "" }}</td>
+        <td class="text">{{ lr.reason or "" }}{% if lr.source == "leave" and hr_role != "approver" %}
+          <form method="post" action="{{ url_for('leave_request_set_reason', request_id=lr.id) }}" class="no-print" style="display:block; margin-top:2px;"
+                onsubmit="var m = prompt('Reason for this leave:', this.reason.value); if (m === null) return false; this.reason.value = m; return true;">
+            <input type="hidden" name="reason" value="{{ lr.reason or '' }}">
+            <button type="submit" style="border:0; background:none; color:#1d4ed8; cursor:pointer; font-size:11px; padding:0;">{% if lr.reason %}edit reason{% else %}+ add reason{% endif %}</button>
+          </form>{% endif %}</td>
         <td class="text">
           {% if lr.source == "change" %}
           <span style="color:var(--muted); font-size:12px;">Cancellation request &mdash; no document</span>
@@ -147,7 +152,12 @@
         <td class="text">{{ lr.destination or "-" }}</td>
         <td class="text">{{ lr.start_date }}{% if lr.half_day %}<div style="font-size:11px; color:var(--muted);">Half day &mdash; {{ {'AM': 'morning off', 'PM': 'afternoon off', 'tAM': 'morning', 'tPM': 'afternoon'}[lr.half_day] }}</div>{% else %} &ndash; {{ lr.end_date }}{% endif %}</td>
         <td>{{ lr.days }}</td>
-        <td class="text">{{ lr.reason or "" }}</td>
+        <td class="text">{{ lr.reason or "" }}{% if lr.source == "leave" and hr_role != "approver" %}
+          <form method="post" action="{{ url_for('leave_request_set_reason', request_id=lr.id) }}" class="no-print" style="display:block; margin-top:2px;"
+                onsubmit="var m = prompt('Reason for this leave:', this.reason.value); if (m === null) return false; this.reason.value = m; return true;">
+            <input type="hidden" name="reason" value="{{ lr.reason or '' }}">
+            <button type="submit" style="border:0; background:none; color:#1d4ed8; cursor:pointer; font-size:11px; padding:0;">{% if lr.reason %}edit reason{% else %}+ add reason{% endif %}</button>
+          </form>{% endif %}</td>
         <td class="text">
           <span class="pill {% if lr.status == 'Approved' %}finalized{% else %}rejected{% endif %}">{{ lr.status }}</span>
         </td>

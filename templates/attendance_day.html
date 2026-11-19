@@ -65,9 +65,10 @@
   a forgotten clock-in, or not entered yet; the system can't tell which. The Edit link opens the person's whole month.
 </p>
 
-<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+<div class="no-print" style="font-size:12px; color:var(--muted); margin-bottom:4px;">Tick a status to see only those staff (e.g. tick <strong>No record</strong>). Tick several to see them together; untick all to see everyone.</div>
+<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; align-items:center;">
   {% for key, label in category_labels.items() %}{% if counts.get(key) %}
-  <span class="pill status-chip" data-key="{{ key }}" style="{{ pill_style[key] }} font-size:13px; padding:4px 10px;">{{ label }}: <span class="chip-n">{{ counts[key] }}</span></span>
+  <label class="pill status-chip" data-key="{{ key }}" style="{{ pill_style[key] }} font-size:13px; padding:4px 10px; display:inline-flex; align-items:center; gap:6px; cursor:pointer; margin:0;"><input type="checkbox" class="chip-pick" value="{{ key }}" style="width:auto; margin:0;"> {{ label }}: <span class="chip-n">{{ counts[key] }}</span></label>
   {% endif %}{% endfor %}
 </div>
 
@@ -124,8 +125,34 @@
 </form>
 <p><strong>Showing <span id="shown-count">{{ rows|length }}</span> employees</strong></p>
 <script>
+var currentBase = '';
+function pickedCategories() {
+  return Array.prototype.map.call(document.querySelectorAll('.chip-pick:checked'), function (cb) { return cb.value; });
+}
+// Shows the rows of the chosen base (All = everyone) and, if any status boxes are ticked, only those statuses.
+function applyDayFilters() {
+  var base = currentBase, cats = pickedCategories(), shown = 0, tally = {};
+  document.querySelectorAll('#day-table tbody tr').forEach(function (row) {
+    var inBase = !base || row.dataset.base === base;
+    if (inBase) { tally[row.dataset.category] = (tally[row.dataset.category] || 0) + 1; }
+    var visible = inBase && (!cats.length || cats.indexOf(row.dataset.category) !== -1);
+    row.style.display = visible ? '' : 'none';
+    if (visible) shown++;
+  });
+  document.getElementById('shown-count').textContent = shown;
+  // The status chips (Present, On leave, ...) count the base being shown, not the whole company.
+  document.querySelectorAll('.status-chip').forEach(function (chip) {
+    var n = tally[chip.dataset.key] || 0;
+    chip.querySelector('.chip-n').textContent = n;
+    chip.style.display = (n || chip.querySelector('.chip-pick').checked) ? 'inline-flex' : 'none';
+  });
+  document.querySelectorAll('.base-filter-btn').forEach(function (btn) {
+    btn.classList.toggle('secondary', btn.dataset.base !== base);
+  });
+}
+document.querySelectorAll('.chip-pick').forEach(function (cb) { cb.addEventListener('change', applyDayFilters); });
 function filterByBase(base) {
-  var shown = 0;
+  currentBase = base || '';
   var baseField = document.getElementById('day-form-base');
   if (baseField) baseField.value = base;
   var ml = document.getElementById('multi-link');
@@ -133,25 +160,7 @@ function filterByBase(base) {
   // Remember the chosen base, so the next day / next page you open stays on it (All clears it).
   try { localStorage.setItem('tmbAttendanceBase', base || ''); } catch (e) {}
   try { history.replaceState(null, '', base ? '?base=' + encodeURIComponent(base) : location.pathname); } catch (e) {}
-  document.querySelectorAll('#day-table tbody tr').forEach(function (row) {
-    var visible = !base || row.dataset.base === base;
-    row.style.display = visible ? '' : 'none';
-    if (visible) shown++;
-  });
-  document.getElementById('shown-count').textContent = shown;
-  // The status chips (Present, On leave, ...) follow the base being shown, not the whole company.
-  var tally = {};
-  document.querySelectorAll('#day-table tbody tr').forEach(function (row) {
-    if (row.style.display !== 'none') { tally[row.dataset.category] = (tally[row.dataset.category] || 0) + 1; }
-  });
-  document.querySelectorAll('.status-chip').forEach(function (chip) {
-    var n = tally[chip.dataset.key] || 0;
-    chip.querySelector('.chip-n').textContent = n;
-    chip.style.display = n ? '' : 'none';
-  });
-  document.querySelectorAll('.base-filter-btn').forEach(function (btn) {
-    btn.classList.toggle('secondary', btn.dataset.base !== base);
-  });
+  applyDayFilters();
 }
 // Rows you edit are sent with the form; untouched rows are not.
 (function () {

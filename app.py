@@ -11086,7 +11086,7 @@ def ea_form_page():
     year, scope = _ea_args(db)
     rows = _ea_rows(db, year, scope)
     years = [r["year"] for r in db.execute("SELECT DISTINCT year FROM payroll_runs ORDER BY year DESC").fetchall()] or [year]
-    return render_template("ea_form.html", rows=rows, year=year, scope=scope, years=years,
+    return render_template("ea_form.html", rows=rows, year=year, scope=scope, years=years, released=_ea_released(db, year),
                            employer=get_employer_info(db), today=datetime.date.today())
 
 
@@ -11340,6 +11340,61 @@ def ea_form_xlsx():
     buf.seek(0)
     return Response(buf.getvalue(), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f"attachment; filename=EA_Form_{year}_summary.xlsx"})
+
+
+def _ea_released(db, year):
+    r = db.execute("SELECT value FROM payroll_settings WHERE key=?", (f"ea_released_{year}",)).fetchone()
+    return bool(r and r["value"] == "Y")
+
+
+@app.route("/ea-form/release", methods=["POST"])
+def ea_form_release():
+    """HR switches the EA Form of a year on / off in the Staff Portal (staff can only see it once released)."""
+    if session.get("hr_role") == "approver":
+        abort(403)
+    db = get_db()
+    year = request.form.get("year", type=int)
+    if not year:
+        abort(400)
+    on = "Y" if request.form.get("release") == "1" else "N"
+    db.execute("INSERT INTO payroll_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+               (f"ea_released_{year}", on))
+    db.commit()
+    return redirect(url_for("ea_form_page", year=year, scope=request.form.get("scope") or "resigned"))
+
+
+@app.route("/portal/ea-form")
+@portal_login_required
+def portal_ea_form():
+    db = get_db()
+    emp = current_portal_employee(db)
+    this_year = datetime.date.today().year
+    items = []
+    for y in range(this_year, this_year - 6, -1):
+        has = db.execute("SELECT COUNT(*) AS c FROM payroll_runs WHERE emp_id=? AND year=? AND finalized_at IS NOT NULL AND gross_pay > 0",
+                         (emp["emp_id"], y)).fetchone()["c"]
+        if has:
+            items.append({"year": y, "released": _ea_released(db, y)})
+    return render_template("portal_ea_form.html", emp=emp, items=items)
+
+
+@app.route("/portal/ea-form/<int:year>/pdf")
+@portal_login_required
+def portal_ea_form_pdf(year):
+    db = get_db()
+    emp = current_portal_employee(db)
+    if not _ea_released(db, year):
+        abort(404)
+    rows = [r for r in _ea_rows(db, year, "all") if r["emp_id"] == emp["emp_id"]]
+    if not rows:
+        abort(404)
+    buf = io.BytesIO()
+    SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.5 * cm, rightMargin=1.5 * cm, topMargin=0.9 * cm, bottomMargin=0.9 * cm,
+                      title=f"EA Form {year}").build(_ea_story(rows[0], year, get_employer_info(db), getSampleStyleSheet()))
+    buf.seek(0)
+    disp = "attachment" if request.args.get("download") == "1" else "inline"
+    return Response(buf.getvalue(), mimetype="application/pdf",
+                    headers={"Content-Disposition": f"{disp}; filename=EA_Form_{year}_{emp['emp_id']}.pdf"})
 
 
 # ---------------- Training Records ----------------

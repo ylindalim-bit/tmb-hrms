@@ -1,0 +1,35 @@
+{% extends "portal_base.html" %}
+{% block title %}EA Form - Staff Portal{% endblock %}
+{% block content %}
+<h1>EA Form (Borang EA)</h1>
+<div class="card">
+  <p style="margin-top:0; color:var(--muted); font-size:13px;">
+    Your yearly statement of remuneration from employment, used when you file your income tax return.
+    HR releases it here after the year-end payroll is complete.
+  </p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th class="text">Year</th><th class="text">Status</th><th class="text"></th></tr></thead>
+    <tbody>
+      {% for it in items %}
+      <tr>
+        <td class="text"><strong>{{ it.year }}</strong></td>
+        <td class="text">
+          {% if it.released %}<span class="pill finalized">Available</span>
+          {% else %}<span class="pill draft">Not released yet</span>{% endif %}
+        </td>
+        <td class="text">
+          {% if it.released %}
+          <a class="btn" href="{{ url_for('portal_ea_form_pdf', year=it.year) }}" target="_blank" style="padding:4px 12px;">View PDF</a>
+          <a class="btn secondary" href="{{ url_for('portal_ea_form_pdf', year=it.year, download=1) }}" style="padding:4px 12px; margin-left:6px;">Download</a>
+          {% else %}<span style="color:var(--muted); font-size:12px;">HR will release it after the year-end payroll.</span>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="text" style="color:var(--muted);">No payroll records yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

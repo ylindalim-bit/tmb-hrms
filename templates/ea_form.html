@@ -22,6 +22,19 @@
       <option value="all" {% if scope == 'all' %}selected{% endif %}>All staff with payroll in {{ year }}</option>
     </select></div>
 </form>
+<div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+  <div>
+    <strong>Staff Portal &mdash; EA Form {{ year }}:</strong>
+    {% if released %}<span class="pill finalized">Released</span> staff can view / download their own EA Form under <em>EA Form</em> in the Staff Portal.
+    {% else %}<span class="pill draft">Not released</span> staff cannot see it yet. Release it after the year-end payroll is complete and you have checked the figures.{% endif %}
+  </div>
+  <form method="post" action="{{ url_for('ea_form_release') }}"
+        onsubmit="return confirm('{{ 'Hide the EA Form %d from staff?' % year if released else 'Release the EA Form %d to ALL staff in the Staff Portal?' % year }}');">
+    <input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="scope" value="{{ scope }}">
+    <input type="hidden" name="release" value="{{ 0 if released else 1 }}">
+    <button class="btn {% if released %}secondary{% endif %}" type="submit">{% if released %}Hide from staff{% else %}Release to staff{% endif %}</button>
+  </form>
+</div>
 <p style="color:var(--muted); font-size:13px;">
   Built from the <strong>finalised</strong> payroll runs of {{ year }}: total income = gross pay, tax deduction = PCB, and the employee's EPF, SOCSO and EIS.
   {% if scope == 'all' %}For staff still working, the figures only run up to the last finalised month - issue their EA Forms after December is finalised.{% endif %}

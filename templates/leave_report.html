@@ -18,7 +18,7 @@
 {% endblock %}
 {% block content %}
 {% set T = flt.types %}
-{% set qs = dict(year=year, month=as_at, emp_id=flt.emp_id, base=flt.base, dept=flt.dept, leave=T, taken=(1 if flt.taken else None)) %}
+{% set qs = dict(year=year, month=as_at, emp_id=flt.emp_id, base=flt.base, dept=flt.dept, leave=T, all=(1 if flt.all_staff else None)) %}
 <div class="sticky-page-header no-print">
   <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
     <h1 style="margin-bottom:0;">Leave Taken Report &mdash; {{ year }}</h1>
@@ -60,7 +60,7 @@
         {% for code, t in leave_types.items() %}
         <label><input type="checkbox" name="leave" value="{{ code }}" {% if code in T %}checked{% endif %} onchange="this.form.submit()"> {{ t[0] }}</label>
         {% endfor %}
-        <label style="margin-left:6px;"><input type="checkbox" name="taken" value="1" {% if flt.taken %}checked{% endif %} onchange="this.form.submit()"> Only staff who took it</label>
+        {% if T %}<label style="margin-left:6px;"><input type="checkbox" name="all" value="1" {% if flt.all_staff %}checked{% endif %} onchange="this.form.submit()"> Also show staff with none</label>{% endif %}
       </div></div>
     {% if flt.emp_id or flt.base or flt.dept or T %}
     <a class="btn secondary" href="{{ url_for('leave_report', year=year, month=as_at) }}" style="margin-bottom:2px;">Clear filters</a>

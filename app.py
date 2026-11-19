@@ -10733,7 +10733,7 @@ LEAVE_REPORT_TYPES = {
 def _leave_report_data(db, args):
     """Everything the Leave Taken Report page, its PDF and its Excel file show.
     Filters: emp_id, base, dept, leave (one or more type codes, e.g. leave=AL&leave=MC; none = all types),
-    taken=1 (only staff who took one of the ticked leave types). month = entitlement / leave counted to end of this month."""
+    all=1 (also list staff who took none of the ticked types; by default only staff who have some are listed). month = entitlement / leave counted to end of this month."""
     year = args.get("year", type=int) or datetime.date.today().year
     as_at = args.get("month", type=int) or 12
     if as_at < 1 or as_at > 12:
@@ -10748,7 +10748,7 @@ def _leave_report_data(db, args):
     ticked = {(x or "").strip().upper() for x in args.getlist("leave")}
     types = [c for c in LEAVE_REPORT_TYPES if c in ticked]          # in the usual order
     flt = {"emp_id": (args.get("emp_id") or "").strip(), "base": (args.get("base") or "").strip(),
-           "dept": (args.get("dept") or "").strip(), "types": types, "taken": args.get("taken") == "1"}
+           "dept": (args.get("dept") or "").strip(), "types": types, "all_staff": args.get("all") == "1"}
     emps = [e for e in all_emps
             if (not flt["emp_id"] or e["emp_id"] == flt["emp_id"])
             and (not flt["base"] or (e["base"] or "") == flt["base"])
@@ -10784,7 +10784,7 @@ def _leave_report_data(db, args):
             "hl_used": round(totals["hl"], 2), "ul_used": round(totals["ul"], 2),
             "other_used": round(totals["other"], 2),
         })
-    if types and flt["taken"]:
+    if types and not flt["all_staff"]:   # ticked leave type(s): list only the staff who have some of it
         rows = [r for r in rows if any(r[LEAVE_REPORT_TYPES[c][1]] > 0 for c in types)]
 
     # Leave taken month by month (Jan-Dec), one table per ticked type (Annual Leave if nothing is ticked).

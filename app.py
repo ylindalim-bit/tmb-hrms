@@ -1801,7 +1801,7 @@ def edit_employee(emp_id):
                             allowance_lines=allowance_lines, allowance_history_labels=ALLOWANCE_HISTORY_LABELS,
                             overseas_assignments=overseas_assignments, performance_evaluations=performance_evaluations,
                             current_assignment=current_assignment, long_service_milestone=long_service_milestone,
-                            tax_profile=tax_profile)
+                            tax_profile=tax_profile, loe_info=_signed_loe_info(db, emp))
 
 
 @app.route("/employees/<emp_id>/tax-profile/update", methods=["POST"])
@@ -8713,6 +8713,10 @@ def _copy_application_documents_to_employee(db, app_id, emp_id):
 
     src_dir = os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(app_id))
     for d in docs:
+        if d["doc_type"] == SIGNED_LOE_TYPE:
+            if _file_signed_loe(db, emp_id, app_id, d) == "new":
+                copied += 1
+            continue
         src_path = os.path.join(src_dir, d["stored_name"])
         if not os.path.exists(src_path):
             continue
@@ -8726,6 +8730,73 @@ def _copy_application_documents_to_employee(db, app_id, emp_id):
         )
         copied += 1
     return copied
+
+
+SIGNED_LOE_TYPE = "Signed Letter of Employment"     # the label of the candidate's upload box on the careers documents page
+
+
+def _recruitment_app_ids_for(db, emp):
+    ic = (emp["ic_passport_no"] or "").replace("-", "").replace(" ", "")
+    if not ic:
+        return []
+    return [a["id"] for a in db.execute("SELECT id, ic_passport_no FROM job_applications").fetchall()
+            if (a["ic_passport_no"] or "").replace("-", "").replace(" ", "") == ic]
+
+
+def _file_signed_loe(db, emp_id, app_id, d):
+    """Files one candidate-uploaded signed Letter of Employment under the employee's Documents as 'Letter of Employment'.
+    Safe to repeat: returns 'already' if it is filed, 'converted' if an earlier general transfer had put it under 'Other',
+    'new' if the file was copied now (or 'missing' if the file is gone from disk)."""
+    marker = f"[rec-doc #{d['id']}]"
+    if db.execute("SELECT 1 FROM employee_documents WHERE emp_id=? AND notes LIKE ?", (emp_id, "%" + marker + "%")).fetchone():
+        return "already"
+    note = f"Signed by the employee - from Recruitment application #{app_id} {marker}"
+    old = db.execute("SELECT id FROM employee_documents WHERE emp_id=? AND original_name=? AND notes LIKE ?",
+                     (emp_id, d["original_name"], f"Transferred from Recruitment application #{app_id} ({SIGNED_LOE_TYPE})%")).fetchone()
+    if old is not None:
+        db.execute("UPDATE employee_documents SET doc_type='Letter of Employment', notes=? WHERE id=?", (note, old["id"]))
+        return "converted"
+    src = os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(app_id), d["stored_name"])
+    if not os.path.exists(src):
+        return "missing"
+    dest_dir = os.path.join(UPLOAD_DIR, emp_id)
+    os.makedirs(dest_dir, exist_ok=True)
+    stored = f"{uuid.uuid4().hex}_{d['original_name']}"
+    shutil.copy2(src, os.path.join(dest_dir, stored))
+    db.execute("""INSERT INTO employee_documents (emp_id, doc_type, original_name, stored_name, notes, uploaded_at)
+                  VALUES (?,?,?,?,?,?)""",
+               (emp_id, "Letter of Employment", d["original_name"], stored, note, datetime.datetime.now().isoformat(timespec="seconds")))
+    return "new"
+
+
+def _signed_loe_info(db, emp):
+    """For the employee's Documents box: how many signed Letters of Employment from Recruitment are still to be filed,
+    and whether the matching candidate has not uploaded one yet."""
+    pending, has_app, has_any = 0, False, False
+    for aid in _recruitment_app_ids_for(db, emp):
+        has_app = True
+        for d in db.execute("SELECT * FROM job_application_documents WHERE application_id=? AND doc_type=?", (aid, SIGNED_LOE_TYPE)).fetchall():
+            has_any = True
+            if not db.execute("SELECT 1 FROM employee_documents WHERE emp_id=? AND notes LIKE ?",
+                              (emp["emp_id"], f"%[rec-doc #{d['id']}]%")).fetchone():
+                pending += 1
+    return {"pending": pending, "no_upload_yet": has_app and not has_any}
+
+
+@app.route("/employees/<emp_id>/transfer-signed-loe", methods=["POST"])
+def transfer_signed_loe(emp_id):
+    """Copies the signed Letter of Employment the candidate uploaded (Recruitment) into this employee's Documents."""
+    if session.get("hr_role") == "approver":
+        abort(403)
+    db = get_db()
+    emp = db.execute("SELECT * FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+    if emp is None:
+        abort(404)
+    for aid in _recruitment_app_ids_for(db, emp):
+        for d in db.execute("SELECT * FROM job_application_documents WHERE application_id=? AND doc_type=? ORDER BY id", (aid, SIGNED_LOE_TYPE)).fetchall():
+            _file_signed_loe(db, emp_id, aid, d)
+    db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id) + "#documents")
 
 
 @app.route("/hr/recruitment/<int:app_id>/transfer-documents", methods=["POST"])

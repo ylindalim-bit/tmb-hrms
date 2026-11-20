@@ -934,12 +934,22 @@
   </form>
 </div>
 
-<div class="card">
+<div class="card" id="documents">
   <h2 style="margin-top:0;">Documents</h2>
   <p style="color:var(--muted); font-size:12px; margin-top:-4px;">
     Keep Letter of Employment, Confirmation Letter, Resignation Letter, e-Stamping Certificate, and any other
     signed documents here (PDF, Word, or image). These are stored locally alongside the rest of this employee's data.
   </p>
+  {% if loe_info and loe_info.pending %}
+  <div style="background:#dbeafe; border:1px solid #93c5fd; border-radius:6px; padding:10px 14px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+    <span>The signed <strong>Letter of Employment</strong> uploaded by this person in Recruitment ({{ loe_info.pending }} file{{ 's' if loe_info.pending != 1 }}) is not in these Documents yet.</span>
+    <form method="post" action="{{ url_for('transfer_signed_loe', emp_id=emp.emp_id) }}" style="margin:0;"><button class="btn" type="submit">Transfer signed Letter of Employment</button></form>
+  </div>
+  {% elif loe_info and loe_info.no_upload_yet %}
+  <div style="background:#fef3c7; border:1px solid #fcd34d; border-radius:6px; padding:8px 14px; margin-bottom:10px; font-size:13px;">
+    This person has not uploaded the signed Letter of Employment in Recruitment yet. When they do, a transfer button shows here.
+  </div>
+  {% endif %}
   <form method="post" action="{{ url_for('upload_document', emp_id=emp.emp_id) }}" enctype="multipart/form-data">
     <div class="form-grid">
       <div>

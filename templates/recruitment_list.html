@@ -136,7 +136,8 @@
           </form>
           {% else %}{{ loe_refs.get(a.id, '-') }}{% endif %}
         </td>
-        <td class="text"><a href="{{ url_for('recruitment_detail', app_id=a.id) }}">{{ a.full_name }}</a></td>
+        <td class="text"><a href="{{ url_for('recruitment_detail', app_id=a.id) }}">{{ a.full_name }}</a>{% if a.status == 'Hired' and can_assign %}
+          <div style="font-size:12px; margin-top:2px;">{% if a.id in hired_emp_ids %}<span style="color:var(--good); font-weight:600;">&#10003; in Employees ({{ hired_emp_ids[a.id] }})</span>{% else %}<a href="{{ url_for('recruitment_create_employee', app_id=a.id) }}" style="font-weight:600;">Create employee record &rarr;</a>{% endif %}</div>{% endif %}</td>
         <td class="text">{{ a.position_applied or "" }}</td>
         {% set offer = offers.get(a.id) %}
         <td class="text">{% if offer and offer[0] %}{{ offer[0] }}{% else %}<span style="color:var(--muted);">-</span>{% endif %}</td>

@@ -7939,6 +7939,19 @@ def _loe_refs_map(db):
         return {}
 
 
+def _hired_emp_ids(db, applications):
+    """{application_id: emp_id} for listed candidates who already exist in Employees (same IC / passport number)."""
+    out = {}
+    for a in applications:
+        ic = (a["ic_passport_no"] or "").replace("-", "").replace(" ", "")
+        if not ic:
+            continue
+        r = db.execute("SELECT emp_id FROM employees WHERE ic_passport_no=?", (ic,)).fetchone()
+        if r is not None:
+            out[a["id"]] = r["emp_id"]
+    return out
+
+
 @app.route("/hr/recruitment")
 def recruitment_list():
     db = get_db()
@@ -8011,7 +8024,7 @@ def recruitment_list():
         interview_n=interview_n, today_iso=datetime.datetime.now(MYT).date().isoformat(),
         apply_url=url_for("careers_apply", _external=True), reviewers=reviewers,
         reviewer_names={r["username"]: r["full_name"] for r in reviewers},
-        loe_refs=_loe_refs_map(db), offers=_offers_map(db),
+        loe_refs=_loe_refs_map(db), offers=_offers_map(db), hired_emp_ids=_hired_emp_ids(db, applications),
         viewer_filter=viewer_filter, viewer_counts=viewer_counts,
         position_filter=position_filter, positions=positions,
     )
@@ -8562,6 +8575,15 @@ def recruitment_employment_letter_view(app_id):
     return Response(page, mimetype="text/html")
 
 
+def _suggest_emp_id_for(db, full_name):
+    """Next free Employee ID for a new hire: the first letter of the name + the next number in that letter
+    (e.g. a name starting with M -> M009 when M008 is the highest), like the existing IDs."""
+    letter = next((ch.upper() for ch in (full_name or "") if ch.isalpha()), "")
+    if not letter:
+        return ""
+    return _next_emp_id_suggestions(db).get(letter, f"{letter}001")
+
+
 @app.route("/hr/recruitment/<int:app_id>/create-employee")
 def recruitment_create_employee(app_id):
     """Opens the New Employee form pre-filled with everything this hired
@@ -8596,6 +8618,7 @@ def recruitment_create_employee(app_id):
         "position": application["position_applied"],
         "department": application["appointment_department"],
         "date_joined": datetime.date.today().isoformat(),
+        "emp_id": _suggest_emp_id_for(db, application["full_name"]),
         "emergency_contact_1_name": application["emergency_contact_1_name"],
         "emergency_contact_1_relationship": application["emergency_contact_1_relationship"],
         "emergency_contact_1_phone": (
@@ -8611,11 +8634,27 @@ def recruitment_create_employee(app_id):
             or application["emergency_contact_2_office_tel"]
         ),
     }
+    # What was agreed in the Employment Letter box wins over what the candidate applied for.
+    offer = db.execute("SELECT position, join_date, salary FROM job_application_offers WHERE application_id=?", (app_id,)).fetchone()
+    if offer is not None:
+        if offer["position"]:
+            prefill["position"] = offer["position"]
+        if offer["join_date"]:
+            prefill["date_joined"] = offer["join_date"]
+        if offer["salary"]:
+            prefill["basic_salary"] = float(offer["salary"])
+    error = None
+    ic = (application["ic_passport_no"] or "").replace("-", "").replace(" ", "")
+    if ic:
+        dup = db.execute("SELECT emp_id, full_name FROM employees WHERE ic_passport_no=?", (ic,)).fetchone()
+        if dup is not None:
+            error = (f"Careful: {dup['emp_id']} - {dup['full_name']} already has this IC / passport number. "
+                     "Check before saving, or you will have two records for the same person.")
     clockin_locations = db.execute(
         "SELECT id, base, label FROM clockin_locations ORDER BY base, id"
     ).fetchall()
     return render_template(
-        "employee_edit.html", emp=prefill, is_new=True, error=None,
+        "employee_edit.html", emp=prefill, is_new=True, error=error,
         race_options=RACE_OPTIONS, religion_options=RELIGION_OPTIONS,
         holiday_state_options=HOLIDAY_STATE_OPTIONS, base_options=BASE_OPTIONS,
         clockin_locations=clockin_locations,

@@ -9,7 +9,7 @@
     {% endif %}
   </h1>
   <div class="no-print" style="margin-left:auto; display:flex; gap:8px; align-items:center; padding-top:4px;">
-    <button class="btn" type="submit" form="employee-form" style="padding:8px 26px; font-weight:700;" title="Saves everything in the main employee form (the section boxes lower down have their own buttons)">Save</button>
+    <button class="btn" type="submit" form="employee-form" style="padding:8px 26px; font-weight:700;" title="Saves everything in the main employee form (the section boxes lower down have their own buttons)">{% if is_new %}Save (Create Employee){% else %}Save{% endif %}</button>
     <a class="btn secondary" href="{{ url_for('employees') }}">Cancel</a>
   </div>
   {% if not is_new %}
@@ -602,10 +602,6 @@
   </div>
   {% endif %}
 
-  <div class="form-actions">
-    <button class="btn" type="submit" form="employee-form">Save</button>
-    <a class="btn secondary" href="{{ url_for('employees') }}">Cancel</a>
-  </div>
 </div>
 
 {% if not is_new %}
@@ -1020,9 +1016,6 @@
     &mdash; see exactly what they see on the Staff Portal, without needing their password.
     {% endif %}
   </p>
-  <div class="form-actions">
-    <button class="btn" type="submit" form="employee-form">{% if is_new %}Save (Create Employee){% else %}Save{% endif %}</button>
-  </div>
 </div>
 <script>
 {% if emp_id_suggestions %}

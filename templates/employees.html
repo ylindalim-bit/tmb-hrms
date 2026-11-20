@@ -5,15 +5,15 @@
   {"key": "base", "label": "Base", "type": "select", "options": ["MY", "ZJ", "CD"], "default": true},
   {"key": "department", "label": "Dept", "type": "select", "options": depts, "default": true},
   {"key": "position", "label": "Position", "type": "select", "options": positions, "default": true},
-  {"key": "date_joined", "label": "Join Date", "type": "text", "default": true},
-  {"key": "confirmation_date", "label": "Confirm Date", "type": "text", "default": true},
-  {"key": "last_working_day", "label": "Resign Date", "type": "text", "default": true},
+  {"key": "date_joined", "label": "Join Date", "type": "date", "default": true},
+  {"key": "confirmation_date", "label": "Confirm Date", "type": "date", "default": true},
+  {"key": "last_working_day", "label": "Resign Date", "type": "date", "default": true},
   {"key": "eis", "label": "EIS", "type": "eis", "default": true},
   {"key": "basic_salary", "label": "Basic (RM)", "type": "currency", "default": true},
   {"key": "bank_name", "label": "Bank", "type": "text", "default": true},
   {"key": "bank_account_no", "label": "Account No.", "type": "text", "default": true},
   {"key": "ic_passport_no", "label": "IC / Passport No.", "type": "text", "default": false},
-  {"key": "date_of_birth", "label": "Date of Birth", "type": "text", "default": false},
+  {"key": "date_of_birth", "label": "Date of Birth", "type": "date", "default": false},
   {"key": "age", "label": "Age", "type": "age", "default": true},
   {"key": "race", "label": "Race", "type": "text", "default": false},
   {"key": "religion", "label": "Religion", "type": "text", "default": false},
@@ -22,7 +22,7 @@
   {"key": "hp_no", "label": "HP No.", "type": "text", "default": false},
   {"key": "email", "label": "Email", "type": "text", "default": false},
   {"key": "work_pattern", "label": "Work Pattern", "type": "text", "default": false},
-  {"key": "probation_end_date", "label": "Probation End", "type": "text", "default": false},
+  {"key": "probation_end_date", "label": "Probation End", "type": "date", "default": false},
   {"key": "skbbk_flag", "label": "SKBBK", "type": "text", "default": false},
   {"key": "working_days_week", "label": "Days/Week", "type": "text", "default": false},
   {"key": "annual_leave_entitlement", "label": "AL Entitlement", "type": "text", "default": false},
@@ -80,6 +80,11 @@
       <option value="">All</option>
       {% for opt in col.options %}<option value="{{ opt }}">{{ opt }}</option>{% endfor %}
     </select>
+    {% elif col.type == "date" %}
+    <div style="display:flex; flex-direction:column; gap:2px; min-width:128px;">
+      <label style="margin:0; font-size:10px; font-weight:600; color:var(--muted);">From <input type="date" class="col-date-filter" data-key="{{ col.key }}" data-bound="from" style="padding:2px 4px; font-size:12px;"></label>
+      <label style="margin:0; font-size:10px; font-weight:600; color:var(--muted);">To&nbsp;&nbsp;&nbsp; <input type="date" class="col-date-filter" data-key="{{ col.key }}" data-bound="to" style="padding:2px 4px; font-size:12px;"></label>
+    </div>
     {% elif col.type == "eis" %}
     <select class="col-filter" data-key="{{ col.key }}">
       <option value="">All</option>
@@ -138,6 +143,7 @@
   var allKeys = {{ optional_columns | map(attribute='key') | list | tojson }};
 
   var filters = document.querySelectorAll('.col-filter');
+  var dateFilters = document.querySelectorAll('.col-date-filter');
   var rows = document.querySelectorAll('table tbody tr');
   var clearBtn = document.getElementById('clear-filters');
   var toggleBtn = document.getElementById('columns-toggle-btn');
@@ -231,9 +237,21 @@
         active.push({ key: f.dataset.key, val: val, exact: exact });
       }
     });
+    // Date columns: pick a From and / or To date (dates are stored YYYY-MM-DD, so they compare as text).
+    var dateActive = [];
+    dateFilters.forEach(function(d) {
+      if (d.value) dateActive.push({ key: d.dataset.key, bound: d.dataset.bound, val: d.value });
+    });
     var visibleCount = 0;
     rows.forEach(function(row) {
-      var visible = active.every(function(f) {
+      var dateOk = dateActive.every(function(d) {
+        var cell = row.querySelector('[data-key="' + d.key + '"]');
+        if (!cell) return true;
+        var text = cell.textContent.trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;      // blank / not set never matches a date range
+        return d.bound === 'from' ? text >= d.val : text <= d.val;
+      });
+      var visible = dateOk && active.every(function(f) {
         var cell = row.querySelector('[data-key="' + f.key + '"]');
         if (!cell) return true;
         var text = cell.textContent.trim().toLowerCase();
@@ -244,7 +262,7 @@
     });
     var countWrap = document.getElementById('visible-count-wrap');
     if (countWrap) {
-      countWrap.style.display = active.length ? 'inline' : 'none';
+      countWrap.style.display = (active.length || dateActive.length) ? 'inline' : 'none';
       document.getElementById('visible-count').textContent = visibleCount;
     }
   }
@@ -253,10 +271,15 @@
     f.addEventListener('input', applyFilters);
     f.addEventListener('change', applyFilters);
   });
+  dateFilters.forEach(function(d) {
+    d.addEventListener('input', applyFilters);
+    d.addEventListener('change', applyFilters);
+  });
 
   if (clearBtn) {
     clearBtn.addEventListener('click', function() {
       filters.forEach(function(f) { f.value = ''; });
+      dateFilters.forEach(function(d) { d.value = ''; });
       applyFilters();
     });
   }

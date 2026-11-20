@@ -11258,15 +11258,23 @@ def _ea_story(row, year, employer, styles):
                                ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
                                ("LINEBELOW", (3, 0), (3, 0), 0.4, colors.HexColor("#888888"))]))
 
-    sign = Table([[Paragraph("Date: ..............................", base),
+    # employer address on two lines (as the two lines on the official form): everything but the last line, then the last line
+    _al = [x.strip() for x in (employer.get("company_address") or "").replace(chr(13), "").split(chr(10)) if x.strip()]
+    if len(_al) >= 2:
+        addr_l1, addr_l2 = " ".join(_al[:-1]), _al[-1].rstrip(",")
+    else:
+        addr_l1, addr_l2 = (_al[0] if _al else ""), ""
+    small_addr = ParagraphStyle("eaad", parent=base, fontSize=7.2, leading=9)
+    sign = Table([[Paragraph("Date: ..................", base),
                    Table([[Paragraph("Name of Officer", base), Paragraph(esc(employer.get("director_name")), bold)],
                           [Paragraph("Designation", base), Paragraph("Director", bold)],
                           [Paragraph("Name and Address of Employer", base), Paragraph(esc(employer.get("company_name")), bold)],
-                          ["", Paragraph(esc(address), base)],
+                          ["", Paragraph(esc(addr_l1), small_addr)],
+                          ["", Paragraph(esc(addr_l2), small_addr)],
                           [Paragraph("Employer's Telephone No.", base), Paragraph(esc(employer.get("company_tel")), bold)]],
-                         colWidths=[4.2 * cm, 8.8 * cm], style=TableStyle([("LINEBELOW", (1, 0), (1, -1), 0.4, colors.HexColor("#888888")),
+                         colWidths=[3.7 * cm, 10.4 * cm], style=TableStyle([("LINEBELOW", (1, 0), (1, -1), 0.4, colors.HexColor("#888888")),
                                                                            ("VALIGN", (0, 0), (-1, -1), "BOTTOM")]))]],
-                 colWidths=[4.5 * cm, 13.5 * cm])
+                 colWidths=[3.3 * cm, 14.7 * cm])
     sign.setStyle(TableStyle([("VALIGN", (0, 0), (0, 0), "BOTTOM"), ("BOX", (1, 0), (1, 0), 0.8, colors.black),
                               ("LEFTPADDING", (1, 0), (1, 0), 6), ("TOPPADDING", (1, 0), (1, 0), 6), ("BOTTOMPADDING", (1, 0), (1, 0), 6)]))
 

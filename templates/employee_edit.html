@@ -2,15 +2,17 @@
 {% block title %}{% if is_new %}Add Employee{% else %}Edit {{ emp.emp_id }}{% endif %} - TMB Payroll{% endblock %}
 {% block content %}
 <div class="sticky-page-header" style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px;">
-  <h1>
+  <div style="flex:1; min-width:0;">
+  <h1 style="margin-bottom:6px;">
     {% if is_new %}Add New Employee{% else %}{{ emp.emp_id }} &mdash; {{ emp.full_name }}{% endif %}
     {% if not is_new and emp.status %}
     <span class="pill status-{{ emp.status|lower|replace(' ', '-') }}">{{ emp.status }}</span>
     {% endif %}
   </h1>
-  <div class="no-print" style="margin-left:auto; display:flex; gap:8px; align-items:center; padding-top:4px;">
+  <div class="no-print" style="display:flex; gap:8px; align-items:center;">
     <button class="btn" type="submit" form="employee-form" style="padding:8px 26px; font-weight:700;" title="Saves everything in the main employee form (the section boxes lower down have their own buttons)">{% if is_new %}Save (Create Employee){% else %}Save{% endif %}</button>
     <a class="btn secondary" href="{{ url_for('employees') }}">Cancel</a>
+  </div>
   </div>
   {% if not is_new %}
   <div style="text-align:center; flex-shrink:0;">

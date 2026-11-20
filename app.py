@@ -1630,6 +1630,7 @@ def add_employee():
             source_application_id = request.form.get("source_application_id")
             if source_application_id:
                 _copy_application_documents_to_employee(db, int(source_application_id), emp_id)
+                _set_employee_photo_from_recruitment(db, emp_id)
             db.commit()
             return redirect(url_for("edit_employee", emp_id=emp_id))
     clockin_locations = db.execute(
@@ -1801,7 +1802,8 @@ def edit_employee(emp_id):
                             allowance_lines=allowance_lines, allowance_history_labels=ALLOWANCE_HISTORY_LABELS,
                             overseas_assignments=overseas_assignments, performance_evaluations=performance_evaluations,
                             current_assignment=current_assignment, long_service_milestone=long_service_milestone,
-                            tax_profile=tax_profile, loe_info=_signed_loe_info(db, emp))
+                            tax_profile=tax_profile, loe_info=_signed_loe_info(db, emp),
+                            recruitment_photo=(not emp["photo_path"]) and bool(_recruitment_photo_path(db, emp)))
 
 
 @app.route("/employees/<emp_id>/tax-profile/update", methods=["POST"])
@@ -2461,6 +2463,56 @@ def upload_photo(emp_id):
     stored_name = f"photo_{uuid.uuid4().hex}.{ext}"
     file.save(os.path.join(emp_dir, stored_name))
     db.execute("UPDATE employees SET photo_path=? WHERE emp_id=?", (stored_name, emp_id))
+    db.commit()
+    return redirect(url_for("edit_employee", emp_id=emp_id))
+
+
+def _recruitment_photo_path(db, emp):
+    """File path of this employee's passport-size photo in Recruitment (matched by IC): the photo on the application
+    form first, else the one the candidate uploaded on the documents page. None if there isn't one."""
+    for aid in _recruitment_app_ids_for(db, emp):
+        a = db.execute("SELECT photo_stored_name FROM job_applications WHERE id=?", (aid,)).fetchone()
+        cands = []
+        if a and a["photo_stored_name"]:
+            cands.append(os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(aid), a["photo_stored_name"]))
+        for d in db.execute("SELECT stored_name FROM job_application_documents WHERE application_id=? AND doc_type=? ORDER BY id DESC",
+                            (aid, "Passport-size photo")).fetchall():
+            cands.append(os.path.join(UPLOAD_DIR, RECRUITMENT_UPLOAD_DIR_NAME, str(aid), d["stored_name"]))
+        for path in cands:
+            if os.path.exists(path) and path.rsplit(".", 1)[-1].lower() in ALLOWED_PHOTO_EXTENSIONS:
+                return path
+    return None
+
+
+def _set_employee_photo_from_recruitment(db, emp_id, only_if_missing=True):
+    """Copies the candidate's passport-size photo into the employee's profile photo. Returns True if it was set."""
+    emp = db.execute("SELECT * FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+    if emp is None or (only_if_missing and emp["photo_path"]):
+        return False
+    src = _recruitment_photo_path(db, emp)
+    if not src:
+        return False
+    emp_dir = os.path.join(UPLOAD_DIR, emp_id)
+    os.makedirs(emp_dir, exist_ok=True)
+    if emp["photo_path"]:
+        old = os.path.join(emp_dir, emp["photo_path"])
+        if os.path.exists(old):
+            os.remove(old)
+    stored = f"photo_{uuid.uuid4().hex}.{src.rsplit('.', 1)[-1].lower()}"
+    shutil.copy2(src, os.path.join(emp_dir, stored))
+    db.execute("UPDATE employees SET photo_path=? WHERE emp_id=?", (stored, emp_id))
+    return True
+
+
+@app.route("/employees/<emp_id>/photo/from-recruitment", methods=["POST"])
+def photo_from_recruitment(emp_id):
+    """Uses the passport-size photo from the candidate's Recruitment record as this employee's profile photo."""
+    if session.get("hr_role") == "approver":
+        abort(403)
+    db = get_db()
+    if db.execute("SELECT 1 FROM employees WHERE emp_id=?", (emp_id,)).fetchone() is None:
+        abort(404)
+    _set_employee_photo_from_recruitment(db, emp_id, only_if_missing=False)
     db.commit()
     return redirect(url_for("edit_employee", emp_id=emp_id))
 

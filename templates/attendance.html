@@ -13,6 +13,7 @@
   <a href="{{ url_for('attendance_rest_fill', date_from='%04d-%02d-01' % (year, month)) }}" style="margin-left:16px;">Save Rest Days &amp; Holidays (date range) &rarr;</a>
   <a href="{{ url_for('attendance_download', year=year, month=month) }}" style="margin-left:16px; font-weight:600;">Download Excel / PDF (choose staff) &rarr;</a>
   <a class="btn" href="{{ url_for('attendance_day_today') }}" style="margin-left:12px; color:#fff;">Check Today's Attendance</a>
+  <a class="btn" href="{{ url_for('attendance_daily_all', year=year, month=month, problems=1) }}" style="margin-left:8px; color:#fff; background:#b91c1c; border-color:#b91c1c;" title="Opens every staff member's daily attendance for this month, already filtered to the days that need fixing (missing Time In / Out, no record, late-in / early-out)">&#9888; Check Problems ({{ month_names[month] }})</a>
 </div>
 
 <div style="margin-bottom:10px;">

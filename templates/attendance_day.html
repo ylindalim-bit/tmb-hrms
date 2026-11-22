@@ -23,6 +23,7 @@
   </form>
   {% if not is_today %}<a href="{{ url_for('attendance_day_today') }}" style="margin-left:12px;">Today</a>{% endif %}
   <a href="{{ url_for('attendance_daily_all', year=the_date.year, month=the_date.month) }}" style="margin-left:16px; color:var(--muted);">Whole month, all staff &rarr;</a>
+  <a href="{{ url_for('attendance_daily_all', year=the_date.year, month=the_date.month, problems=1) }}" style="margin-left:16px; color:var(--danger); font-weight:700;">&#9888; Problem days this month &rarr;</a>
   {% if hr_role != "approver" %}<a href="{{ url_for('attendance_rest_fill', date_from=date_iso[:8] ~ '01', date_to=date_iso) }}" style="margin-left:16px; font-weight:600;">Save rest days (date range) &rarr;</a>{% endif %}
   {% if hr_role != "approver" %}<a id="multi-link" href="{{ url_for('attendance_multi', date_from=date_iso, date_to=date_iso, show=1) }}" style="margin-left:16px; font-weight:600;">Choose staff &amp; dates &rarr;</a>{% endif %}
   {% if base_options %}
@@ -65,8 +66,11 @@
   a forgotten clock-in, or not entered yet; the system can't tell which. The Edit link opens the person's whole month.
 </p>
 
-<div class="no-print" style="font-size:12px; color:var(--muted); margin-bottom:4px;">Tick a status to see only those staff (e.g. tick <strong>No record</strong>). Tick several to see them together; untick all to see everyone.</div>
+<div class="no-print" style="font-size:12px; color:var(--muted); margin-bottom:4px;">Tick a status to see only those staff (e.g. tick <strong>No record</strong>), or tick <strong>&#9888; Problems</strong> to see everyone who needs fixing. Tick several to see them together; untick all to see everyone.</div>
+{% set pn = namespace(n=0) %}
+{% for r in rows %}{% if r.category in ('none', 'incomplete', 'pending') or (r.flagged and not r.lt) or (r.time_in and not r.time_out and not is_today and r.category not in ('leave', 'away', 'rest', 'holiday', 'future')) %}{% set pn.n = pn.n + 1 %}{% endif %}{% endfor %}
 <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; align-items:center;">
+  <label class="pill status-chip" data-key="__problems" title="No record, Incomplete, leave still pending, a late-in / early-out not yet decided, or no clock-out on a past day" style="background:#fee2e2; color:var(--danger); font-size:13px; padding:4px 10px; display:inline-flex; align-items:center; gap:6px; cursor:pointer; margin:0; font-weight:700;"><input type="checkbox" class="chip-pick" value="__problems" style="width:auto; margin:0;"> &#9888; Problems: <span class="chip-n">{{ pn.n }}</span></label>
   {% for key, label in category_labels.items() %}{% if counts.get(key) %}
   <label class="pill status-chip" data-key="{{ key }}" style="{{ pill_style[key] }} font-size:13px; padding:4px 10px; display:inline-flex; align-items:center; gap:6px; cursor:pointer; margin:0;"><input type="checkbox" class="chip-pick" value="{{ key }}" style="width:auto; margin:0;"> {{ label }}: <span class="chip-n">{{ counts[key] }}</span></label>
   {% endif %}{% endfor %}
@@ -88,7 +92,8 @@
 </thead>
 <tbody>
 {% for r in rows %}
-<tr data-base="{{ r.emp.base or '' }}" data-category="{{ r.category }}" data-unsaved-rest="{{ '1' if (r.category == 'rest' and not r.has_row) else '0' }}"{% if r.category == 'none' %} style="background:#fef3c7;"{% elif r.category == 'incomplete' %} style="background:#fee2e2;"{% endif %}>
+{% set is_problem = r.category in ('none', 'incomplete', 'pending') or (r.flagged and not r.lt) or (r.time_in and not r.time_out and not is_today and r.category not in ('leave', 'away', 'rest', 'holiday', 'future')) %}
+<tr data-base="{{ r.emp.base or '' }}" data-category="{{ r.category }}" data-problem="{{ 1 if is_problem else 0 }}" data-unsaved-rest="{{ '1' if (r.category == 'rest' and not r.has_row) else '0' }}"{% if r.category == 'none' %} style="background:#fef3c7;"{% elif r.category == 'incomplete' %} style="background:#fee2e2;"{% endif %}>
   <td class="text">{{ r.emp.emp_id }}</td>
   <td class="text">{{ r.emp.full_name }}</td>
   <td class="text">{{ r.emp.base or "-" }}</td>
@@ -134,8 +139,12 @@ function applyDayFilters() {
   var base = currentBase, cats = pickedCategories(), shown = 0, tally = {};
   document.querySelectorAll('#day-table tbody tr').forEach(function (row) {
     var inBase = !base || row.dataset.base === base;
-    if (inBase) { tally[row.dataset.category] = (tally[row.dataset.category] || 0) + 1; }
-    var visible = inBase && (!cats.length || cats.indexOf(row.dataset.category) !== -1);
+    if (inBase) {
+      tally[row.dataset.category] = (tally[row.dataset.category] || 0) + 1;
+      if (row.dataset.problem === '1') { tally['__problems'] = (tally['__problems'] || 0) + 1; }
+    }
+    var visible = inBase && (!cats.length || cats.indexOf(row.dataset.category) !== -1 ||
+                             (cats.indexOf('__problems') !== -1 && row.dataset.problem === '1'));
     row.style.display = visible ? '' : 'none';
     if (visible) shown++;
   });

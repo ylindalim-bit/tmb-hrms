@@ -70,8 +70,8 @@
   {% endfor %}
 </tr>
 <tr class="filter-row no-print">
-  <th class="text sticky-col sticky-col-1"><input type="text" class="col-filter" data-key="emp_id" placeholder="Filter..."></th>
-  <th class="text sticky-col sticky-col-2"><input type="text" class="col-filter" data-key="full_name" placeholder="Filter..."></th>
+  <th class="text sticky-col sticky-col-1"><input type="text" class="col-filter" data-key="emp_id" placeholder="Choose / type..." list="dl-emp_id" autocomplete="off"></th>
+  <th class="text sticky-col sticky-col-2"><input type="text" class="col-filter" data-key="full_name" placeholder="Choose / type..." list="dl-full_name" autocomplete="off"></th>
   <th class="sticky-col sticky-col-3 no-print"><button type="button" id="clear-filters" class="btn secondary" style="padding:3px 8px; font-size:11px;">Clear</button></th>
   {% for col in optional_columns %}
   <th class="{{ 'text' if col.type != 'currency' else '' }}" data-key="{{ col.key }}">
@@ -92,6 +92,11 @@
       <option value="No">No</option>
       <option value="?">?</option>
     </select>
+    {% elif col.key in ('basic_salary', 'age') %}
+    <div style="display:flex; flex-direction:column; gap:2px; min-width:112px;">
+      <label style="margin:0; font-size:10px; font-weight:600; color:var(--muted);">From <input type="number" step="any" class="col-range-filter" data-key="{{ col.key }}" data-bound="from" list="dl-{{ col.key }}" style="padding:2px 4px; font-size:12px; width:84px;"></label>
+      <label style="margin:0; font-size:10px; font-weight:600; color:var(--muted);">To&nbsp;&nbsp;&nbsp; <input type="number" step="any" class="col-range-filter" data-key="{{ col.key }}" data-bound="to" list="dl-{{ col.key }}" style="padding:2px 4px; font-size:12px; width:84px;"></label>
+    </div>
     {% else %}
     <input type="text" class="col-filter" data-key="{{ col.key }}" placeholder="Filter...">
     {% endif %}
@@ -135,6 +140,10 @@
 </tbody>
 </table>
 </div>
+<datalist id="dl-emp_id">{% for e in employees %}<option value="{{ e.emp_id }}">{% endfor %}</datalist>
+<datalist id="dl-full_name">{% for e in employees|sort(attribute='full_name') %}<option value="{{ e.full_name }}">{% endfor %}</datalist>
+<datalist id="dl-basic_salary">{% for v in employees|map(attribute='basic_salary')|map('float')|unique|sort %}<option value="{{ '%.2f'|format(v) }}">{% endfor %}</datalist>
+<datalist id="dl-age">{% for v in ages.values()|reject('none')|unique|sort %}<option value="{{ v }}">{% endfor %}</datalist>
 <script>
 (function() {
   var STORAGE_KEY = 'employeeMasterColumns';
@@ -144,6 +153,7 @@
 
   var filters = document.querySelectorAll('.col-filter');
   var dateFilters = document.querySelectorAll('.col-date-filter');
+  var rangeFilters = document.querySelectorAll('.col-range-filter');
   var rows = document.querySelectorAll('table tbody tr');
   var clearBtn = document.getElementById('clear-filters');
   var toggleBtn = document.getElementById('columns-toggle-btn');
@@ -231,6 +241,7 @@
     var st = {};
     filters.forEach(function(f) { if (f.value) st['t|' + f.dataset.key] = f.value; });
     dateFilters.forEach(function(d) { if (d.value) st['d|' + d.dataset.key + '|' + d.dataset.bound] = d.value; });
+    rangeFilters.forEach(function(r) { if (r.value) st['r|' + r.dataset.key + '|' + r.dataset.bound] = r.value; });
     try { sessionStorage.setItem(FILTER_KEY, JSON.stringify(st)); } catch (e) {}
   }
   function restoreFilters() {
@@ -239,6 +250,14 @@
     if (!st) return;
     filters.forEach(function(f) { var v = st['t|' + f.dataset.key]; if (v !== undefined) f.value = v; });
     dateFilters.forEach(function(d) { var v = st['d|' + d.dataset.key + '|' + d.dataset.bound]; if (v !== undefined) d.value = v; });
+    rangeFilters.forEach(function(r) { var v = st['r|' + r.dataset.key + '|' + r.dataset.bound]; if (v !== undefined) r.value = v; });
+  }
+
+  // A box with a pick-list (ID, Name): a value that is exactly one list item is an exact match; anything else is a
+  // normal "contains" search.
+  function chosenFromList(f, val) {
+    if (!f.list) return false;
+    return Array.prototype.some.call(f.list.options, function(o) { return o.value.toLowerCase() === val; });
   }
 
   function applyFilters() {
@@ -250,7 +269,7 @@
         // in the template) - typing it means "show only blank", an exact match, not a
         // substring search (which would also match real values containing a hyphen,
         // like phone numbers e.g. "011-62160447").
-        var exact = f.tagName === 'SELECT' || val === '-';
+        var exact = f.tagName === 'SELECT' || val === '-' || chosenFromList(f, val);
         active.push({ key: f.dataset.key, val: val, exact: exact });
       }
     });
@@ -259,9 +278,20 @@
     dateFilters.forEach(function(d) {
       if (d.value) dateActive.push({ key: d.dataset.key, bound: d.dataset.bound, val: d.value });
     });
+    var rangeActive = [];
+    rangeFilters.forEach(function(r) {
+      if (r.value !== '') rangeActive.push({ key: r.dataset.key, bound: r.dataset.bound, val: parseFloat(r.value) });
+    });
     var visibleCount = 0;
     rows.forEach(function(row) {
-      var dateOk = dateActive.every(function(d) {
+      var rangeOk = rangeActive.every(function(d) {
+        var cell = row.querySelector('[data-key="' + d.key + '"]');
+        if (!cell) return true;
+        var n = parseFloat(cell.textContent.trim());
+        if (isNaN(n)) return false;                                     // blank / not set never matches a range
+        return d.bound === 'from' ? n >= d.val : n <= d.val;
+      });
+      var dateOk = rangeOk && dateActive.every(function(d) {
         var cell = row.querySelector('[data-key="' + d.key + '"]');
         if (!cell) return true;
         var text = cell.textContent.trim();
@@ -280,7 +310,7 @@
     saveFilters();
     var countWrap = document.getElementById('visible-count-wrap');
     if (countWrap) {
-      countWrap.style.display = (active.length || dateActive.length) ? 'inline' : 'none';
+      countWrap.style.display = (active.length || dateActive.length || rangeActive.length) ? 'inline' : 'none';
       document.getElementById('visible-count').textContent = visibleCount;
     }
   }
@@ -293,11 +323,16 @@
     d.addEventListener('input', applyFilters);
     d.addEventListener('change', applyFilters);
   });
+  rangeFilters.forEach(function(r) {
+    r.addEventListener('input', applyFilters);
+    r.addEventListener('change', applyFilters);
+  });
 
   if (clearBtn) {
     clearBtn.addEventListener('click', function() {
       filters.forEach(function(f) { f.value = ''; });
       dateFilters.forEach(function(d) { d.value = ''; });
+      rangeFilters.forEach(function(r) { r.value = ''; });
       applyFilters();
     });
   }

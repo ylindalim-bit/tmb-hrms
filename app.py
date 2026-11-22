@@ -10016,9 +10016,16 @@ def _validate_and_create_leave_request(db, emp_id, leave_type, start_date, end_d
             "automatically. Adjust the existing leave first."
         )
 
-    days = 0.5 if half_day else (
-        datetime.date.fromisoformat(end_date) - datetime.date.fromisoformat(start_date)
-    ).days + 1
+    if half_day:
+        days = 0.5
+    elif leave_type in WORKING_DAY_LEAVE_TYPES:
+        working = _leave_working_dates(db, emp_id, start_date, end_date)
+        if not working:
+            return None, ("Every day in that range is a Rest / Off day or a public holiday for this employee, "
+                          "so there is no leave to take. Choose working days.")
+        days = float(len(working))                 # Sundays, Rest / Off days and public holidays are not leave days
+    else:
+        days = (datetime.date.fromisoformat(end_date) - datetime.date.fromisoformat(start_date)).days + 1
     if leave_type == "Annual Leave":
         over = _al_over_balance_message(db, emp_id, start_date, days)
         if over:
@@ -10059,6 +10066,7 @@ def portal_leave():
     db = get_db()
     emp = current_portal_employee(db)
     error = None
+    _normalise_pending_leave_days(db)
     if request.args.get("doc_msg") == "last":
         error = ("A medical leave request must keep at least one document. Upload the correct file first "
                  "(+ Add), then delete the wrong one.")
@@ -12187,6 +12195,7 @@ def ot_report_individual(year, month, emp_id):
 def leave_requests_admin():
     db = get_db()
     _ensure_trip_half_day(db)
+    _normalise_pending_leave_days(db)
     # An approver (e.g. Mr Kee) only sees requests for employees assigned to
     # them; HR (role='admin') sees everyone - matches "all leave except
     # W001/W002/K002/K003 is under Mr Kee or HR".
@@ -12560,17 +12569,78 @@ def _sync_half_day_to_attendance_daily(db, emp_id, date_str, day_type, session_h
     )
 
 
-def _sync_days_to_attendance_daily(db, emp_id, start_date, end_date, day_type):
+# Leave that is counted in WORKING days: the employee's Rest / Off days (from the Work Pattern, Sundays) and the base's
+# public holidays inside the range are not leave days. Unpaid Leave stays on calendar days (payroll deducts it that way).
+WORKING_DAY_LEAVE_TYPES = {"Annual Leave", "Medical Leave", "Hospitalisation Leave", "Maternity/Paternity Leave",
+                           "Emergency Leave", "School Personal Leave"}
+
+
+def _leave_working_dates(db, emp_id, start_date, end_date):
+    """ISO dates in [start_date, end_date] that are working days for this employee: not a Sunday / Rest / Off day of
+    their Work Pattern, not a public holiday of their base, and not already saved as REST / OFF / PH."""
+    emp = db.execute("SELECT work_pattern, base FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+    pattern = emp["work_pattern"] if emp else None
+    base = (emp["base"] if emp else None) or "MY"
+    holidays = {r["date"] for r in db.execute(
+        "SELECT date FROM public_holidays WHERE state=? AND date BETWEEN ? AND ?", (base, start_date, end_date)).fetchall()}
+    saved = {r["date"]: r["day_type"] for r in db.execute(
+        "SELECT date, day_type FROM attendance_daily WHERE emp_id=? AND date BETWEEN ? AND ?", (emp_id, start_date, end_date)).fetchall()}
+    out = []
+    day, end = datetime.date.fromisoformat(start_date), datetime.date.fromisoformat(end_date)
+    while day <= end:
+        iso = day.isoformat()
+        kind = saved.get(iso)
+        if kind in ("REST", "OFF", "PH"):
+            pass
+        elif kind is None and _default_day_type_for_pattern(pattern, day.weekday(), is_holiday=(iso in holidays)) != "WORKED":
+            pass
+        else:
+            out.append(iso)
+        day += datetime.timedelta(days=1)
+    return out
+
+
+def _leave_request_dates(db, lr):
+    """The dates a (whole-day) leave request really takes: working days only for the paid leave types - except a request
+    approved before this rule existed (its days equal the calendar days), which keeps what was recorded."""
+    start, end = datetime.date.fromisoformat(lr["start_date"]), datetime.date.fromisoformat(lr["end_date"])
+    all_dates = [(start + datetime.timedelta(days=i)).isoformat() for i in range((end - start).days + 1)]
+    if lr["leave_type"] not in WORKING_DAY_LEAVE_TYPES:
+        return all_dates
+    working = _leave_working_dates(db, lr["emp_id"], lr["start_date"], lr["end_date"])
+    if (lr["days"] or 0) == len(all_dates) and len(working) != len(all_dates) and lr["status"] == "Approved":
+        return all_dates
+    return working
+
+
+def _normalise_pending_leave_days(db):
+    """Pending requests keep their days in step with the working-days rule (a request typed before the rule existed
+    still says the calendar count). Safe to repeat."""
+    changed = 0
+    for lr in db.execute("SELECT * FROM leave_requests WHERE status='Pending'").fetchall():
+        if lr["leave_type"] not in WORKING_DAY_LEAVE_TYPES or _leave_half_day(lr):
+            continue
+        wd = _leave_working_dates(db, lr["emp_id"], lr["start_date"], lr["end_date"])
+        if wd and len(wd) != (lr["days"] or 0):
+            db.execute("UPDATE leave_requests SET days=? WHERE id=?", (float(len(wd)), lr["id"]))
+            changed += 1
+    if changed:
+        db.commit()
+    return changed
+
+
+def _sync_days_to_attendance_daily(db, emp_id, start_date, end_date, day_type, dates=None):
     """Writes day_type onto Attendance Daily (day-by-day view) for every day
     in [start_date, end_date] so an approved absence doesn't look
     unrecorded there. Must never touch attendance_monthly itself - many
     days legitimately have no daily row at all, so recomputing monthly
     from daily rows here would undercount days that aren't leave and
     aren't yet entered."""
-    start = datetime.date.fromisoformat(start_date)
-    end = datetime.date.fromisoformat(end_date)
-    day = start
-    while day <= end:
+    if dates is None:
+        start = datetime.date.fromisoformat(start_date)
+        end = datetime.date.fromisoformat(end_date)
+        dates = [(start + datetime.timedelta(days=i)).isoformat() for i in range((end - start).days + 1)]
+    for iso in dates:
         db.execute(
             """INSERT INTO attendance_daily (emp_id, date, day_type, time_in, time_out,
                    meal_allowance_flag, cewi_flag, ot_hours_1_5, ot_hours_2_0, ot_hours_3_0)
@@ -12578,19 +12648,18 @@ def _sync_days_to_attendance_daily(db, emp_id, start_date, end_date, day_type):
                ON CONFLICT(emp_id, date) DO UPDATE SET
                    day_type=excluded.day_type, time_in=NULL, time_out=NULL,
                    meal_allowance_flag='N', cewi_flag='N', ot_hours_1_5=0, ot_hours_2_0=0, ot_hours_3_0=0""",
-            (emp_id, day.isoformat(), day_type),
+            (emp_id, iso, day_type),
         )
         try:  # a whole-day status replaces any half-day marker on that date
             db.execute(
                 "UPDATE attendance_daily SET half_leave_type=NULL, half_leave_session=NULL WHERE emp_id=? AND date=?",
-                (emp_id, day.isoformat()),
+                (emp_id, iso),
             )
         except sqlite3.OperationalError:
             pass  # half-day columns not migrated in yet
-        day += datetime.timedelta(days=1)
 
 
-def _sync_days_to_attendance_monthly(db, emp_id, start_date, end_date, column, weight=1.0):
+def _sync_days_to_attendance_monthly(db, emp_id, start_date, end_date, column, weight=1.0, dates=None):
     """Adds days in [start_date, end_date] onto attendance_monthly's
     `column`, split across whichever month(s) the range actually falls
     in, so HR doesn't have to re-enter the same days by hand on the
@@ -12599,13 +12668,13 @@ def _sync_days_to_attendance_monthly(db, emp_id, start_date, end_date, column, w
     recorded."""
     start = datetime.date.fromisoformat(start_date)
     end = datetime.date.fromisoformat(end_date)
+    if dates is None:
+        dates = [(start + datetime.timedelta(days=i)).isoformat() for i in range((end - start).days + 1)]
 
     days_per_month = {}
-    day = start
-    while day <= end:
-        key = (day.year, day.month)
+    for iso in dates:
+        key = (int(iso[:4]), int(iso[5:7]))
         days_per_month[key] = days_per_month.get(key, 0) + 1
-        day += datetime.timedelta(days=1)
 
     for (year, month), count in days_per_month.items():
         _assert_payroll_open(db, emp_id, year, month)
@@ -12662,7 +12731,8 @@ def _sync_leave_to_attendance_daily(db, leave_request):
         _sync_half_day_to_attendance_daily(db, leave_request["emp_id"], leave_request["start_date"], day_type, half)
         return
     _sync_days_to_attendance_daily(
-        db, leave_request["emp_id"], leave_request["start_date"], leave_request["end_date"], day_type
+        db, leave_request["emp_id"], leave_request["start_date"], leave_request["end_date"], day_type,
+        dates=_leave_request_dates(db, leave_request),
     )
 
 
@@ -12673,6 +12743,7 @@ def _sync_leave_to_attendance(db, leave_request):
     _sync_days_to_attendance_monthly(
         db, leave_request["emp_id"], leave_request["start_date"], leave_request["end_date"], column,
         weight=0.5 if _leave_half_day(leave_request) else 1.0,
+        dates=None if _leave_half_day(leave_request) else _leave_request_dates(db, leave_request),
     )
 
 
@@ -12692,6 +12763,16 @@ def review_leave_request(request_id):
         return "Leave request not found", 404
     if session.get("hr_role") == "approver" and leave_request["leave_approver_username"] != session["hr_username"]:
         abort(403)
+    if decision == "Approved" and leave_request["leave_type"] in WORKING_DAY_LEAVE_TYPES and not _leave_half_day(leave_request):
+        _wd = _leave_working_dates(db, leave_request["emp_id"], leave_request["start_date"], leave_request["end_date"])
+        if not _wd:
+            return redirect(url_for("leave_requests_admin",
+                                    error=f"{leave_request['emp_id']}: every day in this range is a Rest / Off day or public holiday - nothing to approve."))
+        if len(_wd) != (leave_request["days"] or 0):
+            db.execute("UPDATE leave_requests SET days=? WHERE id=?", (float(len(_wd)), request_id))
+            leave_request = db.execute(
+                """SELECT lr.*, e.leave_approver_username FROM leave_requests lr
+                   JOIN employees e ON e.emp_id = lr.emp_id WHERE lr.id=?""", (request_id,)).fetchone()
     if decision == "Approved" and _approved_leave_overlaps(
         db, leave_request["emp_id"], leave_request["leave_type"], leave_request["start_date"], leave_request["end_date"],
         _leave_half_day(leave_request),

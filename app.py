@@ -12456,6 +12456,43 @@ def leave_request_document(doc_id):
     )
 
 
+@app.route("/leave-requests/<int:request_id>/documents.pdf")
+def leave_request_documents_pdf(request_id):
+    """All the supporting documents of one leave request in a single PDF (each photo / scan on its own page, PDFs
+    appended as they are) - to save, print or file with the employee's records."""
+    db = get_db()
+    lr = db.execute(
+        """SELECT lr.*, e.leave_approver_username, e.full_name FROM leave_requests lr
+           JOIN employees e ON e.emp_id = lr.emp_id WHERE lr.id=?""", (request_id,)).fetchone()
+    if lr is None:
+        abort(404)
+    if session.get("hr_role") == "approver" and lr["leave_approver_username"] != session["hr_username"]:
+        abort(403)
+    docs = db.execute("SELECT * FROM leave_request_documents WHERE leave_request_id=? ORDER BY id", (request_id,)).fetchall()
+    writer = PdfWriter()
+    for d in docs:
+        path = os.path.join(UPLOAD_DIR, lr["emp_id"], d["stored_name"])
+        if not os.path.exists(path):
+            continue
+        ext = d["stored_name"].rsplit(".", 1)[-1].lower()
+        try:
+            if ext == "pdf":
+                for page in PdfReader(path).pages:
+                    writer.add_page(page)
+            elif ext in ("jpg", "jpeg", "png"):
+                for page in PdfReader(io.BytesIO(_image_to_pdf_page_bytes(path))).pages:
+                    writer.add_page(page)
+        except Exception:
+            continue
+    if len(writer.pages) == 0:
+        return "There is no PDF-able document (PDF, JPG or PNG) on this leave request.", 404
+    out = io.BytesIO()
+    writer.write(out)
+    out.seek(0)
+    name = "{}_{}_{}_{}".format(lr["emp_id"], lr["leave_type"].replace(" ", ""), lr["start_date"], lr["end_date"])
+    return send_file(out, mimetype="application/pdf", as_attachment=True, download_name=f"{name}_documents.pdf")
+
+
 @app.route("/leave-requests/<int:request_id>/document/add", methods=["POST"])
 def leave_request_document_add(request_id):
     """HR-side equivalent of portal_leave_document_add - lets HR/the

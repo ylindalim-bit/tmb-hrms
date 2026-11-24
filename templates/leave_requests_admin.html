@@ -72,6 +72,7 @@
             {% for doc in docs %}
             <a href="{{ url_for('leave_request_document', doc_id=doc.id) }}" target="_blank" rel="noopener">{{ doc.original_name }}</a>{% if not loop.last %}<br>{% endif %}
             {% endfor %}
+            <div style="margin-top:3px;"><a href="{{ url_for('leave_request_documents_pdf', request_id=lr.id) }}" style="font-size:11px; font-weight:700;" title="All the files of this request in one PDF">&#128196; Save as PDF</a></div>
           {% elif lr.type_label in ("Medical Leave", "Hospitalisation Leave") %}
           <span style="color:var(--danger);">Missing</span>
           {% else %}<span style="color:var(--muted);">-</span>{% endif %}
@@ -168,6 +169,7 @@
             {% for doc in docs %}
             <a href="{{ url_for('leave_request_document', doc_id=doc.id) }}" target="_blank" rel="noopener">{{ doc.original_name }}</a>{% if not loop.last %}<br>{% endif %}
             {% endfor %}
+            <div style="margin-top:3px;"><a href="{{ url_for('leave_request_documents_pdf', request_id=lr.id) }}" style="font-size:11px; font-weight:700;" title="All the files of this request in one PDF">&#128196; Save as PDF</a></div>
           {% else %}<span style="color:var(--muted);">-</span>{% endif %}
           {% else %}
           {% if lr.supporting_doc_stored %}

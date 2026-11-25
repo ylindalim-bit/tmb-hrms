@@ -8,16 +8,16 @@
 <div class="card table-wrap frozen-header">
 <table>
 <thead>
-<tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Base</th><th class="text">Department</th><th class="text">Position</th>
+<tr><th class="text sticky-col sticky-col-1">Emp ID</th><th class="text sticky-col sticky-col-2">Name</th><th class="text sticky-col sticky-col-3" style="left:290px; width:64px; min-width:64px; max-width:64px;">Base</th><th class="text">Department</th><th class="text">Position</th>
     {% if show_letter_link %}<th class="text">Join Date</th><th class="text">Reports To</th>{% endif %}
     <th class="text">{{ date_label }}</th><th>Days Left</th><th colspan="{{ 3 if show_letter_link else 1 }}"></th></tr>
 </thead>
 <tbody>
 {% for e in rows %}
 <tr>
-  <td class="text">{{ e.emp_id }}</td>
-  <td class="text">{{ e.full_name }}</td>
-  <td class="text">{{ e.base or "-" }}</td>
+  <td class="text sticky-col sticky-col-1">{{ e.emp_id }}</td>
+  <td class="text sticky-col sticky-col-2">{{ e.full_name }}</td>
+  <td class="text sticky-col sticky-col-3" style="left:290px; width:64px; min-width:64px; max-width:64px;">{{ e.base or "-" }}</td>
   <td class="text">{{ e.department or "-" }}</td>
   <td class="text">{{ e.position or "-" }}</td>
   {% if show_letter_link %}<td class="text">{{ e.date_joined or "-" }}</td><td class="text">{{ e.reports_to }}</td>{% endif %}
@@ -94,14 +94,14 @@
 <div class="card table-wrap frozen-header">
 <table>
 <thead>
-<tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Department</th><th class="text">Position</th>
+<tr><th class="text sticky-col sticky-col-1">Emp ID</th><th class="text sticky-col sticky-col-2">Name</th><th class="text">Department</th><th class="text">Position</th>
     <th class="text">Confirmation Date</th><th>New Salary</th><th></th><th></th></tr>
 </thead>
 <tbody>
 {% for e in confirmed %}
 <tr>
-  <td class="text">{{ e.emp_id }}</td>
-  <td class="text">{{ e.full_name }}</td>
+  <td class="text sticky-col sticky-col-1">{{ e.emp_id }}</td>
+  <td class="text sticky-col sticky-col-2">{{ e.full_name }}</td>
   <td class="text">{{ e.department or "-" }}</td>
   <td class="text">{{ e.position or "-" }}</td>
   <td class="text">{{ e.confirmation_date }}</td>
@@ -130,14 +130,14 @@
 <div class="card table-wrap frozen-header">
 <table>
 <thead>
-<tr><th class="text">Emp ID</th><th class="text">Name</th><th class="text">Department</th><th class="text">Position</th>
+<tr><th class="text sticky-col sticky-col-1">Emp ID</th><th class="text sticky-col sticky-col-2">Name</th><th class="text">Department</th><th class="text">Position</th>
     <th class="text">Date Joined</th><th></th></tr>
 </thead>
 <tbody>
 {% for e in missing %}
 <tr>
-  <td class="text">{{ e.emp_id }}</td>
-  <td class="text">{{ e.full_name }}</td>
+  <td class="text sticky-col sticky-col-1">{{ e.emp_id }}</td>
+  <td class="text sticky-col sticky-col-2">{{ e.full_name }}</td>
   <td class="text">{{ e.department or "-" }}</td>
   <td class="text">{{ e.position or "-" }}</td>
   <td class="text">{{ e.date_joined }}</td>

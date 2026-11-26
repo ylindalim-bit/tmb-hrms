@@ -95,6 +95,32 @@
   </form>
 </div>
 
+{% if hr_role == 'admin' %}
+{% if start_changed is not none %}
+<div class="card" style="background:#dcfce7; border-color:#16a34a; font-weight:600;">{% if start_changed %}Changed {{ start_changed }} claim{{ "s" if start_changed != 1 }} for {{ start_emp }} to start from {{ start_to }}. OT hours on {{ "those claims" if start_changed != 1 else "that claim" }}: {{ old_hours }} &rarr; {{ new_hours }}. If this month's payroll was already finalised, finalise it again.{% else %}No claims for {{ start_emp }} in those dates start before {{ start_to }}, so nothing was changed.{% endif %}</div>
+{% endif %}
+<div class="card">
+  <h2 style="margin-top:0;">Change OT start time</h2>
+  <p style="color:var(--muted); font-size:12px; margin-top:-4px;">
+    For claims already created, <strong>Pending or Approved</strong>: any OT starting earlier than the time below is moved to that
+    time and the hours are re-calculated (attendance is updated too for Approved claims).
+  </p>
+  <form method="post" action="{{ url_for('ot_claims_change_start') }}" onsubmit="return confirm('Change OT start to ' + this.start.value + ' for ' + this.emp_id.value + ', from ' + this.date_from.value + ' to ' + this.date_to.value + '? Approved claims are changed too.');">
+    <div class="form-grid">
+      <div><label>Employee</label>
+        <select name="emp_id" required>
+          <option value="">-- Select --</option>
+          {% for e in claim_employees %}<option value="{{ e.emp_id }}">{{ e.emp_id }} &mdash; {{ e.full_name }}</option>{% endfor %}
+        </select></div>
+      <div><label>From</label><input type="date" name="date_from" value="{{ date_from }}" required></div>
+      <div><label>To</label><input type="date" name="date_to" value="{{ date_to }}" required></div>
+      <div><label>OT starts from</label><input type="time" name="start" value="06:30" required></div>
+    </div>
+    <div class="form-actions"><button class="btn" type="submit">Change start time</button></div>
+  </form>
+</div>
+{% endif %}
+
 <div class="card">
   <h2 style="margin-top:0;">Show claims for</h2>
   <div class="month-nav" style="margin-bottom:10px;">

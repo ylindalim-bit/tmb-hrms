@@ -13393,6 +13393,9 @@ def ot_claims_admin():
                             gen_emp=request.args.get("gen_emp", ""), gen_error=request.args.get("gen_error"),
                             approved_count=request.args.get("approved", type=int),
                             not_approved_count=request.args.get("not_approved", 0, type=int),
+                            start_changed=request.args.get("start_changed", type=int),
+                            start_emp=request.args.get("start_emp", ""), start_to=request.args.get("start_to", ""),
+                            old_hours=request.args.get("old_hours", ""), new_hours=request.args.get("new_hours", ""),
                             holiday_dates=holiday_dates, emp_base=emp_base, standard_hours_by_emp=standard_hours_by_emp)
 
 
@@ -13579,6 +13582,70 @@ def ot_claims_approve_all():
         approved += 1
     db.commit()
     return redirect(url_for("ot_claims_admin", approved=approved, not_approved=left))
+
+
+@app.route("/ot-claims/change-start", methods=["POST"])
+def ot_claims_change_start():
+    """Admin only: for one employee and a date range, moves OT that starts before the chosen time (e.g. 06:30) up to
+    that time, on claims already created - Pending or Approved. Hours are re-worked with the normal claim rules; for
+    an Approved claim only the difference is applied to that day's attendance and the month is re-totalled. A start
+    is only ever moved later, never earlier. Refused if an affected month's payroll is locked (Reopen it first)."""
+    if session.get("hr_role") != "admin":
+        abort(403)
+    db = get_db()
+    emp_id = request.form.get("emp_id", "")
+    start = (request.form.get("start") or "").strip()
+    start_min = _hhmm_to_minutes(start) if start else None
+    date_from, date_to = request.form.get("date_from", ""), request.form.get("date_to", "")
+    emp = db.execute("SELECT base FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+    try:
+        valid_range = datetime.date.fromisoformat(date_from) <= datetime.date.fromisoformat(date_to)
+    except ValueError:
+        valid_range = False
+    if emp is None or start_min is None or not valid_range:
+        return redirect(url_for("ot_claims_admin", gen_error=1))
+    start = f"{start_min // 60:02d}:{start_min % 60:02d}"
+    claims = db.execute(
+        """SELECT * FROM ot_claims WHERE emp_id=? AND status IN ('Pending','Approved') AND claim_date BETWEEN ? AND ?
+           ORDER BY claim_date""", (emp_id, date_from, date_to)
+    ).fetchall()
+    changed, old_total, new_total, months = 0, 0.0, 0.0, set()
+    for c in claims:
+        before_start = _hhmm_to_minutes(c["ot_before_start"]) if c["ot_before_start"] else None
+        before_end = _hhmm_to_minutes(c["ot_before_end"]) if c["ot_before_end"] else None
+        if before_start is None or before_end is None or not before_start < start_min < before_end:
+            continue
+        fields = {k: c[k] for k in ("ot_before_end", "ot_start", "ot_end") if c[k]}
+        fields["ot_before_start"] = start
+        att = db.execute("SELECT day_type FROM attendance_daily WHERE emp_id=? AND date=?", (emp_id, c["claim_date"])).fetchone()
+        if att is not None and att["day_type"] == "PH":
+            fields["ph_day"] = "1"
+        old = (c["ot_hours_1_5"] or 0, c["ot_hours_2_0"] or 0, c["ot_hours_3_0"] or 0)
+        new = _ot_claim_hours_from_form(db, MultiDict(fields), c["claim_date"], emp["base"])
+        if c["status"] == "Approved":
+            year, month = int(c["claim_date"][:4]), int(c["claim_date"][5:7])
+            _assert_payroll_open(db, emp_id, year, month)
+            db.execute(
+                """UPDATE attendance_daily SET
+                       ot_hours_1_5 = MAX(COALESCE(ot_hours_1_5,0) + ?, 0),
+                       ot_hours_2_0 = MAX(COALESCE(ot_hours_2_0,0) + ?, 0),
+                       ot_hours_3_0 = MAX(COALESCE(ot_hours_3_0,0) + ?, 0)
+                   WHERE emp_id=? AND date=?""",
+                (new[0] - old[0], new[1] - old[1], new[2] - old[2], emp_id, c["claim_date"]),
+            )
+            months.add((year, month))
+        db.execute(
+            "UPDATE ot_claims SET ot_before_start=?, ot_hours_1_5=?, ot_hours_2_0=?, ot_hours_3_0=? WHERE id=?",
+            (start, new[0], new[1], new[2], c["id"]),
+        )
+        changed += 1
+        old_total += sum(old)
+        new_total += sum(new)
+    for year, month in sorted(months):
+        _sync_daily_to_monthly(db, emp_id, year, month)
+    db.commit()
+    return redirect(url_for("ot_claims_admin", month=date_from[:7], start_changed=changed, start_emp=emp_id, start_to=start,
+                            old_hours="%g" % round(old_total, 2), new_hours="%g" % round(new_total, 2)))
 
 
 @app.route("/ot-claims/<int:claim_id>/reverse", methods=["POST"])

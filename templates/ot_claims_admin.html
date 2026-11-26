@@ -54,6 +54,9 @@
   {% endif %}
 </div>
 
+{% if approved_count is not none %}
+<div class="card" style="background:#dcfce7; border-color:#16a34a; font-weight:600;">Approved {{ approved_count }} OT claim{{ "s" if approved_count != 1 }}.{% if not_approved_count %} {{ not_approved_count }} left unchanged (already decided, or the employee is not entitled to OT).{% endif %}</div>
+{% endif %}
 {% if generated is not none %}
 <div class="card" style="background:#dcfce7; border-color:#16a34a; font-weight:600;">Created {{ generated }} Pending OT claim{{ "s" if generated != 1 }} for {{ gen_emp }} from attendance ({{ skipped }} day{{ "s" if skipped != 1 }} skipped: no OT, not worked, no clock times, or already claimed). Check them below, then Approve or Reject.</div>
 {% endif %}
@@ -131,6 +134,12 @@
   <h2 style="margin-top:0;">Pending ({{ pending|length }}){% if filtered %} <span style="font-size:12px; font-weight:400; color:var(--muted);">&mdash; filtered</span>{% endif %}</h2>
   <p style="color:var(--muted); font-size:13px; margin-top:-8px;">Awaiting approval from {{ approver_names }}. Grouped by employee, earliest date first.</p>
   {% if pending_elsewhere > 0 %}<p style="background:#fef3c7; border-radius:6px; padding:6px 10px; font-size:13px;">{{ pending_elsewhere }} more Pending claim{{ "s" if pending_elsewhere != 1 }} not shown (another month{% if filter_emps %} or staff{% endif %}). <a href="{{ url_for('ot_claims_admin', all=1) }}">Show all months</a></p>{% endif %}
+  {% if pending_groups|length > 1 %}
+  <form method="post" action="{{ url_for('ot_claims_approve_all') }}" style="margin-bottom:10px;" onsubmit="return confirm('Approve ALL {{ pending|length }} pending OT claims listed below, for {{ pending_groups|length }} staff?');">
+    {% for c in pending %}<input type="hidden" name="claim_id" value="{{ c.id }}">{% endfor %}
+    <button class="btn" type="submit">Approve all {{ pending|length }} claims listed</button>
+  </form>
+  {% endif %}
   <div class="table-wrap frozen-header">
   <table>
     <thead>
@@ -144,7 +153,13 @@
         <td><strong>{{ '%g'|format(g.h15) }}</strong></td>
         <td><strong>{{ '%g'|format(g.h20) }}</strong></td>
         <td><strong>{{ '%g'|format(g.h30) }}</strong></td>
-        <td class="text" colspan="4" style="color:var(--muted); font-size:12px;">Total hours for {{ g.full_name.split(' ')[0] }}</td>
+        <td class="text" colspan="3" style="color:var(--muted); font-size:12px;">Total hours for {{ g.full_name.split(' ')[0] }}</td>
+        <td class="text" style="white-space:nowrap;">
+          <form method="post" action="{{ url_for('ot_claims_approve_all') }}" data-ask="Approve all {{ g.claims|length }} pending OT claim{{ 's' if g.claims|length != 1 }} for {{ g.emp_id }} - {{ g.full_name }}? Total hours: 1.5x {{ '%g'|format(g.h15) }}, 2.0x {{ '%g'|format(g.h20) }}, 3.0x {{ '%g'|format(g.h30) }}." onsubmit="return confirm(this.dataset.ask);">
+            {% for c in g.claims %}<input type="hidden" name="claim_id" value="{{ c.id }}">{% endfor %}
+            <button class="btn" type="submit" style="padding:4px 10px;">Approve all ({{ g.claims|length }})</button>
+          </form>
+        </td>
       </tr>
       {% for c in g.claims %}
       <tr>

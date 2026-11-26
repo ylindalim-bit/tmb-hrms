@@ -13391,6 +13391,8 @@ def ot_claims_admin():
                             flagged_employees=flagged_employees, approver_names=approver_names,
                             generated=request.args.get("generated", type=int), skipped=request.args.get("skipped", type=int),
                             gen_emp=request.args.get("gen_emp", ""), gen_error=request.args.get("gen_error"),
+                            approved_count=request.args.get("approved", type=int),
+                            not_approved_count=request.args.get("not_approved", 0, type=int),
                             holiday_dates=holiday_dates, emp_base=emp_base, standard_hours_by_emp=standard_hours_by_emp)
 
 
@@ -13542,6 +13544,41 @@ def review_ot_claim(claim_id):
         )
     db.commit()
     return redirect(url_for("ot_claims_admin"))
+
+
+@app.route("/ot-claims/approve-all", methods=["POST"])
+def ot_claims_approve_all():
+    """Approves several Pending OT claims in one click - only the claim ids the page listed, so nothing that
+    wasn't on screen gets approved. Each one goes through the same steps as a single Approve; a claim that is
+    no longer Pending, or whose employee isn't entitled to OT, is left as it is."""
+    db = get_db()
+    hr_user = db.execute("SELECT full_name FROM hr_users WHERE username=?", (session["hr_username"],)).fetchone()
+    reviewer = hr_user["full_name"] if hr_user else session["hr_username"]
+    approved, left = 0, 0
+    for claim_id in request.form.getlist("claim_id", type=int):
+        claim = db.execute("SELECT * FROM ot_claims WHERE id=? AND status='Pending'", (claim_id,)).fetchone()
+        if claim is None:
+            left += 1
+            continue
+        claimant = db.execute("SELECT basic_salary, ot_approval_required FROM employees WHERE emp_id=?", (claim["emp_id"],)).fetchone()
+        if claimant is not None and not _ot_entitled(claimant):
+            left += 1
+            continue
+        # The status test in the UPDATE stops a double click from adding the same hours twice.
+        cur = db.execute(
+            """UPDATE ot_claims SET status='Approved', reviewed_by=?, reviewed_at=? WHERE id=? AND status='Pending'""",
+            (reviewer, datetime.datetime.now().isoformat(timespec="seconds"), claim_id),
+        )
+        if cur.rowcount != 1:
+            left += 1
+            continue
+        _apply_ot_claim_to_attendance(
+            db, claim["emp_id"], claim["claim_date"], claim["time_in"], claim["time_out"],
+            claim["ot_hours_1_5"], claim["ot_hours_2_0"], claim["ot_hours_3_0"], claim["reason"],
+        )
+        approved += 1
+    db.commit()
+    return redirect(url_for("ot_claims_admin", approved=approved, not_approved=left))
 
 
 @app.route("/ot-claims/<int:claim_id>/reverse", methods=["POST"])

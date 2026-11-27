@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Payslips {{ emp.emp_id }} {{ month_from }} to {{ month_to }}{% endblock %}
+{% block extra_style %}
+<style>
+  .payslip-page { margin-bottom: 24px; }
+  @media print {
+    .payslip-box { max-width: none; }
+    .payslip-page { margin: 0; break-after: page; page-break-after: always; }
+    .payslip-page:last-of-type { break-after: auto; page-break-after: auto; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="no-print">
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+    <h1 style="margin-bottom:0;">Payslips &mdash; {{ emp.emp_id }} {{ emp.full_name }}</h1>
+    {% if slips %}<button class="btn" type="button" onclick="window.print()">Print / Save as PDF ({{ slips|length }} page{{ "s" if slips|length != 1 }})</button>{% endif %}
+  </div>
+  <form method="get" style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin:12px 0;">
+    <div><label>From month</label><input type="month" name="from" value="{{ month_from }}" required></div>
+    <div><label>To month</label><input type="month" name="to" value="{{ month_to }}" required></div>
+    <button class="btn secondary" type="submit">Show</button>
+    <a class="btn secondary" href="{{ url_for('edit_employee', emp_id=emp.emp_id) }}">Back to employee</a>
+  </form>
+  {% for s in slips if s.not_final %}
+  <div class="card" style="background:#fef3c7; border-color:#fcd34d;">{{ month_names[s.month] }} {{ s.year }} is still open (not locked), so its figures can change. Finalise that month's payroll before giving this payslip out.</div>
+  {% endfor %}
+  {% if not slips %}<div class="card">No payslips for these months.</div>{% endif %}
+</div>
+{% for s in slips %}
+{% set r = s.r %}{% set year = s.year %}{% set month = s.month %}{% set payment_date = s.payment_date %}{% set socso_base = s.socso_base %}{% set days_in_month = s.days_in_month %}
+<div class="payslip-page">
+  <h1>Payslip &mdash; {{ month_names[month] }} {{ year }}</h1>
+  {% include "_payslip_body.html" %}
+</div>
+{% endfor %}
+{% endblock %}

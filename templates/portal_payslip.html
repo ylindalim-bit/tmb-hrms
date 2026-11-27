@@ -23,7 +23,8 @@
     Bank: {{ emp.bank_name or "-" }} {{ emp.bank_account_no or "" }}</p>
     <p style="text-align:right;">Payment Date: {{ "%02d"|format(payment_date.day) }} {{ month_names[payment_date.month] }} {{ payment_date.year }}<br>
     EPF No.: {{ emp.epf_no or "-" }}<br>
-    Income Tax No.: {{ emp.tax_no or "-" }}</p>
+    Income Tax No.: {{ emp.tax_no or "-" }}<br>
+    {% if socso_base is not none %}<strong>SOCSO Base: RM {{ "%.2f"|format(socso_base) }}</strong>{% endif %}</p>
   </div>
 
   <h2>Earnings</h2>

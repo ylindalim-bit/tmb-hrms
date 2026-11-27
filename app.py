@@ -6955,7 +6955,81 @@ def payslip(emp_id, year, month):
     result = payroll_calc.get_payroll_result(db, emp_id, year, month)
     return render_template("payslip.html", emp=emp, r=result, year=year, month=month,
                             payment_date=payment_date_for(year, month),
+                            socso_base=_payslip_socso_base(db, result),
                             days_in_month=calendar.monthrange(year, month)[1])
+
+
+def _payslip_socso_base(db, r):
+    """The wage SOCSO (and EIS / SKBBK) was worked out on, as shown on the payslip - normally gross pay less any
+    Other Deduction. Earlier imported months sometimes used the full gross, or basic + OT only, so the figure is
+    checked against the employer contribution actually charged. None (line left off the payslip) if there is no
+    contribution or none of those wages explains it, rather than print a base that doesn't match."""
+    if not r["socso_employer"]:
+        return None
+    gross = r["gross_pay"] or 0
+    rows = [dict(x) for x in db.execute("SELECT * FROM socso_table ORDER BY wage_lower_bound")]
+    for wage in (gross - (r["other_deduction"] or 0), gross, (r["basic_salary"] or 0) + (r["ot_pay"] or 0)):
+        if wage > 0 and any(
+                abs(payroll_calc._vlookup_bracket(rows, wage, col) - r["socso_employer"]) < 0.005
+                for col in ("cat1_employer", "cat2_employer")):
+            return round(wage, 2)
+    return None
+
+
+@app.route("/payslip/<emp_id>/range")
+def payslip_range(emp_id):
+    """One employee's payslips for a span of months (?from=2026-07&to=2026-11), one per A4 page, to print or save
+    as a single PDF. Only months that have been run and paid something are included."""
+    db = get_db()
+    emp = db.execute("SELECT * FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+    if emp is None:
+        abort(404)
+    today = datetime.date.today()
+
+    def month_arg(name, default):
+        try:
+            return datetime.datetime.strptime(request.args.get(name, ""), "%Y-%m").date()
+        except ValueError:
+            return default
+
+    first = month_arg("from", datetime.date(today.year, 1, 1))
+    last = month_arg("to", datetime.date(today.year, today.month, 1))
+    runs = db.execute(
+        """SELECT year, month FROM payroll_runs WHERE emp_id=? AND finalized_at IS NOT NULL
+             AND year * 100 + month BETWEEN ? AND ? ORDER BY year, month""",
+        (emp_id, first.year * 100 + first.month, last.year * 100 + last.month),
+    ).fetchall()
+    runs = [(x["year"], x["month"]) for x in runs]
+    reopened = {(x["year"], x["month"]) for x in db.execute("SELECT year, month FROM payroll_reopen")}
+    slips = []
+    for year, month in runs:
+        result = payroll_calc.get_payroll_result(db, emp_id, year, month)
+        if not (result["gross_pay"] or result["net_pay"]):
+            continue
+        slips.append({"year": year, "month": month, "r": result, "payment_date": payment_date_for(year, month),
+                      "socso_base": _payslip_socso_base(db, result),
+                      "days_in_month": calendar.monthrange(year, month)[1], "not_final": (year, month) in reopened})
+    return render_template("payslip_range.html", emp=emp, slips=slips,
+                           month_from=first.strftime("%Y-%m"), month_to=last.strftime("%Y-%m"))
+
+
+@app.route("/employees/<emp_id>/print-ic.pdf")
+def employee_print_ic(emp_id):
+    """The employee's IC / Passport copies on A4 for printing - photos straightened and placed two to a page, in the
+    order they were uploaded; PDFs appended as they are."""
+    db = get_db()
+    emp = db.execute("SELECT full_name FROM employees WHERE emp_id=?", (emp_id,)).fetchone()
+    if emp is None:
+        abort(404)
+    docs = db.execute(
+        "SELECT * FROM employee_documents WHERE emp_id=? AND doc_type='IC / Passport Copy' ORDER BY id", (emp_id,)
+    ).fetchall()
+    data = _a4_print_pdf(os.path.join(UPLOAD_DIR, emp_id), docs,
+                         f"{emp_id} - {emp['full_name']} - IC / Passport Copy", 2)
+    if data is None:
+        return "There is no IC / Passport copy (PDF, JPG or PNG) to print for this employee.", 404
+    return send_file(io.BytesIO(data), mimetype="application/pdf", as_attachment=False,
+                     download_name=f"{emp_id}_IC_Passport_A4.pdf")
 
 
 @app.route("/payroll/<int:year>/<int:month>/<emp_id>/detail")
@@ -9706,6 +9780,7 @@ def portal_payslip(year, month):
         return "This payslip hasn't been released yet. Please check back later.", 404
     result = payroll_calc.get_payroll_result(db, emp["emp_id"], year, month)
     return render_template("portal_payslip.html", emp=emp, r=result, year=year, month=month,
+                            socso_base=_payslip_socso_base(db, result),
                             payment_date=payment_date_for(year, month),
                             days_in_month=calendar.monthrange(year, month)[1])
 

@@ -941,6 +941,18 @@
   </form>
 </div>
 
+<div class="card" id="payslips">
+  <h2 style="margin-top:0;">Payslips</h2>
+  <p style="color:var(--muted); font-size:12px; margin-top:-4px;">Several months together, one per A4 page, to print or save as one PDF.</p>
+  <form method="get" action="{{ url_for('payslip_range', emp_id=emp.emp_id) }}" target="_blank" style="display:flex; gap:10px; align-items:end; flex-wrap:wrap;">
+    {% set year_start = cur_year ~ "-01" %}
+    {% set joined_month = (emp.date_joined or "")[:7] %}
+    <div><label>From month</label><input type="month" name="from" value="{{ joined_month if joined_month > year_start else year_start }}" required></div>
+    <div><label>To month</label><input type="month" name="to" value="{{ cur_year }}-{{ '%02d'|format(cur_month) }}" required></div>
+    <button class="btn" type="submit">Show payslips</button>
+  </form>
+</div>
+
 <div class="card" id="documents">
   <h2 style="margin-top:0;">Documents</h2>
   <p style="color:var(--muted); font-size:12px; margin-top:-4px;">
@@ -975,6 +987,9 @@
     </div>
   </form>
 
+  {% if documents and documents|selectattr("doc_type", "equalto", "IC / Passport Copy")|list %}
+  <div style="margin-top:16px;"><a class="btn" href="{{ url_for('employee_print_ic', emp_id=emp.emp_id) }}" target="_blank" rel="noopener">Print IC / Passport (A4)</a></div>
+  {% endif %}
   {% if documents %}
   <div class="table-wrap" style="margin-top:16px;">
   <table>

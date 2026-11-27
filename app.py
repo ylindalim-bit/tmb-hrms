@@ -10753,7 +10753,7 @@ def portal_ic_upload():
          datetime.datetime.now().isoformat(timespec="seconds")),
     )
     db.commit()
-    return redirect(url_for("portal_profile"))
+    return redirect(url_for("portal_profile", ic_uploaded=1))
 
 
 @app.route("/portal/documents/<int:doc_id>/download")

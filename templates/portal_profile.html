@@ -24,12 +24,40 @@
 
 <div class="card">
   <h2 style="margin-top:0;">IC / Passport Copy</h2>
+  {% if request.args.get("ic_uploaded") %}
+  <p style="background:#dcfce7; color:var(--good); border-radius:6px; padding:8px 10px;">File uploaded. Please check the preview below.</p>
+  {% endif %}
   {% if ic_documents %}
-  <ul style="margin:0 0 12px; padding-left:20px;">
-    {% for d in ic_documents %}
-    <li><a href="{{ url_for('portal_document_download', doc_id=d.id) }}" target="_blank" rel="noopener">{{ d.original_name }}</a> &mdash; {{ d.uploaded_at }}</li>
-    {% endfor %}
-  </ul>
+  {% for d in ic_documents %}
+  {% set file_url = url_for('portal_document_download', doc_id=d.id) %}
+  {% set ext = d.original_name.rsplit('.', 1)[-1]|lower %}
+  <div style="border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:12px;">
+    <div style="display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
+      <div style="min-width:0;"><strong style="word-break:break-all;">{{ d.original_name }}</strong>
+        <div style="color:var(--muted); font-size:12px;">Uploaded {{ d.uploaded_at[:10] }}</div></div>
+      <a class="btn secondary" href="{{ file_url }}" target="_blank" rel="noopener">View</a>
+    </div>
+    {% if ext in ('jpg', 'jpeg', 'png') %}
+    <a href="{{ file_url }}" target="_blank" rel="noopener"><img src="{{ file_url }}" alt="Preview of {{ d.original_name }}" loading="lazy"
+       style="display:block; max-width:100%; max-height:320px; margin-top:10px; border:1px solid var(--border); border-radius:6px;"></a>
+    {% elif ext == 'pdf' %}
+    <div class="pdf-preview" data-src="{{ file_url }}" data-name="{{ d.original_name }}"></div>
+    {% endif %}
+  </div>
+  {% endfor %}
+  <script>
+  // Show PDFs inside the page only where the browser can display them there; elsewhere (many Android phones)
+  // an embedded PDF would be blank or start a download, so the View button is used instead.
+  if (navigator.pdfViewerEnabled) {
+    Array.prototype.forEach.call(document.querySelectorAll('.pdf-preview'), function (box) {
+      var frame = document.createElement('iframe');
+      frame.src = box.getAttribute('data-src');
+      frame.title = 'Preview of ' + box.getAttribute('data-name');
+      frame.style.cssText = 'display:block; width:100%; max-width:640px; height:420px; margin-top:10px; border:1px solid var(--border); border-radius:6px;';
+      box.appendChild(frame);
+    });
+  }
+  </script>
   {% else %}
   <p style="color:var(--muted);">Not yet submitted.</p>
   {% endif %}

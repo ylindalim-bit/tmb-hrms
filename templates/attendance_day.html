@@ -43,7 +43,25 @@
 {% if excused is not none %}
 <div class="card" style="background:#dcfce7; border-color:#16a34a; font-weight:600;">Late-in waived for {{ excused }} {{ excused_base }} staff on {{ date_iso }} (marked Excused, no deduction).</div>
 {% endif %}
+{% if set_count is not none %}
+<div class="card" style="background:#dcfce7; border-color:#16a34a; font-weight:600;">Set {{ set_count }} {{ set_base }} staff to {{ "Off day" if set_type == "OFF" else "Public holiday" }} on {{ date_iso }}.{% if set_kept %}<div style="font-weight:400; margin-top:4px;">Not changed: {{ set_kept }}</div>{% endif %}</div>
+{% endif %}
 {% if hr_role != "approver" and base_options %}
+<details class="card" style="margin-bottom:12px;" open>
+  <summary style="cursor:pointer; font-weight:600;">Set Off day for a whole base on this day</summary>
+  <form method="post" action="{{ url_for('attendance_day_base_day', date_str=date_iso) }}" style="margin-top:10px; display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;"
+        onsubmit="return confirm('Set everyone at ' + this.base.value + ' to ' + this.day_type.options[this.day_type.selectedIndex].text + ' on {{ date_iso }}?');">
+    <div><label>Base</label>
+      <select name="base" id="base-day-base" required style="width:auto; min-width:110px;">
+        <option value="">-- Select --</option>
+        {% for b in base_options %}<option value="{{ b }}" {% if b == start_base %}selected{% endif %}>{{ b }}</option>{% endfor %}
+      </select></div>
+    <div><label>Set as</label>
+      <select name="day_type" style="width:auto;"><option value="OFF">Off day</option><option value="PH">Public holiday</option></select></div>
+    <button class="btn" type="submit">Set for whole base</button>
+  </form>
+  <p style="font-size:12px; color:var(--muted); margin-bottom:0;">Only staff with nothing entered for {{ date_iso }} are changed. Anyone who clocked in, is on leave or a Movement Notice, or already has another status is left as it is.</p>
+</details>
 <details class="card" style="margin-bottom:12px;">
   <summary style="cursor:pointer; font-weight:600;">Waive late-in for a whole base on this day (e.g. bus came late)</summary>
   <form method="post" action="{{ url_for('attendance_day_excuse_late', date_str=date_iso) }}" style="margin-top:10px;"
@@ -164,6 +182,8 @@ function filterByBase(base) {
   currentBase = base || '';
   var baseField = document.getElementById('day-form-base');
   if (baseField) baseField.value = base;
+  var baseDay = document.getElementById('base-day-base');
+  if (baseDay && base) baseDay.value = base;
   var ml = document.getElementById('multi-link');
   if (ml) { ml.href = ml.href.split('&base=')[0] + (base ? '&base=' + encodeURIComponent(base) : ''); }
   // Remember the chosen base, so the next day / next page you open stays on it (All clears it).

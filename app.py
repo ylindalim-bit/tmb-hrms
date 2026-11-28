@@ -4167,6 +4167,8 @@ def attendance_day(date_str):
         base_options=base_options_present,
         excused=request.args.get("excused", type=int), excused_base=request.args.get("excused_base", ""),
         saved=request.args.get("saved", type=int), day_types=DAY_TYPES, start_base=request.args.get("base", ""),
+        set_count=request.args.get("set_count", type=int), set_type=request.args.get("set_type", ""),
+        set_base=request.args.get("set_base", ""), set_kept=request.args.get("set_kept", ""),
     )
 
 
@@ -4383,6 +4385,54 @@ def attendance_multi_save():
     params += [("emps", e) for e in f.getlist("emps")]
     return redirect(url_for("attendance_multi", **{k: v for k, v in dict(params).items() if k != "emps"}) + "".join(
         "&emps=" + e for e in f.getlist("emps")))
+
+
+@app.route("/attendance-day/<date_str>/base-day", methods=["POST"])
+def attendance_day_base_day(date_str):
+    """Marks a whole base as Off day (or Public holiday) on one date - e.g. Chengdu's alternate off Saturdays. Only
+    staff with nothing saved, or an empty Worked line (no Time In / Out), are changed; anyone who clocked in, is on
+    leave or a Movement Notice, or already has another status is left as it is."""
+    if session.get("hr_role") == "approver":
+        abort(403)
+    try:
+        the_date = datetime.date.fromisoformat(date_str)
+    except ValueError:
+        abort(404)
+    date_iso = the_date.isoformat()
+    base = request.form.get("base", "")
+    day_type = request.form.get("day_type", "OFF")
+    if base not in BASE_OPTIONS or day_type not in ("OFF", "PH"):
+        return "Choose a base and Off day or Public holiday.", 400
+    db = get_db()
+    changed, kept = [], []
+    for r in _attendance_day_rows(db, the_date):
+        emp_id = r["emp"]["emp_id"]
+        if r["emp"]["base"] != base:
+            continue
+        row = db.execute("SELECT day_type, time_in, time_out FROM attendance_daily WHERE emp_id=? AND date=?",
+                         (emp_id, date_iso)).fetchone()
+        if row is not None and (row["time_in"] or row["time_out"]):
+            kept.append(f"{emp_id} (clocked {row['time_in'] or '-'} to {row['time_out'] or '-'})")
+        elif row is not None and row["day_type"] != "WORKED":
+            if row["day_type"] != day_type:
+                kept.append(f"{emp_id} (already {row['day_type']})")
+        elif r["category"] in ("leave", "away"):
+            kept.append(f"{emp_id} ({r['status']})")
+        else:
+            _assert_payroll_open(db, emp_id, the_date.year, the_date.month)
+            db.execute(
+                """INSERT INTO attendance_daily (emp_id, date, day_type, meal_allowance_flag, cewi_flag,
+                       ot_hours_1_5, ot_hours_2_0, ot_hours_3_0) VALUES (?,?,?,'N','N',0,0,0)
+                   ON CONFLICT(emp_id, date) DO UPDATE SET day_type=excluded.day_type,
+                       meal_allowance_flag='N', cewi_flag='N'""",
+                (emp_id, date_iso, day_type),
+            )
+            changed.append(emp_id)
+    for emp_id in changed:
+        _sync_daily_to_monthly(db, emp_id, the_date.year, the_date.month)
+    db.commit()
+    return redirect(url_for("attendance_day", date_str=date_iso, base=base, set_count=len(changed), set_type=day_type,
+                            set_base=base, set_kept="; ".join(kept)))
 
 
 @app.route("/attendance-day/<date_str>/excuse-late", methods=["POST"])
